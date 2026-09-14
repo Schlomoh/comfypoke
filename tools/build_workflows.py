@@ -67,7 +67,7 @@ def build_klein(seed: int):
 def build_upscale(image_file: str, megapixels: float, seed: int):
     g = Graph()
     add = g.add
-    img = add("LoadImage", [image_file, "image"], (40, 60), "Image to upscale (upload via the node)", YELLOW)
+    img = add("LoadImage", [image_file, "image"], (40, 60), "Image to upscale: use the node's upload button first", YELLOW)
     su = add("UNETLoader", ["seedvr2_7b_fp16.safetensors", "default"], (420, 60), "SeedVR2 7B")
     sv = add("VAELoader", ["seedvr2_ema_vae_fp16.safetensors"], (420, 180), "SeedVR2 VAE")
     big = add("ImageScaleToTotalPixels", ["lanczos", megapixels, 1], (420, 280), "Target size: 4 MP = 2048 square, 8 = 2.8K, 16 = 4K", YELLOW, image=(img, 0))

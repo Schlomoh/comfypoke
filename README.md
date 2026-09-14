@@ -1,11 +1,13 @@
 # comfy-modal
 
-ComfyUI on [Modal](https://modal.com): a cheap CPU container serves the full GUI, a GPU container
-renders on demand and shuts itself down after a few idle minutes. Your models, workflows and
-renders live on persistent volumes. Editing a workflow costs cents per hour; a render costs cents.
+ComfyUI split across two [Modal](https://modal.com) containers. A CPU container runs the full GUI
+around the clock, at CPU pricing. A GPU container starts when a prompt is queued, renders it, and
+stops itself after 5 idle minutes. Models, workflows and output files persist across restarts on
+three Modal volumes.
 
-Three workflows come with it: Z-Image-Turbo text to image, FLUX.2 klein text to image, and a
-SeedVR2 upscale. Everything else is yours to add.
+The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
+to wake it early, keep it warm for a set time, or stop it. Three workflows ship by default:
+Z-Image-Turbo and FLUX.2 klein for text to image, and a SeedVR2 upscale.
 
 ## How it works
 
@@ -33,9 +35,12 @@ You need Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), and a Modal acc
 uv sync                       # local tools only; the app runs on Modal
 uv tool install modal && modal setup
 python3 -c "import secrets; print(secrets.token_urlsafe(24))" > .access_key
-modal deploy modal_app.py     # first run downloads the models to a volume (about 40 GB, 10 to 15 minutes)
+modal deploy modal_app.py     # the first run downloads about 45 GB of models to a volume
 tools/sync.sh workflows       # upload the workflows in workflows/
 ```
+
+The `.access_key` step is not optional: without a key the container starts with no login gate
+and the GUI is public.
 
 Open the URL the deploy prints. The browser asks for a name and password: enter anything as the
 name and the contents of `.access_key` as the password. A cookie keeps you signed in for 30 days.
@@ -43,17 +48,17 @@ Tools and scripts can use `?key=<key>` in the URL instead.
 
 Run `uv run tools/check.py --stop-stale` after a deploy. It stops leftover containers from the
 previous version and runs the acceptance test: authentication, the websocket, model listing, a
-small render, queue and history state, cancel and interrupt, two browsers at once, a LoRA upload.
-About a minute, a few cents.
+small render, queue and history state, cancel and interrupt, two browsers at once, and a LoRA
+upload rendered on the warm worker. About a minute, a few cents.
 
 ## Daily use
 
 - Press `w` in the GUI for the workflows. `01` renders with Z-Image-Turbo in about ten seconds
   once the worker is warm, `02` with FLUX.2 klein, `03` upscales an image with SeedVR2 to the size
-  set in megapixels.
+  set in megapixels; upload the image with the node's button before queueing it.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
-  close. Cold means nothing is billed. Wake boots the worker before you need it, about 100 seconds
-  cold or 30 when Modal still has the image cached. Keep warm pings it inside the idle window for
+  close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an L40S,
+  that took about 100 seconds cold and 30 seconds when Modal still had the image cached. Keep warm pings it inside the idle window for
   the chosen time. Stop shuts it down now.
 - LoRAs: `tools/sync.sh civitai <version id or page url>` (needs `CIVITAI_TOKEN`, an API key from
   civitai.com/user/account), `tools/sync.sh hf <owner/repo> <file>` (`HF_TOKEN` only for gated

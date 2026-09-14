@@ -40,7 +40,7 @@
     "example.png",
     "image"
    ],
-   "title": "Image to upscale (upload via the node)",
+   "title": "Image to upscale: use the node's upload button first",
    "color": "#432",
    "bgcolor": "#653"
   },

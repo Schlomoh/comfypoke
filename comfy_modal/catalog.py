@@ -28,5 +28,6 @@ MODELS = [
     Model("Comfy-Org/SeedVR2", "vae/seedvr2_ema_vae_fp16.safetensors", "vae"),
 ]
 
-# Custom node packs by registry id (https://registry.comfy.org); the default workflows use core nodes only
+# Custom node packs by registry id (https://registry.comfy.org). The default workflows use only nodes that
+# ship with current ComfyUI (comfy-cli installs the latest release at build time).
 NODE_PACKS = []

@@ -12,6 +12,7 @@ import os
 import shlex
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 import questionary
@@ -105,9 +106,10 @@ def open_gui():
             out.print(f"[red]no {config.ACCESS_KEY_FILE} in {REPO}; see README > Setup[/]")
             return
         out.print(f"[bold cyan]$ open {url}/?key=<contents of {config.ACCESS_KEY_FILE}>[/]")
-        subprocess.run(["open", f"{url}/?key={key_file.read_text().strip()}"], check=True)
+        webbrowser.open(f"{url}/?key={key_file.read_text().strip()}")
     else:
-        run(["open", url])
+        out.print(f"[bold cyan]$ open {url}[/]")
+        webbrowser.open(url)
 
 
 def wake():
@@ -149,7 +151,7 @@ def sync():
     if what.startswith("pull renders"):
         run([SYNC, "pull"])  # sync.sh says so when the sync folder is missing
     elif what.startswith("pull, then clear"):
-        if ask(questionary.confirm("Pull to the sync folder first, then delete output/, temp/ and input/ (except the workflows' test images) on the volume?", default=False)):
+        if ask(questionary.confirm("Pull to the sync folder first, then delete output/, temp/ and input/ (except KEEP_INPUTS in tools/pull.py) on the volume?", default=False)):
             run([SYNC, "clear"])
     elif what.startswith("push a file"):
         path = os.path.expanduser(ask(questionary.path("File or folder to upload:")))

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Move files between the Modal volumes and this Mac.
 #   tools/sync.sh pull              copy new renders to $SYNC_DIR/output (default ~/comfy-renders; each file once, deleted ones stay deleted)
 #   tools/sync.sh push <path>       upload an image or folder to Modal's input dir

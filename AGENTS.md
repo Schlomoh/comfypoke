@@ -20,9 +20,11 @@ explains where things are and how to change them without breaking the deployment
   from the worker's ComfyUI log), `history` (the final history entry).
 - Volumes: `comfy-models` at `/cache` (Hugging Face cache plus `extra/<folder>/` for uploads),
   `comfy-io` at `/io` (`input`, `output`, `temp`), `comfy-data` at `/data` (ComfyUI's user
-  directory, UI only). The io volume is reloaded before each `executed` message so the GUI can
-  serve new files; the UI reloads the models volume on each `/object_info` request so uploads show
-  up without a restart.
+  directory, UI only). The io volume is reloaded before each `executed` message and on each
+  `/object_info` request so the GUI can serve new files. Hand-uploaded files on the models volume
+  are copied in, not reloaded, on `/object_info`, because ComfyUI keeps loaded model files open and
+  a reload would fail. The data volume is reloaded on `/userdata` requests, which is how workflows
+  uploaded with `tools/sync.sh workflows` appear in the running GUI.
 
 ## Changing things
 
@@ -33,7 +35,10 @@ explains where things are and how to change them without breaking the deployment
 - Workflows: `tools/build_workflows.py` writes both the GUI JSON and the API prompt. New node
   types need an entry in `SPEC` and `WIDGET_NAMES` in `tools/workflow_graph.py`: the input names
   in ComfyUI's order and the widget names in the order the node declares them. Read them from the
-  running server with `GET /api/object_info/<NodeType>`.
+  running server with `GET /api/object_info/<NodeType>`. A wrong order does not error: the GUI shows
+  the values under the wrong widgets and the API prompt sends them to the wrong inputs.
+- Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that
+  shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,
   `app.extensionManager.registerSidebarTab`). No build step.
 

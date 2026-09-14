@@ -5,8 +5,8 @@ ComfyUI's models/<folder>/ through the volume API on every /object_info
 request, which the browser sends on each page load and the worker before each
 prompt. The API returns the latest committed state; the mounted volume would
 need a reload, and that fails as long as ComfyUI keeps a model file on the
-volume open (comfy-aimdo maps loaded models from their files for the life of
-the process). A file dropped from the volume is removed here too, so the name
+volume open (ComfyUI's comfy-aimdo memory manager maps loaded models from their
+files for the life of the process). A file dropped from the volume is removed here too, so the name
 disappears again.
 """
 import asyncio
