@@ -4,7 +4,7 @@ import time
 
 import modal
 
-APP_NAME = "comfy"  # deployed URL: https://<workspace>--comfy-ui-ui.modal.run
+APP_NAME = "comfypoke"  # deployed URL: https://<workspace>--comfypoke-ui-ui.modal.run
 
 GPU = os.getenv("MODAL_GPU", "L40S")  # 48 GB; H100 for the 32B-class models
 
@@ -33,9 +33,9 @@ WORKER_TIMEOUT_SECONDS = 900
 # Shown in the GUI's GPU badge as a session cost estimate: L40S list price on modal.com/pricing (edit if it changes).
 GPU_RATE_PER_HOUR = 1.95
 
-VOLUME_MODELS = "comfy-models"
-VOLUME_DATA = "comfy-data"
-VOLUME_IO = "comfy-io"
+VOLUME_MODELS = f"{APP_NAME}-models"
+VOLUME_DATA = f"{APP_NAME}-data"
+VOLUME_IO = f"{APP_NAME}-io"
 
 HF_SECRET_NAME = "huggingface-secret"  # optional, only for gated repos
 ACCESS_KEY_FILE = ".access_key"  # repo root, git-ignored, read at deploy time only

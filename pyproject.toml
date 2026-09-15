@@ -1,7 +1,7 @@
 [project]
-name = "comfy-modal"
+name = "comfypoke"
 version = "0.1.0"
-description = "ComfyUI on Modal: CPU GUI, on-demand GPU worker, persistent volumes"
+description = "ComfyUI on Modal: an always-on GUI and a GPU you poke awake"
 requires-python = ">=3.12"
 dependencies = [
     "modal>=1.5",

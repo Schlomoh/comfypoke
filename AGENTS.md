@@ -50,7 +50,7 @@ explains where things are and how to change them without breaking the deployment
   either way.
 - `uv run tools/render.py api tools/<name>_api.json` renders a workflow headlessly; the builder
   writes those files. Look at the output image before judging a change to a workflow.
-- `modal app logs comfy` streams both containers' logs; the GUI's logs panel shows the worker's
+- `modal app logs comfypoke` streams both containers' logs; the GUI's logs panel shows the worker's
   lines prefixed with `[gpu]`.
 
 ## Conventions

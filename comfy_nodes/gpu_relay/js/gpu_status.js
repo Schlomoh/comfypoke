@@ -6,6 +6,7 @@ import { api } from "../../scripts/api.js";
 
 const POLL_MS = 5000;
 const COLORS = { cold: "#8a8a8a", starting: "#d9a300", warm: "#3aa655", busy: "#3b82f6", stopping: "#d9a300" };
+const LABEL = { cold: "napping", starting: "waking up", warm: "awake", busy: "rendering", stopping: "dozing off" };
 const LS = "comfy_modal.gpu";
 const state = { s: null, at: 0, views: new Set(), pill: null };
 
@@ -31,7 +32,7 @@ function derived() {
 
 function summary(d) {
   if (!d) return "GPU status unavailable";
-  const parts = [`${d.gpu} ${d.state}`];
+  const parts = [`${d.gpu} ${LABEL[d.state] || d.state}`];
   if (d.state === "busy") parts.push(`${d.running} job${d.running === 1 ? "" : "s"}`);
   if (d.idlesIn != null) parts.push(`idles in ${mmss(d.idlesIn)}`);
   if (d.state === "starting") parts.push("booting");
@@ -68,11 +69,11 @@ const BTN = "font:inherit;padding:3px 8px;border-radius:6px;border:1px solid var
 function controls(compact) {
   const el = document.createElement("span");
   el.style.cssText = "display:inline-flex;gap:6px;align-items:center";
-  el.innerHTML = `<button data-a="wake" title="Boot the worker now so the first render does not wait">Wake</button>
+  el.innerHTML = `<button data-a="wake" title="Poke the worker awake now so the first render does not wait">Poke</button>
     <select data-a="keep" title="Ping the worker so it never idles out; billed the whole time">
-      <option value="0">${compact ? "Keep: off" : "Keep warm: off"}</option><option value="15">15 min</option><option value="30">30 min</option>
+      <option value="0">${compact ? "Keep awake: off" : "Keep awake: off"}</option><option value="15">15 min</option><option value="30">30 min</option>
       <option value="60">60 min</option><option value="120">2 h</option></select>
-    <button data-a="stop" title="Shut the worker down now; the next render boots a fresh one">Stop</button>`;
+    <button data-a="stop" title="Send the worker to sleep now; the next render wakes a fresh one">Sleep</button>`;
   for (const b of el.querySelectorAll("button, select")) b.style.cssText = BTN;
   el.querySelector('[data-a="wake"]').onclick = actions.wake;
   el.querySelector('[data-a="keep"]').onchange = (e) => actions.keep(Number(e.target.value));
@@ -153,7 +154,7 @@ function panel(el) {
   const row = (k, v) => `<tr><td style="padding:2px 12px 2px 0;opacity:.7">${k}</td><td style="padding:2px 0">${v}</td></tr>`;
   const update = (d) => {
     el.querySelector("[data-dot]").style.background = d ? COLORS[d.state] || "#8a8a8a" : "#8a8a8a";
-    el.querySelector("[data-head]").textContent = d ? `${d.gpu} ${d.state}` : "GPU status unavailable";
+    el.querySelector("[data-head]").textContent = d ? `${d.gpu} ${LABEL[d.state] || d.state}` : "GPU status unavailable";
     const rows = d ? [
       d.state === "busy" ? row("Running", `${d.running} job${d.running === 1 ? "" : "s"}`) : "",
       d.idlesIn != null ? row("Idles out in", mmss(d.idlesIn)) : "",

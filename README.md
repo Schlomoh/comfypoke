@@ -1,4 +1,6 @@
-# comfy-modal
+# comfypoke
+
+ComfyUI on Modal: a GUI that is always up and a GPU you poke awake, which naps when you are done.
 
 ComfyUI split across two [Modal](https://modal.com) containers. A CPU container runs the full GUI
 around the clock, at CPU pricing. A GPU container starts when a prompt is queued, renders it, and
