@@ -1,0 +1,28 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: uv sync --frozen
+      - name: Python compiles
+        run: uv run python -m compileall -q comfy_modal comfy_nodes tools
+      - name: Shell and JS parse
+        run: |
+          bash -n tools/sync.sh
+          node -e "new Function(require('fs').readFileSync('comfy_nodes/gpu_relay/js/gpu_status.js','utf8').replace(/^import .*$/mg,''))"
+      - name: Workflows match the builder
+        run: |
+          uv run tools/build_workflows.py
+          git diff --exit-code -- workflows/
