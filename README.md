@@ -112,9 +112,26 @@ upload rendered on the warm worker. About a minute, a few cents.
 
 ## Costs
 
-Modal bills per second while a container runs. The UI container is a small CPU machine; the worker
-is an L40S by default, about $2 per hour at list price. With the five minute idle window, a session
-of twenty renders spread over an hour costs well under a dollar. Volumes cost by stored size.
+Modal bills per second while a container runs. The GUI runs on a small CPU container that sleeps
+after ten idle minutes; the worker is an L40S by default at about $1.95 per hour list price and
+sleeps five minutes after its last render. Estimates from measured times, list prices, no
+storage:
+
+| Session | GPU time billed | About |
+|---|---|---|
+| Twenty renders spread over an hour (Z-Image-Turbo, 10 s each, worker awake between them for a while) | about 15 min | $0.50 plus a few cents of CPU |
+| An afternoon of steady iteration, three hours, worker kept awake | 3 h | $6 |
+| A month of occasional use, ten one-hour sessions | about 2.5 h | $5 plus volume storage for about 45 GB of models |
+
+A cold boot costs its 100 seconds like any other GPU time, about five cents. Volumes are billed
+by stored size at Modal's storage rate.
+
+## Workflow packs
+
+The three workflows here cover text to image and upscaling. Packs with more involved pipelines,
+masked outfit changes with the body pinned, head swaps for consistent characters, clean-up and
+restore, editing inside a mask, are sold separately and drop into the same `workflows/` folder:
+they upload with the same `tools/sync.sh workflows` command. Link to follow.
 
 ## License
 
