@@ -209,7 +209,7 @@ wheels = [
 ]
 
 [[package]]
-name = "comfy-modal"
+name = "comfypoke"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -18,8 +18,8 @@ explains where things are and how to change them without breaking the deployment
 - The worker's `run` is an async generator; the relay consumes it with `remote_gen`. Messages are
   `(kind, payload)` tuples: `json` (a ComfyUI websocket message), `bytes` (a preview), `log` (lines
   from the worker's ComfyUI log), `history` (the final history entry).
-- Volumes: `comfy-models` at `/cache` (Hugging Face cache plus `extra/<folder>/` for uploads),
-  `comfy-io` at `/io` (`input`, `output`, `temp`), `comfy-data` at `/data` (ComfyUI's user
+- Volumes: `comfypoke-models` at `/cache` (Hugging Face cache plus `extra/<folder>/` for uploads),
+  `comfypoke-io` at `/io` (`input`, `output`, `temp`), `comfypoke-data` at `/data` (ComfyUI's user
   directory, UI only). The io volume is reloaded before each `executed` message and on each
   `/object_info` request so the GUI can serve new files. Hand-uploaded files on the models volume
   are copied in, not reloaded, on `/object_info`, because ComfyUI keeps loaded model files open and
