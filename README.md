@@ -1,5 +1,7 @@
 # comfypoke
 
+![comfypoke-banner](assets/github-comfypoke-banner.webp)
+
 ComfyUI on Modal: a GUI that is always up and a GPU you poke awake, which naps when you are done.
 
 ComfyUI split across two [Modal](https://modal.com) containers. A CPU container runs the full GUI
@@ -73,7 +75,7 @@ upload rendered on the warm worker. About a minute, a few cents.
 - `uv run tools/console.py` is an arrow-key menu over all of the above plus status, deploy, the
   acceptance check and logs.
 - `uv run tools/render.py turbo "a prompt"` renders without the GUI; `tools/render.py api
-  <prompt.json>` submits any API-format prompt, which the GUI exports under Workflow, Export (API).
+<prompt.json>` submits any API-format prompt, which the GUI exports under Workflow, Export (API).
 
 ## Adding things
 
@@ -92,21 +94,21 @@ upload rendered on the warm worker. About a minute, a few cents.
 
 ## Layout
 
-| Path | What it is |
-|---|---|
-| `modal_app.py` | Deploy entry point; imports the two container classes |
-| `comfy_modal/config.py` | Every tunable and the env-var contract with the custom nodes |
-| `comfy_modal/catalog.py` | Models and node packs to install |
-| `comfy_modal/image.py` | The container image: ComfyUI, node packs, model downloads |
-| `comfy_modal/ui.py` | The CPU class that serves the GUI |
-| `comfy_modal/worker.py` | The GPU class: runs prompts, streams progress and logs back, publishes its heartbeat |
-| `comfy_modal/comfy.py` | Starts ComfyUI inside a container |
-| `comfy_nodes/gpu_relay` | Custom node in the UI container: relays prompts, serves the GPU badge |
-| `comfy_nodes/access_key` | Custom node: the login gate |
-| `comfy_nodes/extra_models` | Custom node: makes hand-uploaded models visible without a restart |
-| `comfy_nodes/modal_proxy_fix` | Custom node: keeps the websocket alive behind Modal's proxy |
-| `tools/` | Console, sync, render, acceptance check, workflow builder |
-| `workflows/` | The default workflows |
+| Path                          | What it is                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `modal_app.py`                | Deploy entry point; imports the two container classes                                |
+| `comfy_modal/config.py`       | Every tunable and the env-var contract with the custom nodes                         |
+| `comfy_modal/catalog.py`      | Models and node packs to install                                                     |
+| `comfy_modal/image.py`        | The container image: ComfyUI, node packs, model downloads                            |
+| `comfy_modal/ui.py`           | The CPU class that serves the GUI                                                    |
+| `comfy_modal/worker.py`       | The GPU class: runs prompts, streams progress and logs back, publishes its heartbeat |
+| `comfy_modal/comfy.py`        | Starts ComfyUI inside a container                                                    |
+| `comfy_nodes/gpu_relay`       | Custom node in the UI container: relays prompts, serves the GPU badge                |
+| `comfy_nodes/access_key`      | Custom node: the login gate                                                          |
+| `comfy_nodes/extra_models`    | Custom node: makes hand-uploaded models visible without a restart                    |
+| `comfy_nodes/modal_proxy_fix` | Custom node: keeps the websocket alive behind Modal's proxy                          |
+| `tools/`                      | Console, sync, render, acceptance check, workflow builder                            |
+| `workflows/`                  | The default workflows                                                                |
 
 ## Costs
 
