@@ -95,8 +95,26 @@ def _login_page(error: str = ""):
     return web.Response(text=_page(error), content_type="text/html")
 
 
+def _is_plain_navigation(request) -> bool:
+    """A person clicking a link to this page: a top-level GET of a document."""
+    return (request.method in ("GET", "HEAD")
+            and request.headers.get("Sec-Fetch-Mode") == "navigate"
+            and request.headers.get("Sec-Fetch-Dest") == "document")
+
+
 @web.middleware
 async def _gate(request, handler):
+    # ComfyUI's own origin_only_middleware (server.py) answers anything carrying
+    # Sec-Fetch-Site: cross-site with an empty 403. That includes every click on the deployment
+    # link from Modal's dashboard, which is how people actually open this, and the empty body
+    # makes it look like the app is broken. A top-level GET navigation cannot change state and
+    # carries no credentials the browser would not send anyway, so relabel that one case before
+    # ComfyUI sees it. Anything else cross-site still gets ComfyUI's 403.
+    if request.headers.get("Sec-Fetch-Site") == "cross-site" and _is_plain_navigation(request):
+        headers = request.headers.copy()
+        headers["Sec-Fetch-Site"] = "same-origin"
+        request = request.clone(headers=headers)
+
     if request.path == LOGIN_PATH:  # the form posts here, so it cannot itself be gated
         if request.method != "POST":
             return web.HTTPFound("/")
@@ -117,7 +135,10 @@ async def _gate(request, handler):
 
 
 if KEY:
-    PromptServer.instance.app.middlewares.append(_gate)
+    # First in the list, so it runs outside ComfyUI's origin_only_middleware: the relabel above
+    # has to happen before that middleware reads the header, and checking the key first is right
+    # anyway. Appending put us after it, which is how the cross-site 403 got through.
+    PromptServer.instance.app.middlewares.insert(0, _gate)
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
