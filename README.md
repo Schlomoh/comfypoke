@@ -13,8 +13,8 @@ stops itself after 5 idle minutes. Models, workflows and output files persist ac
 three Modal volumes.
 
 The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
-to wake it early, keep it warm for a set time, or stop it. Three workflows ship by default:
-Z-Image-Turbo and FLUX.2 klein for text to image, and a SeedVR2 upscale.
+to wake it early, keep it warm for a set time, or stop it. Four workflows ship by default:
+Z-Image-Turbo, FLUX.2 klein and Krea 2 Turbo for text to image, and a SeedVR2 upscale.
 
 ## How it works
 
@@ -89,7 +89,8 @@ it, so it doubles as a way to learn them.
 ### In the GUI
 
 - Press `w` for the workflows. `01` renders with Z-Image-Turbo in about ten seconds once the
-  worker is warm, `02` with FLUX.2 klein, `03` upscales an image with SeedVR2 to the size set in
+  worker is warm, `02` with FLUX.2 klein, `04` with Krea 2 Turbo (12B, 8 steps, the best-looking
+  of the three and the slowest), `03` upscales an image with SeedVR2 to the size set in
   megapixels; upload the image with the node's button before queueing it.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
   close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
@@ -218,4 +219,6 @@ they upload with the same `tools/sync.sh workflows` command. Link to follow.
 MIT. The models have their own licenses. Z-Image-Turbo, FLUX.2 klein 4B and SeedVR2 are
 Apache 2.0. FLUX.2 klein 9B is under Black Forest Labs' own licence and is gated on Hugging
 Face: accept it at huggingface.co/black-forest-labs/FLUX.2-klein-9B and have `HF_TOKEN` set
-when you deploy, or remove those two lines from `comfy_modal/catalog.py`.
+when you deploy, or remove those two lines from `comfy_modal/catalog.py`. Krea 2 Turbo is under
+the Krea 2 Community License (huggingface.co/Comfy-Org/Krea-2), which is not an open-source
+licence: read it before you use its output commercially.
