@@ -5,3 +5,9 @@ __pycache__/
 *.log
 .DS_Store
 tools/*_api.json
+
+# private launch drafts, not part of the public repo
+docs/launch/
+
+# tokens for civitai / hugging face, written by the console
+.env
