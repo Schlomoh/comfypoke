@@ -13,8 +13,8 @@ stops itself after 5 idle minutes. Models, workflows and output files persist ac
 three Modal volumes.
 
 The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
-to wake it early, keep it warm for a set time, or stop it. Four workflows ship by default:
-Z-Image-Turbo, FLUX.2 klein and Krea 2 Turbo for text to image, and a SeedVR2 upscale.
+to wake it early, keep it warm for a set time, or stop it. Five workflows ship by default:
+Z-Image-Turbo, FLUX.2 klein and Krea 2 (Turbo and RAW) for text to image, and a SeedVR2 upscale.
 
 ## How it works
 
@@ -92,6 +92,9 @@ it, so it doubles as a way to learn them.
   worker is warm, `02` with FLUX.2 klein, `04` with Krea 2 Turbo (12B, 8 steps, the best-looking
   of the three and the slowest), `03` upscales an image with SeedVR2 to the size set in
   megapixels; upload the image with the node's button before queueing it.
+- `05` is Krea 2 RAW, the same model undistilled: 52 steps at CFG 3.5 instead of 8 at CFG 1, so a
+  minute or two per image rather than seconds. It takes a real negative prompt, which Turbo cannot,
+  and it is the checkpoint to train a LoRA on. For everyday renders, use `04`.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
   close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
   L40S, that took about 100 seconds cold and 30 seconds when Modal still had the image cached.
