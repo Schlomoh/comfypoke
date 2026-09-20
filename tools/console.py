@@ -12,6 +12,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import webbrowser
 from pathlib import Path
 
@@ -46,7 +47,11 @@ def load_env():
 
 
 def save_env(values: dict):
-    """Rewrite .env with these keys, dropping the ones set to empty. Owner-readable only."""
+    """Rewrite .env with these keys, dropping the ones set to empty.
+
+    Written through a temp file that is owner-only from the moment it exists, then renamed over
+    the target. Writing first and calling chmod after would leave the tokens world-readable for
+    the time in between, and would lose them entirely if the write failed halfway."""
     current = {}
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text().splitlines():
@@ -54,8 +59,13 @@ def save_env(values: dict):
             if key.strip():
                 current[key.strip()] = value.strip()
     current.update(values)
-    ENV_FILE.write_text("".join(f"{k}={v}\n" for k, v in sorted(current.items()) if v))
-    ENV_FILE.chmod(0o600)
+    data = "".join(f"{k}={v}\n" for k, v in sorted(current.items()) if v)
+    fd, tmp = tempfile.mkstemp(dir=str(REPO), prefix=".env.")  # mkstemp creates it 0600
+    try:
+        os.write(fd, data.encode())
+    finally:
+        os.close(fd)
+    os.replace(tmp, ENV_FILE)
 
 
 # ---- plumbing ---------------------------------------------------------------

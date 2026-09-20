@@ -105,7 +105,10 @@ it, so it doubles as a way to learn them.
 - **LoRAs and other models.** `tools/sync.sh civitai <url>` takes the model page URL, the
   Download button's link, or a bare version id; a model page resolves to its newest version. A
   download link is used exactly as pasted, host and all, because its query string chooses which
-  file of the version you get. Interrupted downloads retry and resume.
+  file of the version you get. Interrupted downloads retry and resume. The token is only ever
+  sent to `civitai.com`; a link on any other host is refused until you name it in
+  `CIVITAI_HOSTS` (in `.env`), because `/api/download/models/` in a URL is not proof of who is
+  serving it.
   `tools/sync.sh hf <owner/repo> <file>` and `tools/sync.sh lora <file>` cover Hugging Face and a
   file on disk. Each shows up in the dropdown on the next page load; put a LoraLoaderModelOnly
   node between the model and the sampler to use it. Add a folder as the last argument for other
