@@ -29,6 +29,21 @@ read -r V_MODELS V_DATA V_IO <<< "$(cd "$REPO" && uv run python -c 'from comfy_m
 # A bar on a terminal, quiet when piped: curl's bar writes carriage returns that flood a log.
 if [[ -t 2 ]]; then PROGRESS=(--progress-bar); else PROGRESS=(-sS); fi
 
+# CIVITAI_TOKEN is appended to whatever download URL you paste, so the host has to be one you
+# mean to hand your API key to. A link with /api/download/models/ in it is not proof of who is
+# serving it. civitai.com is trusted by default; add a mirror you use on purpose with
+# CIVITAI_HOSTS=civitai.red (in .env or in front of the command).
+trusted_host() {  # <url>
+  python3 - "$1" "${CIVITAI_HOSTS:-}" <<'PY'
+import sys, urllib.parse
+url, extra = sys.argv[1], sys.argv[2]
+u = urllib.parse.urlparse(url)
+allowed = {"civitai.com"} | {h.strip().lower() for h in extra.replace(" ", ",").split(",") if h.strip()}
+host = (u.hostname or "").lower()
+sys.exit(0 if u.scheme == "https" and any(host == a or host.endswith("." + a) for a in allowed) else 1)
+PY
+}
+
 upload_model() {  # <local file> <models subfolder>
   [[ -f "$1" ]] || { echo "not a file: $1"; exit 1; }
   echo "uploading $(basename "$1") ($(du -h "$1" | cut -f1)) to $2 on $V_MODELS..."
@@ -59,6 +74,12 @@ case "$1" in
     # the other forms, which carry no file choice, are turned into a civitai.com download URL.
     if [[ "$2" == *"/api/download/models/"* ]]; then
       URL="$2"
+      trusted_host "$URL" || {
+        echo "refusing to send CIVITAI_TOKEN to $(python3 -c 'import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).hostname or "?")' "$URL")"
+        echo "only https://civitai.com is trusted with the token by default."
+        echo "if that mirror is one you trust, add it once:  echo CIVITAI_HOSTS=<host> >> .env"
+        exit 1
+      }
       [[ "$URL" == *"token="* ]] || URL+="$([[ "$URL" == *"?"* ]] && echo "&" || echo "?")token=$CIVITAI_TOKEN"
     elif [[ "$2" =~ modelVersionId=([0-9]+) ]]; then URL="https://civitai.com/api/download/models/${BASH_REMATCH[1]}?token=$CIVITAI_TOKEN"
     elif [[ "$2" =~ ^[0-9]+$ ]]; then URL="https://civitai.com/api/download/models/$2?token=$CIVITAI_TOKEN"
