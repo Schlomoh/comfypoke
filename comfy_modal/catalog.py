@@ -40,12 +40,16 @@ MODELS = [
     # --- Krea 2 Turbo: 12B aesthetic-first text to image, 8 steps (Krea 2 Community License), workflow 04 ---
     # Not gated, so it needs no token. The licence is Krea's own, not Apache: read
     # huggingface.co/Comfy-Org/Krea-2/blob/main/LICENSE.pdf before you sell anything made with it.
-    # Turbo is the distilled checkpoint you generate with; RAW is the undistilled one for training
-    # LoRAs (krea2_raw_bf16.safetensors, 52 steps, CFG 3.5), and Krea's advice is to train on RAW
-    # and run the LoRA on Turbo. bf16 here for the same reason as klein 9B: volume storage is free
+    # Turbo is the distilled checkpoint, 8 steps at CFG 1; RAW is the same model undistilled, 52
+    # steps at CFG 3.5, which is roughly a hundred times the sampling work per image. Krea's own
+    # advice is to train LoRAs on RAW and run them on Turbo, so Turbo is workflow 04. RAW is here
+    # as workflow 05 because distillation bakes in a look and takes the negative prompt away with
+    # it: at CFG 1 there is nothing for a negative prompt to push against. Reach for RAW when
+    # Turbo keeps giving you the same answer. bf16 here for the same reason as klein 9B: storage is free
     # up to 1 TiB and the model plus its encoder is 35 GB, inside an L40S's 48 GB. For half that,
     # swap in krea2_turbo_fp8_scaled.safetensors (13.1 GB) and qwen3vl_4b_fp8_scaled.safetensors (5.2 GB).
     Model("Comfy-Org/Krea-2", "diffusion_models/krea2_turbo_bf16.safetensors", "diffusion_models"),
+    Model("Comfy-Org/Krea-2", "diffusion_models/krea2_raw_bf16.safetensors", "diffusion_models"),  # workflow 05
     Model("Comfy-Org/Krea-2", "text_encoders/qwen3vl_4b_bf16.safetensors", "text_encoders"),
     Model("Comfy-Org/Krea-2", "vae/qwen_image_vae.safetensors", "vae"),
     # The ten style LoRAs (krea2_darkbrush, krea2_retroanime, ...) are 470 MB each and are not
