@@ -1,5 +1,8 @@
 """Container image: ComfyUI via comfy-cli, node packs, model symlinks, our custom nodes.
 Build pattern after caru-ini/modal-comfyui."""
+import os
+from pathlib import Path
+
 import modal
 
 from . import config, volumes
@@ -24,14 +27,39 @@ def download_models(models: list, comfy_dir: str, cache_dir: str):
         print(f"{repo}/{file} -> {dst}")
 
 
+def local_hf_token() -> str:
+    """HF_TOKEN as the rest of the tools see it: the environment first, then .env, which is
+    where the console's Tokens menu puts it. Only read on this Mac, at deploy time."""
+    if not modal.is_local():
+        return ""
+    if os.environ.get("HF_TOKEN"):
+        return os.environ["HF_TOKEN"].strip()
+    env_file = Path(__file__).resolve().parents[1] / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "HF_TOKEN":
+                return value.strip()
+    return ""
+
+
 def hf_secrets() -> list:
-    """Only gated repos need a token: `modal secret create huggingface-secret HF_TOKEN=hf_...`."""
+    """Only gated repos need a token, and the models in catalog.py download inside the image
+    build, in a container that cannot see this Mac's environment. So whatever token you already
+    have has to be shipped to that container.
+
+    HF_TOKEN in your shell or in .env is enough, the same one `tools/sync.sh hf` uses; it is
+    read here at deploy time and sent as a Secret, the way .access_key already is. A Modal
+    secret named huggingface-secret still works and wins, for a token you would rather not keep
+    in a shell."""
     try:
         s = modal.Secret.from_name(config.HF_SECRET_NAME)
         s.hydrate()
         return [s]
     except modal.exception.NotFoundError:
-        return []
+        pass
+    token = local_hf_token()
+    return [modal.Secret.from_dict({"HF_TOKEN": token})] if token else []
 
 
 image = (
