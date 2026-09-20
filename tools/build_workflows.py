@@ -5,6 +5,7 @@
 01  Z-Image-Turbo text to image: 8 steps, CFG 1.
 02  FLUX.2 klein 4B text to image: 4 steps, CFG 1.
 03  Upscale with SeedVR2 7B: one step, size set in megapixels, color matched to the source.
+04  Krea 2 Turbo text to image: 8 steps, CFG 1.
 
 Workflows are plain graphs, one node per step, so they read well in the GUI and in a diff. Edit the
 functions below (or copy one) to make your own; `Graph.add` wires a node, `Graph.write` dumps the
@@ -64,6 +65,22 @@ def build_klein(seed: int):
     write(g, "02-flux2-klein", [("Model", [20, 10, 360, 1000], "#3f789e"), ("Prompt, size", [400, 10, 360, 1000], "#8A8"), ("Sample", [780, 10, 380, 1000], "#b58b2a")])
 
 
+def build_krea2(seed: int):
+    g = Graph()
+    add = g.add
+    unet = add("UNETLoader", ["krea2_turbo_bf16.safetensors", "default"], (40, 60), "Krea 2 Turbo 12B (distilled)")
+    clip = add("CLIPLoader", ["qwen3vl_4b_bf16.safetensors", "krea2", "default"], (40, 180), "Text encoder (Qwen3-VL 4B, krea2)")
+    vae = add("VAELoader", ["qwen_image_vae.safetensors"], (40, 300), "Qwen-Image VAE")
+    pos = add("CLIPTextEncode", [PROMPT], (420, 60), "Prompt", GREEN, clip=(clip, 0))
+    neg = add("ConditioningZeroOut", [], (420, 330), "Negative (zeroed, CFG 1)", RED, conditioning=(pos, 0))
+    latent = add("EmptyLatentImage", [1024, 1024, 1], (420, 430), "Size: Krea 2 is trained up to 1K", YELLOW)
+    ks = add("KSampler", [seed, "randomize", 8, 1.0, "euler", "simple", 1.0], (800, 60), "Turbo: 8 steps, CFG 1",
+             model=(unet, 0), positive=(pos, 0), negative=(neg, 0), latent_image=(latent, 0))
+    dec = add("VAEDecode", [], (800, 420), samples=(ks, 0), vae=(vae, 0))
+    add("SaveImage", ["krea2/render"], (800, 520), "Save", BLUE, images=(dec, 0))
+    write(g, "04-krea2-turbo", [("Model", [20, 10, 360, 900], "#3f789e"), ("Prompt, size", [400, 10, 360, 900], "#8A8"), ("Sample", [780, 10, 380, 900], "#b58b2a")])
+
+
 def build_upscale(image_file: str, megapixels: float, seed: int):
     g = Graph()
     add = g.add
@@ -83,4 +100,5 @@ def build_upscale(image_file: str, megapixels: float, seed: int):
 
 build_zimage(seed=1)
 build_klein(seed=1)
+build_krea2(seed=1)
 build_upscale("example.png", megapixels=4.0, seed=1)
