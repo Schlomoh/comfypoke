@@ -97,7 +97,7 @@ case "$1" in
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     # Download to a fixed name so --retry can resume with -C - after a reset mid-transfer;
     # the real filename comes from the Content-Disposition header curl saves alongside it.
-    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 --retry-all-errors -C - \
+    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
       -D "$STAGE/.headers" -o "$STAGE/.download" "$URL" ||
       { echo "download failed; re-running is safe"; exit 1; }
     NAME=$(sed -nE 's/.*[Ff]ilename="?([^";]+)"?.*/\1/p' "$STAGE/.headers" | tail -1 | tr -d '\r')
@@ -109,7 +109,7 @@ case "$1" in
     [[ -n "$3" ]] || { echo "usage: tools/sync.sh hf <owner/repo> <path/in/repo.safetensors> [folder]"; exit 1; }
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     AUTH=(); [[ -n "$HF_TOKEN" ]] && AUTH=(-H "Authorization: Bearer $HF_TOKEN")
-    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 --retry-all-errors -C - \
+    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
       "${AUTH[@]}" -o "$STAGE/$(basename "$3")" "https://huggingface.co/$2/resolve/main/$3" ||
       { echo "download failed; re-running is safe"; exit 1; }
     upload_model "$STAGE/$(basename "$3")" "${4:-loras}"
