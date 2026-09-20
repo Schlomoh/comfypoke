@@ -42,7 +42,7 @@ You need Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), and a Modal acc
 uv sync                       # local tools only; the app runs on Modal
 uv tool install modal && modal setup
 python3 -c "import secrets; print(secrets.token_urlsafe(24))" > .access_key
-modal deploy modal_app.py     # the first run downloads about 45 GB of models to a volume
+modal deploy modal_app.py     # the first run downloads about 80 GB of models to a volume
 tools/sync.sh workflows       # upload the workflows in workflows/
 ```
 
@@ -101,7 +101,9 @@ it, so it doubles as a way to learn them.
 - **Tokens.** Civitai downloads need `CIVITAI_TOKEN` (an API key from civitai.com/user/account);
   Hugging Face needs `HF_TOKEN` only for gated repos. The console's Tokens menu writes them to
   `.env`, which is git-ignored and which `tools/sync.sh` reads, so you set them once. A real
-  environment variable still wins over the file.
+  environment variable still wins over the file. `modal deploy` reads `HF_TOKEN` the same way
+  and ships it to the image build, so a gated model in `comfy_modal/catalog.py` needs nothing
+  else; a Modal secret named `huggingface-secret` also works and takes precedence.
 - **LoRAs and other models.** `tools/sync.sh civitai <url>` takes the model page URL, the
   Download button's link, or a bare version id; a model page resolves to its newest version. A
   download link is used exactly as pasted, host and all, because its query string chooses which
@@ -183,7 +185,7 @@ compute only:
 A cold boot costs its 100 seconds like any other GPU time, about five cents.
 
 Storage for the models is free in practice: Modal's volume pricing includes 1 TiB per month at
-no charge, and the three default models are about 45 GB. Modal's Starter plan is also $0 per
+no charge, and the default models are about 80 GB. Modal's Starter plan is also $0 per
 month with $30 of compute included, so the occasional-use row above sits inside the free tier.
 Check [modal.com/pricing](https://modal.com/pricing) for current rates.
 
@@ -213,4 +215,7 @@ they upload with the same `tools/sync.sh workflows` command. Link to follow.
 
 ## License
 
-MIT. The models have their own licenses; the three included here are Apache 2.0.
+MIT. The models have their own licenses. Z-Image-Turbo, FLUX.2 klein 4B and SeedVR2 are
+Apache 2.0. FLUX.2 klein 9B is under Black Forest Labs' own licence and is gated on Hugging
+Face: accept it at huggingface.co/black-forest-labs/FLUX.2-klein-9B and have `HF_TOKEN` set
+when you deploy, or remove those two lines from `comfy_modal/catalog.py`.
