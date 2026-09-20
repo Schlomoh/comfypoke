@@ -8,6 +8,8 @@ import modal
 from . import config, volumes
 from .catalog import MODELS, NODE_PACKS
 
+COMFY_VERSION = "0.37.0"
+
 
 def download_models(models: list, comfy_dir: str, cache_dir: str):
     """Runs inside the image build. Self-contained on purpose: Modal ships this
@@ -16,15 +18,30 @@ def download_models(models: list, comfy_dir: str, cache_dir: str):
     from pathlib import Path
 
     from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 
+    skipped = []
     for repo, file, folder, name in models:
-        src = hf_hub_download(repo, file, cache_dir=cache_dir, token=os.environ.get("HF_TOKEN"))
+        try:
+            src = hf_hub_download(repo, file, cache_dir=cache_dir, token=os.environ.get("HF_TOKEN"))
+        except (GatedRepoError, RepositoryNotFoundError):
+            # One model you have not been granted must not cost everyone else their deploy: the
+            # others still install and this one is simply missing from the dropdowns. Accept the
+            # licence on the repo page, put HF_TOKEN in your environment or .env, deploy again.
+            # RepositoryNotFoundError too: a gated repo asked for without a token answers 401 and
+            # Hugging Face reports it as "not found" rather than admit the repo exists.
+            print(f"SKIPPED (no access with this HF_TOKEN, gated or private): {repo}/{file}")
+            skipped.append(f"{repo}/{file}")
+            continue
         dst = Path(comfy_dir, "models", folder, name or Path(file).name)
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.is_symlink() or dst.exists():
             dst.unlink()
         dst.symlink_to(src)
         print(f"{repo}/{file} -> {dst}")
+
+    if skipped:
+        print("\nnot installed, no access: " + ", ".join(skipped))
 
 
 def local_hf_token() -> str:
@@ -66,7 +83,11 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "libgl1", "libglib2.0-0")
     .uv_pip_install("comfy-cli", "huggingface_hub[hf_transfer]")
-    .run_commands("comfy --skip-prompt install --nvidia")
+    # Pinned on purpose. Without a version comfy-cli installs the latest master commit, and this
+    # layer is then cached forever: adding a model to catalog.py rebuilds the layer below it, so a
+    # model needing newer ComfyUI code fails against a months-old checkout. Bump this number to
+    # update ComfyUI, which is also what makes the rebuild happen. Krea 2 needs 0.26 or newer.
+    .run_commands(f"comfy --skip-prompt install --nvidia --version {COMFY_VERSION}")
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})
     .run_function(
         download_models,
