@@ -25,6 +25,7 @@ def read_access_key() -> str:
     secrets=[modal.Secret.from_dict(config.container_env(COMFY_RELAY="1", COMFY_ACCESS_KEY=read_access_key(), COMFY_DATA_VOLUME=config.VOLUME_DATA))],
     scaledown_window=config.UI_IDLE_SECONDS,
     enable_memory_snapshot=True,
+    nonpreemptible=config.UI_NONPREEMPTIBLE,
 )
 @modal.concurrent(max_inputs=50)
 class UI:
@@ -42,7 +43,12 @@ class UI:
             shutil.rmtree(local)
         local.parent.mkdir(parents=True, exist_ok=True)
         local.symlink_to(shared)
-        comfy.launch(config.UI_PORT, extra_args=("--cpu",))
+        # --enable-compress-response-body covers JSON and text/plain, which is where /object_info
+        # lives: 1.86 MB of it, fetched on every page load, and 210 KB once deflated. It does not
+        # touch the .js and .css bundle, which is served as a FileResponse; caching that is
+        # comfy_nodes/modal_proxy_fix's job. Off by default upstream because on localhost the
+        # round trip is free and the CPU is not.
+        comfy.launch(config.UI_PORT, extra_args=("--cpu", "--enable-compress-response-body"))
 
     @modal.enter(snap=False)
     def restored(self):
