@@ -112,6 +112,10 @@ it, so it doubles as a way to learn them.
   edited at 1024 and stitched back, and LanPaint runs a few extra passes inside each step so the
   new clothing and the body around it agree. `LanPaint_NumSteps` is the first dial to touch: more
   passes, better continuity, one full extra pass of cost each.
+- `10` is `09` with the body held in place: SAM 3D Body draws a skeleton and a pose LoRA makes
+  Krea 2 follow it. Worth it when the clothing keeps changing the pose underneath. Two unproven
+  parts, so `09` stays as the one that works: the LoRA was trained on Turbo and `10` runs it on
+  RAW, and nobody has put a pose LoRA and LanPaint together before.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
   close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
   L40S, that took about 100 seconds cold and 30 seconds when Modal still had the image cached.
