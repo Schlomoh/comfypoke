@@ -25,7 +25,6 @@ def read_access_key() -> str:
     secrets=[modal.Secret.from_dict(config.container_env(COMFY_RELAY="1", COMFY_ACCESS_KEY=read_access_key(), COMFY_DATA_VOLUME=config.VOLUME_DATA))],
     scaledown_window=config.UI_IDLE_SECONDS,
     enable_memory_snapshot=True,
-    nonpreemptible=config.UI_NONPREEMPTIBLE,
 )
 @modal.concurrent(max_inputs=50)
 class UI:

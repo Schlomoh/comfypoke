@@ -56,6 +56,24 @@ MODELS = [
     # pulled by default: tools/sync.sh hf Comfy-Org/Krea-2 loras/krea2_darkbrush.safetensors
     # puts one in the dropdown without rebuilding the image. Each has a trigger word, listed at
     # docs.comfy.org/tutorials/image/krea/krea-2.
+    # --- Masking and structure, used by workflows 07, 08 and 09 ---
+    # These were installed by hand through the Manager once and did not survive the next cold
+    # start, because the container is rebuilt from this image every time. Listed here they stay.
+    # SAM 3.1 segments by text ("clothing"). Comfy-Org's repackaging is not gated; facebook/sam3
+    # needs manual approval. It is a full checkpoint, so CheckpointLoaderSimple loads it and its
+    # CLIP encodes the thing to find.
+    Model("Comfy-Org/sam3.1", "checkpoints/sam3.1_multiplex_fp16.safetensors", "checkpoints"),
+    # RT-DETR finds the person, and its box is what makes SAM 3D Body pick the right one.
+    Model("Comfy-Org/RT-DETR", "diffusion_models/rt_detr_v4-x-hgnet_fp16.safetensors", "diffusion_models"),
+    # SAM 3D Body fits a body mesh, which renders to a depth map the controlnet can hold a pose to.
+    Model("Comfy-Org/sam-3d-body", "detection/sam_3d_body_dinov3_bf16.safetensors", "detection"),
+    # Z-Image's Fun Controlnet, union 2.1: inpaint plus canny, depth and pose in one patch. The
+    # inpaint mode is what lets workflow 08 denoise fully instead of creeping up from 0.6, because
+    # the model is handed the pixels around the mask instead of guessing at them. Krea 2 has no
+    # equivalent, which is why workflow 09 uses the LanPaint sampler for the same job.
+    # There is a 2.02 GB "lite" build in the same repo if 6.7 GB is not worth it to you.
+    Model("alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
+          "Z-Image-Turbo-Fun-Controlnet-Union-2.1-2602-8steps.safetensors", "model_patches"),
     # --- SeedVR2 7B: one-step restoration upscaler (Apache 2.0), workflow 03 ---
     Model("Comfy-Org/SeedVR2", "diffusion_models/seedvr2_7b_fp16.safetensors", "diffusion_models"),
     Model("Comfy-Org/SeedVR2", "vae/seedvr2_ema_vae_fp16.safetensors", "vae"),
@@ -63,4 +81,14 @@ MODELS = [
 
 # Custom node packs by registry id (https://registry.comfy.org). The default workflows use only nodes that
 # ship with the pinned ComfyUI (COMFY_VERSION in comfy_modal/image.py).
-NODE_PACKS = []
+# LanPaint: a drop-in replacement for KSampler that inpaints well without an inpainting
+# checkpoint. A plain noise mask re-noises the unmasked pixels to the current sigma every step,
+# so during the early steps, the ones that decide the composition, the "context" is nearly pure
+# noise. LanPaint runs a few Langevin iterations inside each step so the masked and unmasked
+# regions settle against each other instead. Training-free, no model files, and its README lists
+# Krea 2 among the architectures it handles. registry.comfy.org/publishers/scraed/nodes/LanPaint
+# Crop and stitch: cut a context-padded box around the mask, edit that at the model's own
+# resolution, blend it back. Without it a 200 px jacket in a 2K photo only ever gets 200 px of the
+# model's attention. Installing it from the GUI does not stick, because the container is rebuilt
+# from this image every cold start; listed here it is part of the image.
+NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch"]

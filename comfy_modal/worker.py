@@ -33,6 +33,7 @@ def _error(pid, text, kind):
     volumes={config.CACHE_DIR: volumes.models, config.IO_DIR: volumes.io},
     secrets=[modal.Secret.from_dict(config.container_env())],
     scaledown_window=config.WORKER_IDLE_SECONDS,
+    timeout=config.WORKER_CALL_TIMEOUT,
     # No memory/GPU snapshot: the detached ComfyUI process did not survive
     # checkpoint/restore reliably. A plain boot costs ~30 s once per session.
 )
@@ -46,7 +47,12 @@ class Worker:
         self.last_input = self.since
         self._beat("starting")
         threading.Thread(target=self._heartbeat, daemon=True).start()
-        comfy.launch(config.WORKER_PORT)
+        # ComfyUI defaults --preview-method to none, which is why a render showed nothing until it
+        # was finished. "auto" resolves to Latent2RGB: a rough colour read straight off the latent,
+        # no model to download. Not TAESD: for Krea 2 that path wants lighttaew2_1 in vae_approx,
+        # and with that file present it writes into the latent it is only supposed to read, so the
+        # picture itself comes out wrong (Comfy-Org/ComfyUI#13366, fix open in #13383, not in 0.37).
+        comfy.launch(config.WORKER_PORT, extra_args=("--preview-method", "auto"))
         self.log = open(comfy.log_file(config.WORKER_PORT))
         self.log.seek(0, 2)
         self.log_owner = None  # prompt_id of the one run that tails the log (overlapping runs would duplicate lines)

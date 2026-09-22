@@ -24,21 +24,18 @@ UI_PORT = 8000
 WORKER_IDLE_SECONDS = 300
 UI_IDLE_SECONDS = 600
 
-# Modal preempts containers whenever it needs the capacity. The GPU worker can take it: Modal
-# restarts a preempted call on the same input, so a render resumes by itself. The GUI cannot, and
-# it is the container a person is actually looking at: a preemption drops the websocket, the page
-# hangs on its spinner and the deployment looks broken. Non-preemptible costs 3x the CPU and
-# memory list price: this container's 2 cores and 4 GiB go from about 13 to 38 cents an hour, and
-# only while the GUI is awake. Modal does not offer it for GPU functions, so the worker stays
-# preemptible either way, which is fine because its work is retried. MODAL_PREEMPTIBLE_UI=1
-# turns it off.
-UI_NONPREEMPTIBLE = os.getenv("MODAL_PREEMPTIBLE_UI", "") not in ("1", "true", "yes")
-
 # A render sends progress every step, but a one-step model (SeedVR2 7B, 16 GB)
 # sends nothing between "executing" and its result: loading it from the volume
 # cold plus a 4 MP pass took over 300 s. This long without any message means
 # the worker is wedged: the relay interrupts the prompt and reports an error.
 WORKER_TIMEOUT_SECONDS = 900
+
+# Modal's own ceiling on one Worker call, which is a different thing from the watchdog above: the
+# watchdog fires on silence, and a render that streams progress every step is never silent, so
+# this is what actually ends a long job. It defaults to 300 s, which a 52-step render at any real
+# resolution walks straight past, and the failure reads as FunctionTimeoutError rather than as
+# anything to do with the picture. An hour is past the point where you would want it to stop.
+WORKER_CALL_TIMEOUT = 3600
 
 # Shown in the GUI's GPU badge as a session cost estimate: L40S list price on modal.com/pricing (edit if it changes).
 GPU_RATE_PER_HOUR = 1.95

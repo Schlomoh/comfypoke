@@ -9,6 +9,7 @@ prints the command it runs, streams the output and returns to the menu.
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -70,14 +71,41 @@ def save_env(values: dict):
 
 # ---- plumbing ---------------------------------------------------------------
 
-def run(cmd: list[str], timeout: float | None = None) -> int:
-    """Print the command, stream its output, return the exit code."""
+# tqdm draws its bar by overwriting one line with a carriage return. Modal relays a build's
+# output as whole lines instead, so the same bar arrives as hundreds of them and a deploy buries
+# the console. Same bar, put back on one line.
+PROGRESS_BAR = re.compile(r"^\s*\d+(\.\d+)?%\|")
+
+
+def run(cmd: list[str], timeout: float | None = None, collapse_progress: bool = False) -> int:
+    """Print the command, stream its output, return the exit code.
+
+    collapse_progress pipes the output so relayed tqdm bars can be redrawn in place. It is off by
+    default because piping also takes the child's terminal away, and the ones that show a download
+    (tools/sync.sh) go quiet when they cannot see one."""
     out.print(f"[bold cyan]$ {shlex.join(cmd)}[/]")
-    try:
-        code = subprocess.run(cmd, cwd=REPO, timeout=timeout).returncode
-    except subprocess.TimeoutExpired:
-        out.print(f"[dim]stopped after {timeout:.0f} s[/]")
-        return 0
+    if not collapse_progress:
+        try:
+            code = subprocess.run(cmd, cwd=REPO, timeout=timeout).returncode
+        except subprocess.TimeoutExpired:
+            out.print(f"[dim]stopped after {timeout:.0f} s[/]")
+            return 0
+    else:
+        proc = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        drawing = False
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if PROGRESS_BAR.match(line):
+                print(f"\r\x1b[2K{line}", end="", flush=True)
+                drawing = True
+                continue
+            if drawing:
+                print()
+                drawing = False
+            print(line, flush=True)
+        if drawing:
+            print()
+        code = proc.wait()
     if code:
         out.print(f"[red]exit {code}[/]")
     return code
@@ -177,7 +205,7 @@ def stop():
 
 
 def deploy():
-    if run([MODAL, "deploy", "modal_app.py"]) != 0:
+    if run([MODAL, "deploy", "modal_app.py"], collapse_progress=True) != 0:
         return
     if ask(questionary.confirm("Run the acceptance check now (stops stale containers, about a minute, costs cents)?", default=True)):
         check()
