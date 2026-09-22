@@ -74,6 +74,13 @@ MODELS = [
     # There is a 2.02 GB "lite" build in the same repo if 6.7 GB is not worth it to you.
     Model("alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
           "Z-Image-Turbo-Fun-Controlnet-Union-2.1-2602-8steps.safetensors", "model_patches"),
+    # --- Krea 2 pose control (Apache 2.0), workflow 10 ---
+    # An OpenPose control LoRA: hand it a skeleton map and the body follows it while the prompt
+    # decides the clothes. It loads with the stock LoraLoaderModelOnly, but the conditioning has
+    # to go through ostris' encoder (NODE_PACKS below), which is what feeds the map to Qwen3-VL.
+    # Trained on Krea 2 Turbo. Workflow 10 runs it on RAW anyway, which is the thing to suspect
+    # first if the pose does not take; krea2_turbo_bf16 at 8 steps and CFG 1 is the trained case.
+    Model("thedeoxen/Krea-2-pose-controlnet", "krea2_turbo_openpose_controlnet.safetensors", "loras"),
     # --- SeedVR2 7B: one-step restoration upscaler (Apache 2.0), workflow 03 ---
     Model("Comfy-Org/SeedVR2", "diffusion_models/seedvr2_7b_fp16.safetensors", "diffusion_models"),
     Model("Comfy-Org/SeedVR2", "vae/seedvr2_ema_vae_fp16.safetensors", "vae"),
@@ -91,4 +98,4 @@ MODELS = [
 # resolution, blend it back. Without it a 200 px jacket in a 2K photo only ever gets 200 px of the
 # model's attention. Installing it from the GUI does not stick, because the container is rebuilt
 # from this image every cold start; listed here it is part of the image.
-NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch"]
+NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit"]

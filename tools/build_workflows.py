@@ -11,6 +11,7 @@
     see the note on build_krea2_reference.
 07  Krea 2 masked edit: name what to change ("her jacket") and SAM 3.1 makes the mask.
 09  Krea 2 outfit swap: 08's shape, on Krea 2. SAM mask, crop to the mask, LanPaint, stitch back.
+10  Same as 09 with the body pinned: SAM 3D Body draws the skeleton, a pose LoRA makes Krea 2 hold it.
 
 Workflows are plain graphs, one node per step, so they read well in the GUI and in a diff. Edit the
 functions below (or copy one) to make your own; `Graph.add` wires a node, `Graph.write` dumps the
@@ -243,6 +244,66 @@ def build_krea2_outfit(image_file: str, target: str, outfit: str, seed: int):
     write(g, "09-krea2-outfit-swap", [("Mask and crop", [20, 10, 360, 1560], "#b58b2a"), ("Model and prompt", [400, 10, 360, 1240], "#3f789e"), ("Sample and stitch", [780, 10, 380, 900], "#8A8")])
 
 
+def build_krea2_outfit_posed(image_file: str, target: str, outfit: str, seed: int):
+    """09 with the body held in place, which is the branch 08 has and 09 was missing.
+
+    08 pins the body by rendering a mesh from SAM 3D Body and feeding it to Z-Image's Fun
+    Controlnet. Krea 2 needs two different pieces for the same idea. SAM3DBody_Render has an
+    openpose_2d style that draws a DWPose-looking skeleton instead of a mesh, and the pose LoRA in
+    catalog.py teaches Krea 2 to read one. The skeleton goes in through ostris' encoder rather
+    than a controlnet node: it rides with the prompt into Qwen3-VL as a reference image.
+
+    The skeleton is cropped by the same InpaintCropImproved settings as the picture, so the two
+    line up pixel for pixel. That is what 08 does with its second crop node and it is not optional:
+    a pose map at a different scale than the latent pins the wrong body.
+
+    Two things here are unproven and worth knowing before you read the output as a verdict on the
+    idea. The LoRA was trained on Krea 2 Turbo and this runs it on RAW, so if the pose does not
+    take, try krea2_turbo_bf16 at 8 steps and CFG 1 first. And nobody has put a pose LoRA and
+    LanPaint together: one steers the model, the other the sampler, and they should not fight, but
+    should is not the same as does. 09 stays as it is so there is always one that works.
+    """
+    g = Graph()
+    add = g.add
+    img = add("LoadImage", [image_file, "image"], (40, 60), "Your image; paint extra mask in the MaskEditor if SAM misses something", YELLOW)
+    sam = add("CheckpointLoaderSimple", ["sam3.1_multiplex_fp16.safetensors"], (40, 320), "SAM 3.1 (segments by text)")
+    what = add("CLIPTextEncode", [target], (40, 440), f"What to mask automatically ('{target}')", GREEN, clip=(sam, 1))
+    det = add("SAM3_Detect", [0.5, 2, False], (40, 620), "Mask every match above the threshold", model=(sam, 0), image=(img, 0), conditioning=(what, 0))
+    grow = add("GrowMask", [12, True], (40, 800), "Grow past the edge so the old fabric is fully covered", mask=(det, 0))
+    both = add("MaskComposite", [0, 0, "add"], (40, 920), "Automatic mask plus whatever you painted", destination=(grow, 0), source=(img, 1))
+    crop = add("InpaintCropImproved", CROP_SETTINGS, (40, 1080), "Crop around the mask at 1024, context factor 1.5, 32 px blend", YELLOW, image=(img, 0), mask=(both, 0))
+    add("PreviewImage", [], (40, 1320), "The crop the sampler works on", images=(crop, 1))
+
+    rt = add("UNETLoader", ["rt_detr_v4-x-hgnet_fp16.safetensors", "default"], (420, 60), "RT-DETR (person boxes)")
+    box = add("RTDETR_detect", [0.5, "person", 1], (420, 180), "The person's box, so the body fit picks the right one", model=(rt, 0), image=(img, 0))
+    body = add("SAM3DBody_Loader", ["sam_3d_body_dinov3_bf16.safetensors"], (420, 340), "SAM 3D Body")
+    fit = add("SAM3DBody_Predict", [True, 0.0, 64], (420, 460), "Fit a body to the whole image", sam3d_body_model=(body, 0), image=(img, 0), bboxes=(box, 0))
+    pose = add("SAM3DBody_Render", [0, 0, "openpose_2d", 4, 4, 0.6, "disabled", "disabled", 0.6], (420, 620),
+               "Skeleton at full size; hands and face off, the outfit does not need them", pose_data=(fit, 0))
+    posecrop = add("InpaintCropImproved", CROP_SETTINGS, (420, 820), "The same crop on the skeleton, so it lines up with the latent", YELLOW, image=(pose, 0), mask=(both, 0))
+    add("PreviewImage", [], (420, 1060), "The pose the model is given", images=(posecrop, 1))
+
+    unet = add("UNETLoader", ["krea2_raw_bf16.safetensors", "default"], (800, 60), "Krea 2 RAW")
+    lora = add("LoraLoaderModelOnly", ["krea2_turbo_openpose_controlnet.safetensors", 1.0], (800, 180), "Pose LoRA (trained on Turbo, running on RAW)", RED, model=(unet, 0))
+    patch = add("Krea2OstrisEditModelPatch", [False], (800, 300), "Lets the model read the reference; kv_cache off, this is a plain edit LoRA", model=(lora, 0))
+    clip = add("CLIPLoader", ["qwen3vl_4b_bf16.safetensors", "krea2", "default"], (800, 420), "Text encoder (Qwen3-VL 4B, krea2)")
+    vae = add("VAELoader", ["qwen_image_vae.safetensors"], (800, 540), "Qwen-Image VAE")
+    pos = add("TextEncodeKrea2OstrisEdit", [outfit], (800, 640), "The outfit, with the skeleton as its reference", GREEN, clip=(clip, 0), vae=(vae, 0), image1=(posecrop, 1))
+    neg = add("TextEncodeKrea2OstrisEdit", ["blurry, low quality, distorted, deformed, text, watermark"], (800, 900), "Negative, no reference", RED, clip=(clip, 0))
+    enc = add("VAEEncode", [], (800, 1120), pixels=(crop, 1), vae=(vae, 0))
+    masked = add("SetLatentNoiseMask", [], (800, 1240), "Noise only inside the mask", YELLOW, samples=(enc, 0), mask=(crop, 2))
+
+    ks = add("LanPaint_KSampler",
+             [seed, "fixed", 24, 3.5, "euler", "simple", 1.0, 3, "Image First", "LanPaint KSampler.", "\U0001f5bc\ufe0f Image Inpainting"],
+             (1180, 60), "LanPaint keeps the new clothing agreeing with the body around it",
+             model=(patch, 0), positive=(pos, 0), negative=(neg, 0), latent_image=(masked, 0))
+    dec = add("VAEDecode", [], (1180, 420), samples=(ks, 0), vae=(vae, 0))
+    st = add("InpaintStitchImproved", [], (1180, 540), "Blend it back into the original", stitcher=(crop, 0), inpainted_image=(dec, 0))
+    add("SaveImage", ["krea2-outfit-posed/result"], (1180, 660), "Save", BLUE, images=(st, 0))
+    write(g, "10-krea2-outfit-swap-posed", [("Mask and crop", [20, 10, 360, 1420], "#b58b2a"), ("Body", [400, 10, 360, 1200], "#8A8"),
+                                            ("Model and prompt", [780, 10, 360, 1400], "#3f789e"), ("Sample and stitch", [1160, 10, 380, 780], "#653")])
+
+
 def build_upscale(image_file: str, megapixels: float, seed: int):
     g = Graph()
     add = g.add
@@ -267,4 +328,5 @@ build_krea2_raw(seed=1)
 build_krea2_reference("example.png", seed=1)
 build_krea2_edit("example.png", target="jacket", megapixels=1.0, denoise=0.6, seed=1)
 build_krea2_outfit("example.png", target="clothing", outfit="a red hooded sweatshirt and black denim shorts", seed=20260912)
+build_krea2_outfit_posed("example.png", target="clothing", outfit="a red hooded sweatshirt and black denim shorts", seed=20260912)
 build_upscale("example.png", megapixels=4.0, seed=1)
