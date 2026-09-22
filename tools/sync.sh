@@ -7,6 +7,7 @@
 #   tools/sync.sh hf <repo> <path-in-repo> [folder]   download from Hugging Face (HF_TOKEN for gated repos), then upload
 #   tools/sync.sh workflows         upload workflows/ to the UI's saved workflows; numbered ones (NN-*.json) no
 #                                   longer in workflows/ are removed there, workflows you saved in the GUI are kept
+#   tools/sync.sh workflows-save [message]   commit and push workflows/private/ (your own git checkout, private repo)
 #   tools/sync.sh clear             pull, then delete every render (output/), preview (temp/) and upload (input/,
 #                                   except KEEP_INPUTS in tools/pull.py) from the volume; resets $SYNC_DIR/output/.pulled
 #   tools/sync.sh ls [vol] [path]   list files on a volume (io, models or data; default io)
@@ -117,8 +118,21 @@ case "$1" in
   ls|cp|mv|rm)
     (cd "$REPO" && uv run tools/files.py "$@")
     ;;
+  workflows-save)
+    PRIV="$REPO/workflows/private"
+    [[ -d "$PRIV/.git" ]] || { echo "no git checkout at workflows/private (see the README's Private workflows section)"; exit 1; }
+    git -C "$PRIV" add -A
+    git -C "$PRIV" diff --cached --quiet && { echo "nothing to save"; exit 0; }
+    git -C "$PRIV" commit -m "${2:-workflow work}"
+    git -C "$PRIV" push
+    ;;
   workflows)
-    $MODAL volume put --force "$V_DATA" "$REPO/workflows" user/default/workflows
+    # Staged first, because workflows/private is its own git checkout and `modal volume put`
+    # takes a directory whole: without this its .git would be uploaded object by object.
+    STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
+    (cd "$REPO/workflows" && find . -name .git -prune -o -type f -print0 |
+      while IFS= read -r -d "" f; do mkdir -p "$STAGE/$(dirname "$f")"; cp "$f" "$STAGE/$f"; done)
+    $MODAL volume put --force "$V_DATA" "$STAGE" user/default/workflows
     $MODAL volume ls "$V_DATA" user/default/workflows --json | python3 -c 'import json,sys,os; [print(os.path.basename(e["filename"])) for e in json.load(sys.stdin)]' |
       grep -E '^[0-9]{2}[a-z]?-.*\.json$' | while read -r f; do
         [[ -f "$REPO/workflows/$f" ]] || { echo "removing $f"; $MODAL volume rm "$V_DATA" "user/default/workflows/$f"; }
@@ -128,6 +142,6 @@ case "$1" in
     [[ -d "$SYNC_DIR" ]] || { echo "sync folder not found: $SYNC_DIR; clearing without a pull would lose renders"; exit 1; }
     (cd "$REPO" && uv run tools/pull.py "$SYNC_DIR/output" --clear)  # pull, then delete through one SDK connection
     ;;
-  *) echo "usage: tools/sync.sh pull | push <path> | lora <file> [folder] | civitai <id|url> [folder] | hf <repo> <path> [folder] | workflows | clear"
+  *) echo "usage: tools/sync.sh pull | push <path> | lora <file> [folder] | civitai <id|url> [folder] | hf <repo> <path> [folder] | workflows | workflows-save [msg] | clear"
      echo "                    ls [vol] [path] | cp <vol> <src> <dst> | mv <vol> <src> <dst> | rm <vol> <path>"; exit 1;;
 esac

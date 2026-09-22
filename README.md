@@ -159,6 +159,12 @@ it, so it doubles as a way to learn them.
 
 ## Adding things
 
+Install nothing through the Manager's GUI and expect it to last. The container is rebuilt from the
+image on every cold start, so a node pack or a model downloaded into it is gone the next time the
+worker scales to zero, and the workflow that needed it fails with nothing obviously missing. Three
+places survive: `catalog.py` and `NODE_PACKS` (baked into the image at deploy), and `extra/` on
+the models volume (uploaded, no deploy). Everything else is borrowed.
+
 - **A model**: one line in `comfy_modal/catalog.py` (Hugging Face repo, file, ComfyUI models
   folder), then `modal deploy modal_app.py`. The download layer is cached, so a new file downloads
   once and the rest is untouched. Files you upload by hand go to `extra/<folder>/` on the models
@@ -169,6 +175,14 @@ it, so it doubles as a way to learn them.
   function to `tools/build_workflows.py`, which writes the GUI JSON and an API-format prompt for
   headless rendering. `tools/sync.sh workflows` uploads `workflows/` and removes numbered
   workflows you have deleted; workflows saved from the GUI are left alone.
+- **A workflow you would rather not publish**: `workflows/private/` is skipped by this repo's
+  `.gitignore` and is meant to be its own git checkout, pointed at a private repo of yours. It
+  uploads with everything else and shows up under `private/` in the workflow sidebar.
+
+      git clone git@github.com:you/your-workflows.git workflows/private
+      tools/sync.sh workflows-save "new outfit swap"   # commit and push it without leaving here
+
+  The numbered workflows are generated, so edit those in `tools/build_workflows.py` instead.
 - **Another GPU**: `MODAL_GPU=H100 modal deploy modal_app.py`. Every other tunable, idle windows,
   ports, volume names, the rate shown in the badge, sits in `comfy_modal/config.py`.
 
