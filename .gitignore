@@ -11,3 +11,6 @@ docs/launch/
 
 # tokens for civitai / hugging face, written by the console
 .env
+
+# your own workflows: its own git checkout, pushed to a private repo of yours
+workflows/private/
