@@ -13,8 +13,9 @@ stops itself after 5 idle minutes. Models, workflows and output files persist ac
 three Modal volumes.
 
 The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
-to wake it early, keep it warm for a set time, or stop it. Five workflows ship by default:
-Z-Image-Turbo, FLUX.2 klein and Krea 2 (Turbo and RAW) for text to image, and a SeedVR2 upscale.
+to wake it early, keep it warm for a set time, or stop it. Six workflows ship by default:
+Z-Image-Turbo, FLUX.2 klein and Krea 2 (Turbo and RAW) for text to image, Krea 2 style reference,
+masked edit and outfit swap, and a SeedVR2 upscale.
 
 ## How it works
 
@@ -95,6 +96,22 @@ it, so it doubles as a way to learn them.
 - `05` is Krea 2 RAW, the same model undistilled: 52 steps at CFG 3.5 instead of 8 at CFG 1, so a
   minute or two per image rather than seconds. It takes a real negative prompt, which Turbo cannot,
   and it is the checkpoint to train a LoRA on. For everyday renders, use `04`.
+- `06` takes an image in and carries its look onto a new prompt. It needs one LoRA that is not in
+  the catalog: `tools/sync.sh hf Comfy-Org/Krea-2 loras/krea2_style_reference.safetensors loras`,
+  no rebuild. Note that this is style, not editing: the open Krea 2 weights are text to image
+  only, so asking it to change something in the picture will not work. FLUX.2 klein is the
+  editing model here.
+- `07` edits part of an image. Name the thing in words ("her jacket") and SAM 3.1 makes the mask;
+  a preview shows what it caught, and the Load Image node's MaskEditor is still there if you would
+  rather draw it. Whatever you upload is scaled to about 1 MP first, which is the size Krea 2 was
+  trained for and four times faster than a 4 MP photo for no visible gain. Krea 2 has no
+  inpainting checkpoint, so it cannot see the pixels around the hole the way a real one would;
+  `denoise` is the dial between keeping the original and letting it invent, and the LanPaint
+  sampler is there for when that is not enough.
+- `09` replaces what someone is wearing. SAM makes the mask, the masked area is cropped out and
+  edited at 1024 and stitched back, and LanPaint runs a few extra passes inside each step so the
+  new clothing and the body around it agree. `LanPaint_NumSteps` is the first dial to touch: more
+  passes, better continuity, one full extra pass of cost each.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
   close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
   L40S, that took about 100 seconds cold and 30 seconds when Modal still had the image cached.
