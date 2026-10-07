@@ -9,7 +9,7 @@
 05  Krea 2 RAW text to image: 52 steps, CFG 3.5, with a real negative prompt. Slow on purpose.
 06  Krea 2 style reference: an image in, its look carried onto a new prompt. Needs the LoRA,
     see the note on build_krea2_reference.
-07  Krea 2 masked edit: name what to change ("her jacket") and SAM 3.1 makes the mask.
+07  Krea 2 masked edit: name what to change ("her jacket"), SAM 3.1 masks it, stock sampler.
 09  Krea 2 outfit swap: SAM mask, crop to the mask, LanPaint, stitch back.
 10  Same as 09 with the body pinned: SAM 3D Body draws the skeleton, a pose LoRA makes Krea 2 hold it.
 
@@ -140,54 +140,62 @@ def build_krea2_reference(image_file: str, seed: int):
     write(g, "06-krea2-style-reference", [("Image, model", [20, 10, 360, 1000], "#3f789e"), ("Prompt, size", [400, 10, 360, 1000], "#8A8"), ("Sample", [780, 10, 380, 1000], "#b58b2a")])
 
 
-def build_krea2_edit(image_file: str, target: str, megapixels: float, denoise: float, seed: int):
-    """Change part of a picture: SAM 3.1 finds what you named, Krea 2 re-renders only that.
+# Shared by the three workflows that edit part of a picture (07, 09, 10), so they crop the same
+# way: no preresize, so the source keeps its resolution; a box 1.5x the mask for context; the box
+# itself resized to 1024, which is what Krea 2 was trained for; 32 px of blend on the way back.
+CROP_SETTINGS = ["bilinear", "lanczos", False, "ensure minimum resolution", 1024, 1024, 16384, 16384,
+                 True, 0, False, 32, 0.1, False, 1.0, 1.0, 1.0, 1.0, 1.5, True, 1024, 1024, "32", "gpu (much faster)"]
 
-    Krea 2 has no inpainting checkpoint, so this is the model-agnostic route: encode the picture,
-    mark the part to redo with SetLatentNoiseMask, denoise only that part. What it costs is
-    context. A real inpainting model looks at the pixels around the hole; here the unmasked latent
-    is re-noised to the current sigma every step, so during the early steps, the ones that decide
-    the composition, there is almost nothing to see. That is why low denoise looks safe and high
-    denoise drifts. DifferentialDiffusion fades the mask in over the steps so the seam is not a
-    hard edge, and the LanPaint sampler in NODE_PACKS is the real fix if this is not enough.
 
-    Two sizes matter. ImageScaleToTotalPixels puts whatever you upload at the resolution Krea 2
-    was trained for, which is up to 1k for RAW; a 4 MP photo costs four times the sampling time
-    per step and looks no better. The mask rides along at the same size because SAM sees the
-    already-scaled image.
+def build_krea2_edit(image_file: str, target: str, denoise: float, seed: int):
+    """Change part of a picture with the stock sampler: SAM 3.1 finds what you named, Krea 2
+    re-renders only that, and only the box around it is ever resized.
 
-    To draw the mask by hand instead, right-click the Load Image node, Open in MaskEditor, and
-    wire its MASK output into SetLatentNoiseMask in place of the GrowMask node.
+    This used to put the whole photo through ImageScaleToTotalPixels at 1 MP, so a 4 MP source
+    came back as a 1 MP one whether or not you wanted that. It now crops the way 09 does: cut a
+    context-padded box around the mask, edit that at 1024, blend it back. Everything outside the
+    mask keeps the resolution you uploaded, and the model still works at the size it was trained
+    for. The cost is that InpaintCropImproved is a node pack rather than stock ComfyUI, so this is
+    no longer the workflow that runs on a bare install; it is in NODE_PACKS, so on this deployment
+    that distinction is academic.
+
+    Krea 2 has no inpainting checkpoint, so context still comes only from the latent:
+    SetLatentNoiseMask re-noises the unmasked part to the current sigma every step, which means
+    the early steps, the ones that decide composition, see almost nothing. That is why denoise is
+    0.6 here rather than 1.0, and why DifferentialDiffusion fades the mask in over the steps
+    instead of switching it on. 09 uses the LanPaint sampler to attack the same problem properly
+    and can therefore run at full denoise; this one is the conservative version.
+
+    RAW rather than Turbo: partial denoising at CFG 1 gives the prompt almost nothing to steer
+    with, and 8 distilled steps times 0.6 is five real steps.
     """
     g = Graph()
     add = g.add
-    img = add("LoadImage", [image_file, "image"], (40, 60), "Image to edit: upload with the node's button", YELLOW)
-    small = add("ImageScaleToTotalPixels", ["lanczos", megapixels, 8], (40, 320),
-                f"{megapixels} MP: Krea 2 is trained to about 1k, and a bigger photo only costs time", YELLOW, image=(img, 0))
-    sam = add("CheckpointLoaderSimple", ["sam3.1_multiplex_fp16.safetensors"], (40, 460), "SAM 3.1")
-    what = add("CLIPTextEncode", [target], (40, 580), f'What to mask: "{target}"', GREEN, clip=(sam, 1))
-    mask = add("SAM3_Detect", [0.5, 2, False], (40, 760), "Finds it and returns the mask", model=(sam, 0), image=(small, 0), conditioning=(what, 0))
-    grow = add("GrowMask", [12, True], (40, 940), "A little slack around the edge, so the seam has somewhere to blend", mask=(mask, 0))
+    img = add("LoadImage", [image_file, "image"], (40, 60), "Image to edit; paint extra mask in the MaskEditor if SAM misses something", YELLOW)
+    sam = add("CheckpointLoaderSimple", ["sam3.1_multiplex_fp16.safetensors"], (40, 320), "SAM 3.1 (segments by text)")
+    what = add("CLIPTextEncode", [target], (40, 440), f"What to mask: \"{target}\"", GREEN, clip=(sam, 1))
+    det = add("SAM3_Detect", [0.5, 2, False], (40, 620), "Finds it and returns the mask", model=(sam, 0), image=(img, 0), conditioning=(what, 0))
+    grow = add("GrowMask", [12, True], (40, 800), "A little slack around the edge, so the seam has somewhere to blend", mask=(det, 0))
+    both = add("MaskComposite", [0, 0, "add"], (40, 920), "Automatic mask plus whatever you painted", destination=(grow, 0), source=(img, 1))
+    crop = add("InpaintCropImproved", CROP_SETTINGS, (40, 1080), "Only this box is resized; the rest of the photo is left alone", YELLOW, image=(img, 0), mask=(both, 0))
+    add("MaskPreview", [], (40, 1320), "Mask inside the crop: white is repainted", mask=(crop, 2))
+
     unet = add("UNETLoader", ["krea2_raw_bf16.safetensors", "default"], (420, 60), "Krea 2 RAW: CFG has to bite for an edit")
     clip = add("CLIPLoader", ["qwen3vl_4b_bf16.safetensors", "krea2", "default"], (420, 180), "Text encoder (Qwen3-VL 4B, krea2)")
     vae = add("VAELoader", ["qwen_image_vae.safetensors"], (420, 300), "Qwen-Image VAE")
     dd = add("DifferentialDiffusion", [1.0], (420, 400), "Fades the mask in over the steps, so the edit has no hard seam", model=(unet, 0))
     pos = add("CLIPTextEncode", ["a red waxed cotton jacket"], (420, 500), "What the masked part should become", GREEN, clip=(clip, 0))
     neg = add("CLIPTextEncode", ["blurry, washed out, plastic skin"], (420, 740), "Negative", RED, clip=(clip, 0))
-    enc = add("VAEEncode", [], (420, 960), "The picture as a latent", pixels=(small, 0), vae=(vae, 0))
-    masked = add("SetLatentNoiseMask", [], (420, 1080), "Only the masked part gets new noise", YELLOW, samples=(enc, 0), mask=(grow, 0))
+    enc = add("VAEEncode", [], (420, 960), "The crop as a latent", pixels=(crop, 1), vae=(vae, 0))
+    masked = add("SetLatentNoiseMask", [], (420, 1080), "Only the masked part gets new noise", YELLOW, samples=(enc, 0), mask=(crop, 2))
+
     ks = add("KSampler", [seed, "randomize", 52, 3.5, "euler", "simple", denoise], (800, 60),
              f"denoise {denoise}: lower keeps more of the original, higher invents more",
              model=(dd, 0), positive=(pos, 0), negative=(neg, 0), latent_image=(masked, 0))
     dec = add("VAEDecode", [], (800, 420), samples=(ks, 0), vae=(vae, 0))
-    seen = add("MaskToImage", [], (800, 540), "The mask SAM found, to check it caught the right thing", mask=(grow, 0))
-    add("PreviewImage", [], (800, 640), "Mask preview: if this is not the thing you meant, change the SAM prompt", images=(seen, 0))
-    add("SaveImage", ["krea2-edit/render"], (800, 820), "Save", BLUE, images=(dec, 0))
-    write(g, "07-krea2-masked-edit", [("Find the mask", [20, 10, 360, 1100], "#b58b2a"), ("Model, prompt", [400, 10, 360, 1200], "#3f789e"), ("Sample", [780, 10, 380, 800], "#8A8")])
-
-
-CROP_SETTINGS = ["bilinear", "lanczos", False, "ensure minimum resolution", 1024, 1024, 16384, 16384,
-                 True, 0, False, 32, 0.1, False, 1.0, 1.0, 1.0, 1.0, 1.5, True, 1024, 1024, "32", "gpu (much faster)"]
+    st = add("InpaintStitchImproved", [], (800, 540), "Blend it back into the original, at its own resolution", stitcher=(crop, 0), inpainted_image=(dec, 0))
+    add("SaveImage", ["krea2-edit/render"], (800, 660), "Save", BLUE, images=(st, 0))
+    write(g, "07-krea2-masked-edit", [("Mask and crop", [20, 10, 360, 1420], "#b58b2a"), ("Model, prompt", [400, 10, 360, 1200], "#3f789e"), ("Sample and stitch", [780, 10, 380, 780], "#8A8")])
 
 
 def build_krea2_outfit(image_file: str, target: str, outfit: str, seed: int):
@@ -325,7 +333,7 @@ build_klein(seed=1)
 build_krea2(seed=1)
 build_krea2_raw(seed=1)
 build_krea2_reference("example.png", seed=1)
-build_krea2_edit("example.png", target="jacket", megapixels=1.0, denoise=0.6, seed=1)
+build_krea2_edit("example.png", target="jacket", denoise=0.6, seed=1)
 build_krea2_outfit("example.png", target="clothing", outfit="a red hooded sweatshirt and black denim shorts", seed=20260912)
 build_krea2_outfit_posed("example.png", target="clothing", outfit="a red hooded sweatshirt and black denim shorts", seed=20260912)
 build_upscale("example.png", megapixels=4.0, seed=1)

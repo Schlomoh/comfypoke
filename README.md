@@ -102,12 +102,11 @@ it, so it doubles as a way to learn them.
   only, so asking it to change something in the picture will not work. FLUX.2 klein is the
   editing model here.
 - `07` edits part of an image. Name the thing in words ("her jacket") and SAM 3.1 makes the mask;
-  a preview shows what it caught, and the Load Image node's MaskEditor is still there if you would
-  rather draw it. Whatever you upload is scaled to about 1 MP first, which is the size Krea 2 was
-  trained for and four times faster than a 4 MP photo for no visible gain. Krea 2 has no
-  inpainting checkpoint, so it cannot see the pixels around the hole the way a real one would;
-  `denoise` is the dial between keeping the original and letting it invent, and the LanPaint
-  sampler is there for when that is not enough.
+  the MaskEditor on the Load Image node adds to it if SAM misses something. Only the box around
+  the mask is resized, to 1024, so the rest of the photo keeps whatever resolution you uploaded.
+  Krea 2 has no inpainting checkpoint, so it cannot see the pixels around the hole the way a real
+  one would; `denoise` is the dial between keeping the original and letting it invent, and `09`
+  is the version that solves that properly rather than working around it.
 - `09` replaces what someone is wearing. SAM makes the mask, the masked area is cropped out and
   edited at 1024 and stitched back, and LanPaint runs a few extra passes inside each step so the
   new clothing and the body around it agree. `LanPaint_NumSteps` is the first dial to touch: more
