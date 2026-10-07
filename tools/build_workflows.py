@@ -192,8 +192,8 @@ CROP_SETTINGS = ["bilinear", "lanczos", False, "ensure minimum resolution", 1024
 
 def build_krea2_outfit(image_file: str, target: str, outfit: str, seed: int):
     """Replace what someone is wearing, on Krea 2. Ported from a Z-Image outfit swap (not in
-    this repo), which works because of three things, and only one of them is Z-Image-specific. SAM 3.1 names the
-    mask instead of you drawing it. Crop-and-stitch cuts a padded box around the mask, edits it at
+    this repo), which works because of three things, and only one of them is Z-Image-specific.
+    SAM 3.1 names the mask instead of you drawing it. Crop-and-stitch cuts a padded box around the mask, edits it at
     1024 and blends it back, so a jacket that is 200 px of a 2K photo gets the whole model rather
     than 200 px of it. And the Fun Controlnet in inpaint mode feeds the surrounding pixels to the
     model, which is what lets the Z-Image version denoise fully instead of creeping up from 0.6.
