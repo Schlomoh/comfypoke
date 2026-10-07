@@ -86,8 +86,9 @@ MODELS = [
     Model("Comfy-Org/SeedVR2", "vae/seedvr2_ema_vae_fp16.safetensors", "vae"),
 ]
 
-# Custom node packs by registry id (https://registry.comfy.org). The default workflows use only nodes that
-# ship with the pinned ComfyUI (COMFY_VERSION in comfy_modal/image.py).
+# Custom node packs by registry id (https://registry.comfy.org), installed straight from the
+# registry: see the note in comfy_modal/image.py for why not `comfy node install`. The default
+# workflows use only nodes that ship with the pinned ComfyUI (COMFY_VERSION there) plus these.
 # LanPaint: a drop-in replacement for KSampler that inpaints well without an inpainting
 # checkpoint. A plain noise mask re-noises the unmasked pixels to the current sigma every step,
 # so during the early steps, the ones that decide the composition, the "context" is nearly pure
