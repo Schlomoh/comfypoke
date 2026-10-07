@@ -10,7 +10,7 @@
 06  Krea 2 style reference: an image in, its look carried onto a new prompt. Needs the LoRA,
     see the note on build_krea2_reference.
 07  Krea 2 masked edit: name what to change ("her jacket") and SAM 3.1 makes the mask.
-09  Krea 2 outfit swap: 08's shape, on Krea 2. SAM mask, crop to the mask, LanPaint, stitch back.
+09  Krea 2 outfit swap: SAM mask, crop to the mask, LanPaint, stitch back.
 10  Same as 09 with the body pinned: SAM 3D Body draws the skeleton, a pose LoRA makes Krea 2 hold it.
 
 Workflows are plain graphs, one node per step, so they read well in the GUI and in a diff. Edit the
@@ -191,23 +191,22 @@ CROP_SETTINGS = ["bilinear", "lanczos", False, "ensure minimum resolution", 1024
 
 
 def build_krea2_outfit(image_file: str, target: str, outfit: str, seed: int):
-    """Replace what someone is wearing, on Krea 2. Same shape as 08, which does this on Z-Image.
-
-    08 works because of three things, and only one of them is Z-Image-specific. SAM 3.1 names the
+    """Replace what someone is wearing, on Krea 2. Ported from a Z-Image outfit swap (not in
+    this repo), which works because of three things, and only one of them is Z-Image-specific. SAM 3.1 names the
     mask instead of you drawing it. Crop-and-stitch cuts a padded box around the mask, edits it at
     1024 and blends it back, so a jacket that is 200 px of a 2K photo gets the whole model rather
     than 200 px of it. And the Fun Controlnet in inpaint mode feeds the surrounding pixels to the
-    model, which is what lets 08 denoise fully instead of creeping up from 0.6.
+    model, which is what lets the Z-Image version denoise fully instead of creeping up from 0.6.
 
     That third one has no Krea 2 equivalent installed, so LanPaint stands in for it. It attacks
     the same problem from the sampler instead of the model: a few Langevin iterations inside every
     step, so the masked region and the pixels around it settle against each other rather than the
     mask being stamped on at the end. Hence denoise 1.0 here too.
 
-    What is missing next to 08 is the body branch. RT-DETR and SAM 3D Body still work, but nothing
+    What is missing next to the Z-Image version is the body branch. RT-DETR and SAM 3D Body still work, but nothing
     consumes a pose or depth map for Krea 2: there is no Krea 2 controlnet on this deployment.
     facok/comfyui-krea2-controlnet is the pack that would add one, and then the body depth wires
-    in the same way it does in 08.
+    in the same way it does there.
 
     Dials, in the order worth touching: LanPaint_NumSteps (3 here, up to 10, each one costs a full
     extra pass), steps, then cfg. The LoRA slot sits at strength 0, so it does nothing until set.
@@ -245,16 +244,16 @@ def build_krea2_outfit(image_file: str, target: str, outfit: str, seed: int):
 
 
 def build_krea2_outfit_posed(image_file: str, target: str, outfit: str, seed: int):
-    """09 with the body held in place, which is the branch 08 has and 09 was missing.
+    """09 with the body held in place, the branch the Z-Image version has and 09 was missing.
 
-    08 pins the body by rendering a mesh from SAM 3D Body and feeding it to Z-Image's Fun
+    That one pins the body by rendering a mesh from SAM 3D Body and feeding it to Z-Image's Fun
     Controlnet. Krea 2 needs two different pieces for the same idea. SAM3DBody_Render has an
     openpose_2d style that draws a DWPose-looking skeleton instead of a mesh, and the pose LoRA in
     catalog.py teaches Krea 2 to read one. The skeleton goes in through ostris' encoder rather
     than a controlnet node: it rides with the prompt into Qwen3-VL as a reference image.
 
     The skeleton is cropped by the same InpaintCropImproved settings as the picture, so the two
-    line up pixel for pixel. That is what 08 does with its second crop node and it is not optional:
+    line up pixel for pixel. That is what the Z-Image version does with its second crop node and it is not optional:
     a pose map at a different scale than the latent pins the wrong body.
 
     Two things here are unproven and worth knowing before you read the output as a verdict on the
