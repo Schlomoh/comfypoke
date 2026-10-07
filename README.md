@@ -13,9 +13,9 @@ stops itself after 5 idle minutes. Models, workflows and output files persist ac
 three Modal volumes.
 
 The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
-to wake it early, keep it warm for a set time, or stop it. Six workflows ship by default:
+to wake it early, keep it warm for a set time, or stop it. Nine workflows ship by default:
 Z-Image-Turbo, FLUX.2 klein and Krea 2 (Turbo and RAW) for text to image, Krea 2 style reference,
-masked edit and outfit swap, and a SeedVR2 upscale.
+masked edit and outfit swap (with and without the pose held), and a SeedVR2 upscale.
 
 ## How it works
 
@@ -247,9 +247,9 @@ Worth being straight about, because the answer is not always this.
 
 ## Workflow packs
 
-The three workflows here cover text to image and upscaling. Packs with more involved pipelines,
-masked outfit changes with the body pinned, head swaps for consistent characters, clean-up and
-restore, editing inside a mask, are sold separately and drop into the same `workflows/` folder:
+The workflows here cover text to image, upscaling and Krea 2 edits inside a mask. Packs with more
+involved pipelines, head swaps for consistent characters, clean-up and restore, are sold
+separately and drop into the same `workflows/` folder:
 they upload with the same `tools/sync.sh workflows` command. Link to follow.
 
 ## License

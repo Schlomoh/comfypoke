@@ -3,7 +3,7 @@
 A Model is downloaded from Hugging Face into the models volume once and
 symlinked into ComfyUI's models/<folder>/. Files you upload by hand go to
 extra/<folder>/ on the same volume (tools/sync.sh lora <file>) and need no
-rebuild: the extra_models node copies them in on the next page load.
+rebuild: the extra_models node links them in on the next page load.
 """
 from typing import NamedTuple
 
@@ -56,7 +56,7 @@ MODELS = [
     # pulled by default: tools/sync.sh hf Comfy-Org/Krea-2 loras/krea2_darkbrush.safetensors
     # puts one in the dropdown without rebuilding the image. Each has a trigger word, listed at
     # docs.comfy.org/tutorials/image/krea/krea-2.
-    # --- Masking and structure, used by workflows 07, 08 and 09 ---
+    # --- Masking and structure, used by workflows 07, 09 and 10 ---
     # These were installed by hand through the Manager once and did not survive the next cold
     # start, because the container is rebuilt from this image every time. Listed here they stay.
     # SAM 3.1 segments by text ("clothing"). Comfy-Org's repackaging is not gated; facebook/sam3
@@ -68,8 +68,9 @@ MODELS = [
     # SAM 3D Body fits a body mesh, which renders to a depth map the controlnet can hold a pose to.
     Model("Comfy-Org/sam-3d-body", "detection/sam_3d_body_dinov3_bf16.safetensors", "detection"),
     # Z-Image's Fun Controlnet, union 2.1: inpaint plus canny, depth and pose in one patch. The
-    # inpaint mode is what lets workflow 08 denoise fully instead of creeping up from 0.6, because
-    # the model is handed the pixels around the mask instead of guessing at them. Krea 2 has no
+    # inpaint mode is what lets a Z-Image inpaint denoise fully instead of creeping up from 0.6,
+    # because the model is handed the pixels around the mask instead of guessing at them. None of
+    # the shipped workflows use it; it is here for your own Z-Image edits. Krea 2 has no
     # equivalent, which is why workflow 09 uses the LanPaint sampler for the same job.
     # There is a 2.02 GB "lite" build in the same repo if 6.7 GB is not worth it to you.
     Model("alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
