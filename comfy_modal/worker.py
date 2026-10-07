@@ -46,6 +46,7 @@ class Worker:
         self.busy = 0
         self.last_input = self.since
         self._beat("starting")
+        self._wake = threading.Event()  # set by run() for an immediate beat: the Dict write blocks, so it stays off the event loop
         threading.Thread(target=self._heartbeat, daemon=True).start()
         # ComfyUI defaults --preview-method to none, which is why a render showed nothing until it
         # was finished. "auto" resolves to Latent2RGB: a rough colour read straight off the latent,
@@ -71,7 +72,8 @@ class Worker:
 
     def _heartbeat(self):
         while True:
-            time.sleep(20)
+            self._wake.wait(20)
+            self._wake.clear()
             self._beat()
 
     @modal.exit()
@@ -110,7 +112,7 @@ class Worker:
         cid = f"relay-{pid}"
         payload = {**payload, "client_id": cid}
         self.busy += 1
-        self._beat()
+        self._wake.set()
         terminal_seen = False
         try:
             await volumes.io.reload.aio()  # pick up images the UI uploaded for this prompt
@@ -127,7 +129,7 @@ class Worker:
             async with aiohttp.ClientSession() as s:
                 async with s.ws_connect(f"{BASE}/ws?clientId={cid}") as ws:
                     async with s.get(f"{BASE}/object_info/LoraLoaderModelOnly"):
-                        pass  # the extra_models node copies new hand-uploaded files on this request
+                        pass  # the extra_models node links new hand-uploaded files on this request
                     async with s.post(f"{BASE}/prompt", json=payload) as r:
                         res = await r.json()
                         if r.status != 200:
@@ -176,7 +178,7 @@ class Worker:
                 self.log_owner = None
             self.busy -= 1
             self.last_input = time.time()
-            self._beat()
+            self._wake.set()
 
     @modal.method()
     async def interrupt(self, prompt_id: str | None = None):
