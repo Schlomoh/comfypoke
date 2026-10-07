@@ -13,9 +13,10 @@ stops itself after 5 idle minutes. Models, workflows and output files persist ac
 three Modal volumes.
 
 The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
-to wake it early, keep it warm for a set time, or stop it. Nine workflows ship by default:
+to wake it early, keep it warm for a set time, or stop it. Ten workflows ship by default:
 Z-Image-Turbo, FLUX.2 klein and Krea 2 (Turbo and RAW) for text to image, Krea 2 style reference,
-masked edit and outfit swap (with and without the pose held), and a SeedVR2 upscale.
+masked edit and outfit swap (with and without the pose held), a Z-Image outfit swap with the
+body pinned, and a SeedVR2 upscale.
 
 ## How it works
 
@@ -107,6 +108,10 @@ it, so it doubles as a way to learn them.
   Krea 2 has no inpainting checkpoint, so it cannot see the pixels around the hole the way a real
   one would; `denoise` is the dial between keeping the original and letting it invent, and `09`
   is the version that solves that properly rather than working around it.
+- `08` replaces what someone is wearing on Z-Image, with the body pinned: SAM makes the mask,
+  SAM 3D Body renders the body as depth, and Z-Image's Fun Controlnet inpaints the crop while
+  holding that depth. Because the controlnet sees the pixels around the mask, it runs at full
+  denoise. The LoRA slot is off (strength 0); point it at your own LoRA if you have one.
 - `09` replaces what someone is wearing. SAM makes the mask, the masked area is cropped out and
   edited at 1024 and stitched back, and LanPaint runs a few extra passes inside each step so the
   new clothing and the body around it agree. `LanPaint_NumSteps` is the first dial to touch: more
@@ -186,6 +191,7 @@ the models volume (uploaded, no deploy). Everything else is borrowed.
       tools/sync.sh workflows-save "new outfit swap"   # commit and push it without leaving here
 
   The numbered workflows are generated, so edit those in `tools/build_workflows.py` instead.
+  The exception is `08`, which was built in the GUI: edit it there and save it over the file.
 - **Another GPU**: `MODAL_GPU=H100 modal deploy modal_app.py`. Every other tunable, idle windows,
   ports, volume names, the rate shown in the badge, sits in `comfy_modal/config.py`.
 
