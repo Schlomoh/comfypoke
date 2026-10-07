@@ -95,7 +95,14 @@ image = (
         volumes={config.CACHE_DIR: volumes.models},
         secrets=hf_secrets(),
     )
-    .run_commands(*([f"comfy node install {' '.join(NODE_PACKS)}"] if NODE_PACKS else []))  # after the model layer: a pack change must not redo the download
+    # After the model layer, so adding a pack does not redo the download. registry-install rather
+    # than install: `comfy node install` resolves ids through the Manager's bundled
+    # custom-node-list.json, which is a snapshot taken when comfyui-manager was released, so a pack
+    # newer than that snapshot is simply not found. It said so and carried on with exit 0, which is
+    # how comfyui-krea2-ostris-edit went missing from an image that built and deployed cleanly.
+    # registry-install asks api.comfy.org directly and exits non-zero when it cannot, so the build
+    # fails instead of the workflow.
+    .run_commands(*[f"comfy --skip-prompt node registry-install {pack}" for pack in NODE_PACKS])
     # Mounted at container start (copy=False): editing these needs no image rebuild.
     .add_local_dir("comfy_nodes", f"{config.COMFY_DIR}/custom_nodes", copy=False)
     .add_local_python_source("comfy_modal", copy=False)
