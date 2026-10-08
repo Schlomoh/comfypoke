@@ -117,7 +117,8 @@ async def check_render(s, url, timeout, lora=None):
         prompt["8"]["inputs"]["model"] = ["11", 0]
         tag = " (uploaded LoRA, warm worker)"
     seen, image = set(), None
-    async with s.ws_connect(f"{url}/ws?clientId={cid}") as ws:
+    ws = await s.ws_connect(f"{url}/ws?clientId={cid}")
+    try:
         async with s.post(f"{url}/api/prompt", json={"prompt": prompt, "client_id": cid}) as r:
             res = await r.json()
             pid = res.get("prompt_id")
@@ -132,6 +133,11 @@ async def check_render(s, url, timeout, lora=None):
                 m = await ws.receive(timeout=deadline - time.time())
             except asyncio.TimeoutError:
                 break
+            if m.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                # Modal's proxy closes a socket that has been quiet for about a minute, which is
+                # every wait for a GPU. The relay broadcasts to all sockets, so a new one picks up.
+                ws = await s.ws_connect(f"{url}/ws?clientId={cid}")
+                continue
             if m.type != aiohttp.WSMsgType.TEXT:
                 continue
             msg = json.loads(m.data)
@@ -145,6 +151,8 @@ async def check_render(s, url, timeout, lora=None):
                 print("execution_error:", d.get("exception_message"))
             if msg["type"] in TERMINAL:
                 break
+    finally:
+        await ws.close()
     check("progress message arrived" + tag, "progress" in seen, str(sorted(seen)))
     check("executed message arrived with an image" + tag, image is not None)
     check("execution_success arrived" + tag, "execution_success" in seen, str(sorted(seen)))
