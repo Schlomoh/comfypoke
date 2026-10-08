@@ -9,9 +9,11 @@ prints the command it runs, streams the output and returns to the menu.
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import webbrowser
 from pathlib import Path
 
@@ -27,19 +29,83 @@ from render import MODAL, default_url  # noqa: E402
 
 SYNC = str(REPO / "tools" / "sync.sh")
 MODEL_FOLDERS = ["loras", "diffusion_models", "vae", "text_encoders", "upscale_models", "controlnet"]
+ENV_FILE = REPO / ".env"  # git-ignored; tokens live here so they survive between shells
+TOKENS = {
+    "CIVITAI_TOKEN": "civitai.com/user/account > API Keys",
+    "HF_TOKEN": "huggingface.co/settings/tokens (only needed for gated repos)",
+}
 out = Console()
+
+
+def load_env():
+    """Read .env into the environment. A real environment variable always wins."""
+    if not ENV_FILE.exists():
+        return
+    for line in ENV_FILE.read_text().splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() and not os.environ.get(key.strip()):
+            os.environ[key.strip()] = value.strip()
+
+
+def save_env(values: dict):
+    """Rewrite .env with these keys, dropping the ones set to empty.
+
+    Written through a temp file that is owner-only from the moment it exists, then renamed over
+    the target. Writing first and calling chmod after would leave the tokens world-readable for
+    the time in between, and would lose them entirely if the write failed halfway."""
+    current = {}
+    if ENV_FILE.exists():
+        for line in ENV_FILE.read_text().splitlines():
+            key, _, value = line.partition("=")
+            if key.strip():
+                current[key.strip()] = value.strip()
+    current.update(values)
+    data = "".join(f"{k}={v}\n" for k, v in sorted(current.items()) if v)
+    fd, tmp = tempfile.mkstemp(dir=str(REPO), prefix=".env.")  # mkstemp creates it 0600
+    try:
+        os.write(fd, data.encode())
+    finally:
+        os.close(fd)
+    os.replace(tmp, ENV_FILE)
 
 
 # ---- plumbing ---------------------------------------------------------------
 
-def run(cmd: list[str], timeout: float | None = None) -> int:
-    """Print the command, stream its output, return the exit code."""
+# tqdm draws its bar by overwriting one line with a carriage return. Modal relays a build's
+# output as whole lines instead, so the same bar arrives as hundreds of them and a deploy buries
+# the console. Same bar, put back on one line.
+PROGRESS_BAR = re.compile(r"^\s*\d+(\.\d+)?%\|")
+
+
+def run(cmd: list[str], timeout: float | None = None, collapse_progress: bool = False) -> int:
+    """Print the command, stream its output, return the exit code.
+
+    collapse_progress pipes the output so relayed tqdm bars can be redrawn in place. It is off by
+    default because piping also takes the child's terminal away, and the ones that show a download
+    (tools/sync.sh) go quiet when they cannot see one."""
     out.print(f"[bold cyan]$ {shlex.join(cmd)}[/]")
-    try:
-        code = subprocess.run(cmd, cwd=REPO, timeout=timeout).returncode
-    except subprocess.TimeoutExpired:
-        out.print(f"[dim]stopped after {timeout:.0f} s[/]")
-        return 0
+    if not collapse_progress:
+        try:
+            code = subprocess.run(cmd, cwd=REPO, timeout=timeout).returncode
+        except subprocess.TimeoutExpired:
+            out.print(f"[dim]stopped after {timeout:.0f} s[/]")
+            return 0
+    else:
+        proc = subprocess.Popen(cmd, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        drawing = False
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if PROGRESS_BAR.match(line):
+                print(f"\r\x1b[2K{line}", end="", flush=True)
+                drawing = True
+                continue
+            if drawing:
+                print()
+                drawing = False
+            print(line, flush=True)
+        if drawing:
+            print()
+        code = proc.wait()
     if code:
         out.print(f"[red]exit {code}[/]")
     return code
@@ -139,7 +205,7 @@ def stop():
 
 
 def deploy():
-    if run([MODAL, "deploy", "modal_app.py"]) != 0:
+    if run([MODAL, "deploy", "modal_app.py"], collapse_progress=True) != 0:
         return
     if ask(questionary.confirm("Run the acceptance check now (stops stale containers, about a minute, costs cents)?", default=True)):
         check()
@@ -177,10 +243,13 @@ def models():
         run([SYNC, "lora", path, pick_folder()])
     elif what.startswith("add from Civitai"):
         if not os.environ.get("CIVITAI_TOKEN"):
-            out.print("[red]CIVITAI_TOKEN is not set.[/] Create an API key at civitai.com/user/account > API Keys, then start the console with "
-                      "[bold]CIVITAI_TOKEN=... uv run tools/console.py[/]")
-            return
-        ref = ask(questionary.text("Civitai version id or model page URL:"))
+            out.print(f"[yellow]CIVITAI_TOKEN is not set.[/] {TOKENS['CIVITAI_TOKEN']}")
+            if not ask(questionary.confirm("Set it now?", default=True)):
+                return
+            tokens_set("CIVITAI_TOKEN")
+            if not os.environ.get("CIVITAI_TOKEN"):
+                return
+        ref = ask(questionary.text("Civitai model page URL, download URL or version id:"))
         run([SYNC, "civitai", ref, pick_folder()])
     elif what.startswith("add from Hugging"):
         repo = ask(questionary.text("Repo (owner/name):"))
@@ -208,6 +277,135 @@ def status_models():
     out.print(t)
 
 
+def tokens():
+    t = Table("token", "status", "where to get one", title=f"tokens in {ENV_FILE.name}")
+    for name, where in TOKENS.items():
+        value = os.environ.get(name, "")
+        t.add_row(name, f"set ({value[:4]}...{value[-2:]})" if value else "not set", where)
+    out.print(t)
+    name = ask(questionary.select("Set which token?", choices=[*TOKENS, "back"]))
+    if name != "back":
+        tokens_set(name)
+
+
+def tokens_set(name: str):
+    out.print(f"[dim]{TOKENS[name]}[/]")
+    value = ask(questionary.password(f"{name} (empty clears it):")).strip()
+    save_env({name: value})
+    if value:
+        os.environ[name] = value
+        out.print(f"[green]{name} saved to {ENV_FILE.name}[/]; tools/sync.sh reads it too")
+    else:
+        os.environ.pop(name, None)
+        out.print(f"{name} cleared")
+
+
+def all_volumes() -> list[str]:
+    r = subprocess.run([MODAL, "volume", "list", "--json"], cwd=REPO, capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        return []
+    return sorted(n for n in ((v.get("name") or v.get("Name")) for v in json.loads(r.stdout)) if n)
+
+
+def pick_volume(prompt: str, exclude: str = "") -> str:
+    """Every volume in the workspace, not just this deployment's three, so files can move
+    between separate comfypoke setups. Ours are listed first and labelled."""
+    names = [n for n in all_volumes() if n != exclude]
+    if not names:
+        out.print("[red]no volumes found[/] (is `modal profile current` the right workspace?)")
+        return ""
+    mine = {config.VOLUME_IO: "renders, previews, uploads",
+            config.VOLUME_MODELS: "hand-uploaded models under extra/",
+            config.VOLUME_DATA: "saved workflows and settings"}
+    ordered = [n for n in names if n in mine] + [n for n in names if n not in mine]
+    labels = [f"{n}  ({mine[n]})" if n in mine else n for n in ordered]
+    return ordered[labels.index(ask(questionary.select(prompt, choices=labels)))]
+
+
+def volume_entries(vol: str, path: str) -> list[dict]:
+    r = subprocess.run([MODAL, "volume", "ls", vol, path, "--json"], cwd=REPO, capture_output=True, text=True)
+    return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else []
+
+
+def files():
+    """Browse any volume and act on a file or a whole folder without downloading it."""
+    vol = pick_volume("Browse which volume?")
+    if not vol:
+        return
+    path = "/"
+    while True:
+        entries = sorted(volume_entries(vol, path), key=lambda e: (e["type"] != "dir", e["filename"]))
+        rows = [f"{'[dir] ' if e['type'] == 'dir' else '[file]'} {Path(e['filename']).name}"
+                + ("" if e["type"] == "dir" else f"  ({e['size']})") for e in entries]
+        extras = ([".. up"] if path != "/" else [])
+        tail = ([f"* act on this whole folder ({Path(path).name})"] if path != "/" else []) + ["done"]
+        if not entries:
+            out.print(f"{vol}:/{path.strip('/')} is empty")
+            if path == "/":
+                return
+        picked = ask(questionary.select(f"{vol}:/{path.strip('/')}", choices=extras + rows + tail))
+        if picked == "done":
+            return
+        if picked == ".. up":
+            parent = str(Path(path).parent)
+            path = "/" if parent in (".", "/") else parent
+            continue
+        if picked.startswith("* act on this whole folder"):
+            if file_action(vol, path, is_dir=True):  # the folder may be gone now
+                path = "/"
+            continue
+        e = entries[(extras + rows).index(picked) - len(extras)]
+        if e["type"] == "dir":
+            what = ask(questionary.select(Path(e["filename"]).name, choices=["open it", "act on the whole folder", "back"]))
+            if what == "open it":
+                path = e["filename"]
+            elif what.startswith("act on"):
+                file_action(vol, e["filename"], is_dir=True)
+            continue
+        file_action(vol, e["filename"], is_dir=False)
+
+
+def file_action(vol: str, path: str, is_dir: bool) -> bool:
+    """Returns True when the thing is no longer where it was, so the caller can back out."""
+    name = Path(path).name
+    what_it_is = "folder" if is_dir else "file"
+    choices = [f"copy this {what_it_is} elsewhere on {vol}", f"move it elsewhere on {vol}",
+               "send it to another volume", "delete it", "back"]
+    if not is_dir and vol == config.VOLUME_IO and not path.startswith("input/"):
+        choices.insert(0, "copy to input/ (use it in a workflow)")
+    what = ask(questionary.select(f"{what_it_is}: {path}", choices=choices))
+    if what == "back":
+        return False
+    if what.startswith("copy to input/"):
+        run([SYNC, "cp", vol, path, f"input/{name}"])
+    elif what == "delete it":
+        if is_dir:  # show what is in there first: a folder may hold files you never put there
+            run([SYNC, "ls", vol, path, "-r"])
+            if not ask(questionary.confirm(f"Delete the folder {vol}:/{path} and everything listed above? "
+                                           "Modal has no undelete.", default=False)):
+                return False
+            return run([SYNC, "rm", vol, path, "-r"]) == 0
+        if not ask(questionary.confirm(f"Delete {vol}:/{path}? This cannot be undone.", default=False)):
+            return False
+        return run([SYNC, "rm", vol, path]) == 0
+    elif what.startswith("send it"):
+        target = pick_volume("Send it to which volume?", exclude=vol)
+        if not target:
+            return False
+        dst = ask(questionary.text(f"Path on {target}:", default=path))
+        move = ask(questionary.confirm(f"Delete it from {vol} afterwards (move rather than copy)?", default=False))
+        code = run([sys.executable, "tools/transfer.py", vol, path, target, dst] + (["--move"] if move else []))
+        return move and code == 0
+    else:
+        dst = ask(questionary.text("Destination path on this volume:", default=path))
+        if dst == path:
+            out.print("same path, nothing to do")
+            return False
+        move = what.startswith("move")
+        return run([SYNC, "mv" if move else "cp", vol, path, dst]) == 0 and move
+    return False
+
+
 def check():
     run([sys.executable, "tools/check.py", "--stop-stale"])  # prints its own PASS/FAIL lines
 
@@ -225,7 +423,9 @@ ACTIONS = {
     "Stop": stop,
     "Deploy": deploy,
     "Sync": sync,
+    "Files": files,
     "Models": models,
+    "Tokens": tokens,
     "Check": check,
     "Logs": logs,
     "Quit": None,
@@ -237,6 +437,7 @@ def main():
     ap.add_argument("--status", action="store_true", help="print the status and exit")
     ap.add_argument("--logs", type=int, metavar="SECONDS", help="stream app logs for this long and exit")
     a = ap.parse_args()
+    load_env()
     if a.status:
         return status()
     if a.logs:

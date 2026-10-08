@@ -219,6 +219,7 @@ async def _relay_middleware(request, handler):
 
 _keep = {"until": 0.0, "task": None}
 _waking = {"until": 0.0}  # a ping is in flight: show "starting" until the heartbeat says warm
+_billing = {"at": 0.0, "data": None}  # Modal's billing figures move hourly at best; the badge polls every 5 s
 
 
 async def _worker_state():
@@ -230,6 +231,23 @@ async def _worker_state():
     except Exception:
         logging.exception("gpu_relay: could not read the worker state")
         return {}
+
+
+async def _credits():
+    """This month's spend from Modal's billing API, which reports credits used but not credits left."""
+    import modal
+
+    if time.time() - _billing["at"] > 600:
+        _billing["at"] = time.time()
+        try:
+            s = await asyncio.wait_for(modal.Workspace.from_context().billing.summary.aio(), 10)
+            used = -float(s.adjustments.get("Credits", 0))
+            _billing["data"] = {"used": round(used, 2), "left": round(max(0.0, CREDITS - used), 2), "monthly": CREDITS,
+                                "billed": round(float(s.billed_cost), 2)}
+        except Exception:
+            _billing["at"] -= 540  # try again in a minute rather than ten
+            logging.exception("gpu_relay: could not read the billing summary")
+    return _billing["data"]
 
 
 async def _status():
@@ -246,19 +264,22 @@ async def _status():
     else:
         state = "cold"
     idle = now - w.get("last_input", now) if state == "warm" else 0
+    limit = w.get("idle_limit", IDLE) if fresh else IDLE  # a worker on a fallback GPU idles out sooner
+    rate = w.get("rate", RATE) if fresh else RATE
     return {
         "state": state, "running": running,
-        "idle_seconds": int(idle), "idle_limit": IDLE, "idles_in": max(0, int(IDLE - idle)) if state == "warm" else None,
+        "idle_seconds": int(idle), "idle_limit": limit, "idles_in": max(0, int(limit - idle)) if state == "warm" and _keep["until"] <= now else None,
         "keep_warm_until": _keep["until"] if _keep["until"] > now else None,
         "session_seconds": int(now - w["since"]) if fresh else 0,
-        "session_cost": round((now - w["since"]) / 3600 * RATE, 3) if fresh else 0, "rate_per_hour": RATE, "gpu": GPU,
+        "session_cost": round((now - w["since"]) / 3600 * rate, 3) if fresh else 0, "rate_per_hour": rate,
+        "gpu": w.get("gpu", GPU) if fresh else GPU, "credits": await _credits(),
     }
 
 
 async def _ping():
     _waking["until"] = time.time() + 180
     try:
-        await _worker().ping.remote.aio()
+        await _worker().ping.remote.aio(_keep["until"])  # a fallback-GPU worker ends itself early unless kept warm
     except Exception:
         logging.exception("gpu_relay: ping failed")
     finally:
@@ -292,6 +313,8 @@ async def gpu_keep_warm(request):
         _keep["task"].cancel()
     if minutes > 0:
         _keep["task"] = asyncio.get_running_loop().create_task(_keep_warm_loop())
+    elif (await _status())["state"] in ("warm", "busy", "starting"):
+        asyncio.get_running_loop().create_task(_ping())  # clears the deadline the worker holds; a cold one stays cold
     return web.json_response({"keep_warm_until": _keep["until"] or None})
 
 
@@ -317,6 +340,7 @@ if os.environ.get("COMFY_RELAY") == "1":
     STATE_DICT = os.environ["COMFY_STATE_DICT"]
     IDLE = float(os.environ["COMFY_WORKER_IDLE"])
     RATE = float(os.environ["COMFY_GPU_RATE"])
+    CREDITS = float(os.environ["COMFY_MONTHLY_CREDITS"])
     GPU = os.environ.get("COMFY_GPU", "GPU")
     KEY = os.environ.get("COMFY_ACCESS_KEY", "")
     server.app.middlewares.append(_relay_middleware)

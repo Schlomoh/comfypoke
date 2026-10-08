@@ -22,8 +22,12 @@ explains where things are and how to change them without breaking the deployment
   `comfypoke-io` at `/io` (`input`, `output`, `temp`), `comfypoke-data` at `/data` (ComfyUI's user
   directory, UI only). The io volume is reloaded before each `executed` message and on each
   `/object_info` request so the GUI can serve new files. Hand-uploaded files on the models volume
-  are copied in, not reloaded, on `/object_info`, because ComfyUI keeps loaded model files open and
-  a reload would fail. The data volume is reloaded on `/userdata` requests, which is how workflows
+  are symlinked into `models/<folder>/` from the mount before every request that lists or
+  validates models (`/object_info`, the model sidebar, POST `/prompt`): a tab left open across a
+  container restart never asks for `/object_info` again. A file uploaded after the
+  container started needs a reload of the models volume first, and on a worker with a model loaded
+  that reload fails, so only that file is copied in through the volume API. Never copy the whole
+  `extra/` tree: it is over a hundred gigabytes. The data volume is reloaded on `/userdata` requests, which is how workflows
   uploaded with `tools/sync.sh workflows` appear in the running GUI.
 
 ## Changing things
