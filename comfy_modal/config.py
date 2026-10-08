@@ -63,7 +63,7 @@ CONTAINER_ENV = {
     "COMFY_DEPLOY_ID": DEPLOY_ID,  # gpu_relay: sent with each prompt; Worker.run rejects any other value
     "COMFY_WORKER_TIMEOUT": str(WORKER_TIMEOUT_SECONDS),  # gpu_relay: seconds without a worker message before the job is failed
     "COMFY_MODELS_VOLUME": VOLUME_MODELS,  # extra_models: volume holding hand-uploaded files
-    "COMFY_EXTRA_MODELS": "extra",  # extra_models: their path on it, linked into models/<folder>/ on every /object_info request
+    "COMFY_EXTRA_MODELS": "extra",  # extra_models: their path on it, linked into models/<folder>/ before every request that lists models
     "COMFY_MODELS_MOUNT": CACHE_DIR,  # extra_models: where the models volume is mounted, so the links can point into it
     "COMFY_GPU": GPU,  # gpu_relay: shown in the GUI's GPU badge
     "COMFY_STATE_DICT": f"{APP_NAME}-worker-state",  # gpu_relay + Worker: Modal Dict with the worker's heartbeat (state, since, last job)
