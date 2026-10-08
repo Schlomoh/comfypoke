@@ -1,13 +1,13 @@
 """Acceptance test against the deployed UI: auth, websocket, uploaded-model
 listing, one small render, a second render that loads the uploaded model on the
 now-warm worker, two renders queued back to back from two tabs, and three that
-are cancelled (running, pending, pending via the legacy queue route). Exit code
-0 when every check passes. The renders cost
+are cancelled (running, pending, pending via the legacy queue route), and a [gpu]
+line from the worker in the GUI's log. Exit code 0 when every check passes. The renders cost
 cents; their seeds are random so ComfyUI's cache cannot skip them on a rerun.
 
     uv run tools/check.py                run all checks
     uv run tools/check.py --stop-stale   first stop containers whose ComfyUI does not answer (needs modal CLI)
-    options: --url https://...  (default: the deployed UI)
+    options: --url https://...  (default: the deployed UI)  --timeout SECONDS  (per render, default 900)
 """
 import argparse
 import asyncio

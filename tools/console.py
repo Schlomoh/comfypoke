@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "tools"))
 from comfy_modal import config  # noqa: E402
-from render import MODAL, default_url  # noqa: E402
+from render import MODAL, default_url, volume_names  # noqa: E402
 
 SYNC = str(REPO / "tools" / "sync.sh")
 MODEL_FOLDERS = ["loras", "diffusion_models", "vae", "text_encoders", "upscale_models", "controlnet"]
@@ -129,6 +129,17 @@ def containers() -> list[dict]:
     return [c for c in json.loads(capture([MODAL, "container", "list", "--json"])) if c["app_name"] == config.APP_NAME]
 
 
+def human_size(size) -> str:
+    """`modal volume ls --json` gave a formatted string before modal 1.6 and gives bytes since."""
+    if isinstance(size, str):
+        return size
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024:
+            return f"{size} B" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TiB"
+
+
 def models_on_volume() -> list[tuple[str, str, str]]:
     """(folder, file name, size) for every file under extra/ on the models volume."""
     root = config.CONTAINER_ENV["COMFY_EXTRA_MODELS"]
@@ -139,7 +150,7 @@ def models_on_volume() -> list[tuple[str, str, str]]:
             continue
         for f in json.loads(capture([MODAL, "volume", "ls", config.VOLUME_MODELS, d["filename"], "--json"])):
             if f["type"] == "file":
-                found.append((Path(d["filename"]).name, Path(f["filename"]).name, f["size"]))
+                found.append((Path(d["filename"]).name, Path(f["filename"]).name, human_size(f["size"])))
     return found
 
 
@@ -369,17 +380,10 @@ def tokens_set(name: str):
         out.print(f"{name} cleared")
 
 
-def all_volumes() -> list[str]:
-    r = subprocess.run([MODAL, "volume", "list", "--json"], cwd=REPO, capture_output=True, text=True)
-    if r.returncode != 0 or not r.stdout.strip():
-        return []
-    return sorted(n for n in ((v.get("name") or v.get("Name")) for v in json.loads(r.stdout)) if n)
-
-
 def pick_volume(prompt: str, exclude: str = "") -> str:
     """Every volume in the workspace, not just this deployment's three, so files can move
     between separate comfypoke setups. Ours are listed first and labelled."""
-    names = [n for n in all_volumes() if n != exclude]
+    names = [n for n in volume_names() if n != exclude]
     if not names:
         out.print("[red]no volumes found[/] (is `modal profile current` the right workspace?)")
         return ""
@@ -405,7 +409,7 @@ def files():
     while True:
         entries = sorted(volume_entries(vol, path), key=lambda e: (e["type"] != "dir", e["filename"]))
         rows = [f"{'[dir] ' if e['type'] == 'dir' else '[file]'} {Path(e['filename']).name}"
-                + ("" if e["type"] == "dir" else f"  ({e['size']})") for e in entries]
+                + ("" if e["type"] == "dir" else f"  ({human_size(e['size'])})") for e in entries]
         extras = ([".. up"] if path != "/" else [])
         tail = ([f"* act on this whole folder ({Path(path).name})"] if path != "/" else []) + ["done"]
         if not entries:

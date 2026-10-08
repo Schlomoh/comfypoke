@@ -10,10 +10,10 @@
 #   tools/sync.sh workflows-save [message]   commit and push workflows/private/ (your own git checkout, private repo)
 #   tools/sync.sh clear             pull, then delete every render (output/), preview (temp/) and upload (input/,
 #                                   except KEEP_INPUTS in tools/pull.py) from the volume; resets $SYNC_DIR/output/.pulled
-#   tools/sync.sh ls [vol] [path]   list files on a volume (io, models or data; default io)
+#   tools/sync.sh ls [vol] [path] [-r]   list files on a volume (io, models, data or any volume name; default io)
 #   tools/sync.sh cp <vol> <src> <dst>   copy on the volume, server-side, no download
 #   tools/sync.sh mv <vol> <src> <dst>   move on the volume (copy then delete)
-#   tools/sync.sh rm <vol> <path>        delete from the volume
+#   tools/sync.sh rm <vol> <path> [-r]   delete from the volume (-r for a folder)
 # Uploaded files are in the GUI dropdowns on the next page load (workflows: next open of the sidebar), no restart.
 set -e
 MODAL=${MODAL:-$HOME/.local/bin/modal}
@@ -121,7 +121,7 @@ case "$1" in
     ;;
   workflows-save)
     PRIV="$REPO/workflows/private"
-    [[ -d "$PRIV/.git" ]] || { echo "no git checkout at workflows/private (see the README's Private workflows section)"; exit 1; }
+    [[ -d "$PRIV/.git" ]] || { echo "no git checkout at workflows/private (see the README, Adding things)"; exit 1; }
     git -C "$PRIV" add -A
     git -C "$PRIV" diff --cached --quiet && { echo "nothing to save"; exit 0; }
     git -C "$PRIV" commit -m "${2:-workflow work}"
@@ -144,5 +144,5 @@ case "$1" in
     (cd "$REPO" && uv run tools/pull.py "$SYNC_DIR/output" --clear)  # pull, then delete through one SDK connection
     ;;
   *) echo "usage: tools/sync.sh pull | push <path> | lora <file> [folder] | civitai <id|url> [folder] | hf <repo> <path> [folder] | workflows | workflows-save [msg] | clear"
-     echo "                    ls [vol] [path] | cp <vol> <src> <dst> | mv <vol> <src> <dst> | rm <vol> <path>"; exit 1;;
+     echo "                    ls [vol] [path] [-r] | cp <vol> <src> <dst> | mv <vol> <src> <dst> | rm <vol> <path> [-r]"; exit 1;;
 esac

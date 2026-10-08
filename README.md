@@ -49,8 +49,8 @@ modal deploy modal_app.py     # the first run downloads about 80 GB of models to
 tools/sync.sh workflows       # upload the workflows in workflows/
 ```
 
-The `.access_key` step is not optional: without a key the container starts with no login gate
-and the GUI is public.
+The `.access_key` step is not optional: without the file the deploy fails, and an empty file
+starts the container with no login gate, so the GUI is public.
 
 Open the URL the deploy prints. A login page asks for the key: paste the contents of
 `.access_key`. A cookie keeps you signed in for 30 days. Tools and scripts can use `?key=<key>`
@@ -122,9 +122,9 @@ it, so it doubles as a way to learn them.
   parts, so `09` stays as the one that works: the LoRA was trained on Turbo and `10` runs it on
   RAW, and nobody has put a pose LoRA and LanPaint together before.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
-  close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
+  close. Cold means nothing is billed. Poke boots the worker before you need it; measured on an
   L40S, that took about 100 seconds cold and 30 seconds when Modal still had the image cached.
-  Keep warm pings it inside the idle window for the chosen time. Stop shuts it down now. Credits
+  Keep awake pings it inside the idle window for the chosen time. Sleep shuts it down now. Credits
   left this month come from Modal's billing API, which reports what was used, so the badge
   subtracts that from `MONTHLY_CREDITS` in `comfy_modal/config.py` ($30 on Starter, $100 on Team).
 
