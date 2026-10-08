@@ -17,15 +17,16 @@
 # Uploaded files are in the GUI dropdowns on the next page load (workflows: next open of the sidebar), no restart.
 set -e
 MODAL=${MODAL:-$HOME/.local/bin/modal}
-SYNC_DIR=${SYNC_DIR:-$HOME/comfy-renders}  # local sync folder: renders are pulled here (an SD card, a Dropbox folder, anything)
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-# Tokens live in .env (git-ignored) so they survive between shells; the console writes it. Real
+# Tokens and SYNC_DIR live in .env (git-ignored) so they survive between shells; the console writes it. Real
 # environment variables win, so CIVITAI_TOKEN=... tools/sync.sh ... still overrides the file.
 if [[ -f "$REPO/.env" ]]; then
   while IFS='=' read -r k v; do
     [[ "$k" =~ ^[A-Z_]+$ ]] && [[ -z "${!k}" ]] && export "$k=$v"
   done < "$REPO/.env"
 fi
+SYNC_DIR=${SYNC_DIR:-$HOME/comfy-renders}  # local sync folder: renders are pulled here (an SD card, a Dropbox folder, anything)
+SYNC_DIR=${SYNC_DIR/#\~/$HOME}  # a ~ in .env or in quotes is not expanded by the shell
 read -r V_MODELS V_DATA V_IO <<< "$(cd "$REPO" && uv run python -c 'from comfy_modal import config as c; print(c.VOLUME_MODELS, c.VOLUME_DATA, c.VOLUME_IO)')"
 # A bar on a terminal, quiet when piped: curl's bar writes carriage returns that flood a log.
 if [[ -t 2 ]]; then PROGRESS=(--progress-bar); else PROGRESS=(-sS); fi
