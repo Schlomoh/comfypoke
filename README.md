@@ -161,7 +161,9 @@ it, so it doubles as a way to learn them.
   mounted and copies there; the file never travels through this Mac. Both volumes have to be in
   the same Modal workspace. The console does the same thing from Files, under a chosen file.
 - **Renders in and out.** `tools/sync.sh pull` copies new renders to your sync folder
-  (`SYNC_DIR`, default `~/comfy-renders`), each file once. `tools/sync.sh clear` pulls, then
+  (`SYNC_DIR`, default `~/comfy-renders`), each file once. The console sets it under Sync, set
+  the sync folder, and saves it to `.env`; when the folder is missing at pull time (a drive not
+  plugged in yet) it waits for you to plug it in or pick another. `tools/sync.sh clear` pulls, then
   empties output, previews and uploads on the volume. `tools/sync.sh push <file or folder>`
   uploads images from this Mac to the input folder.
 - **Headless renders.** `uv run tools/render.py turbo "a prompt"` renders without the GUI;

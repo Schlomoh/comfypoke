@@ -34,6 +34,8 @@ TOKENS = {
     "CIVITAI_TOKEN": "civitai.com/user/account > API Keys",
     "HF_TOKEN": "huggingface.co/settings/tokens (only needed for gated repos)",
 }
+DEFAULT_SYNC_DIR = "~/comfy-renders"  # tools/sync.sh has the same default
+SHELL_SYNC_DIR = os.environ.get("SYNC_DIR")  # read before load_env, which never overrides it
 out = Console()
 
 
@@ -141,6 +143,65 @@ def models_on_volume() -> list[tuple[str, str, str]]:
     return found
 
 
+def sync_dir() -> Path:
+    return Path(os.path.expanduser(os.environ.get("SYNC_DIR") or DEFAULT_SYNC_DIR))
+
+
+def sync_dir_problem(path: Path) -> str | None:
+    """None when renders can be written there, else why not."""
+    parts = path.parts
+    # realpath: the boot disk is a symlink to /. ismount: a leftover folder under /Volumes is not the drive.
+    if len(parts) > 2 and parts[1] == "Volumes" and not os.path.ismount(os.path.realpath(Path("/", "Volumes", parts[2]))):
+        return f"the drive '{parts[2]}' is not mounted"
+    if not path.exists():
+        return "it does not exist"
+    if not path.is_dir():
+        return "it is not a folder"
+    try:  # a real write: os.access says yes to a read-only FAT stick
+        tempfile.TemporaryFile(dir=path).close()
+    except OSError as e:
+        return f"it is not writable ({e.strerror})"
+    return None
+
+
+def ensure_sync_dir() -> bool:
+    """Wait for the sync folder to be usable, so a drive can be plugged in without leaving the console."""
+    while problem := sync_dir_problem(sync_dir()):
+        out.print(f"[yellow]sync folder {sync_dir()}: {problem}[/]")
+        what = ask(questionary.select("Sync folder", choices=[
+            "check again (plug the drive in first)", "choose another folder", "cancel",
+        ]))
+        if what == "cancel":
+            return False
+        if what.startswith("choose"):
+            sync_dir_set()
+    return True
+
+
+def sync_dir_set():
+    current = os.environ.get("SYNC_DIR") or DEFAULT_SYNC_DIR
+    raw = ask(questionary.path("Sync folder (renders land in <folder>/output):", default=current, only_directories=True)).strip()
+    path = Path(os.path.abspath(os.path.expanduser(raw or DEFAULT_SYNC_DIR)))
+    problem = sync_dir_problem(path)
+    if problem == "it does not exist" and path.parent.is_dir():
+        if not ask(questionary.confirm(f"{path} does not exist. Create it?", default=True)):
+            return
+        try:
+            path.mkdir()
+        except OSError as e:
+            out.print(f"[red]could not create {path}: {e.strerror}[/]; not saved")
+            return
+        problem = sync_dir_problem(path)
+    if problem:
+        out.print(f"[red]{path}: {problem}[/]; not saved")
+        return
+    save_env({"SYNC_DIR": str(path)})
+    os.environ["SYNC_DIR"] = str(path)
+    out.print(f"[green]sync folder set to {path}[/], saved to {ENV_FILE.name}; tools/sync.sh reads it too")
+    if SHELL_SYNC_DIR and os.path.abspath(os.path.expanduser(SHELL_SYNC_DIR)) != str(path):
+        out.print(f"[dim]SYNC_DIR={SHELL_SYNC_DIR} is exported in your shell and wins over {ENV_FILE.name} in new shells[/]")
+
+
 def pick_folder() -> str:
     return ask(questionary.select("Models folder", choices=MODEL_FOLDERS, default="loras"))
 
@@ -149,6 +210,8 @@ def pick_folder() -> str:
 
 def status():
     out.print(f"UI  [link]{default_url()}[/]")
+    problem = sync_dir_problem(sync_dir())
+    out.print(f"sync folder  {sync_dir()}  " + (f"[yellow]{problem}[/]" if problem else "[green]ok[/]"))
     running = containers()
     if running:
         t = Table("container", "started", title=f"running containers of app '{config.APP_NAME}'")
@@ -212,12 +275,18 @@ def deploy():
 
 
 def sync():
-    what = ask(questionary.select("Sync", choices=["pull renders to the sync folder ($SYNC_DIR)", "pull, then clear renders, previews and uploads from the volume",
-                                                    "push a file or folder to input/", "push workflows/ to the UI"]))
-    if what.startswith("pull renders"):
-        run([SYNC, "pull"])  # sync.sh says so when the sync folder is missing
+    problem = sync_dir_problem(sync_dir())
+    folder = f"{sync_dir()}" + (f", {problem}" if problem else "")
+    what = ask(questionary.select("Sync", choices=[f"pull renders to the sync folder ({folder})", "pull, then clear renders, previews and uploads from the volume",
+                                                    "push a file or folder to input/", "push workflows/ to the UI",
+                                                    "set the sync folder"]))
+    if what.startswith("set the sync"):
+        sync_dir_set()
+    elif what.startswith("pull renders"):
+        if ensure_sync_dir():
+            run([SYNC, "pull"])
     elif what.startswith("pull, then clear"):
-        if ask(questionary.confirm("Pull to the sync folder first, then delete output/, temp/ and input/ (except KEEP_INPUTS in tools/pull.py) on the volume?", default=False)):
+        if ensure_sync_dir() and ask(questionary.confirm("Pull to the sync folder first, then delete output/, temp/ and input/ (except KEEP_INPUTS in tools/pull.py) on the volume?", default=False)):
             run([SYNC, "clear"])
     elif what.startswith("push a file"):
         path = os.path.expanduser(ask(questionary.path("File or folder to upload:")))
