@@ -1,4 +1,4 @@
-"""Every tunable in one place. Override the GPU with MODAL_GPU=H100 at deploy time."""
+"""Every tunable in one place. Pin one GPU type with MODAL_GPU=H100 at deploy time."""
 import os
 import time
 
@@ -6,7 +6,17 @@ import modal
 
 APP_NAME = "comfypoke"  # deployed URL: https://<workspace>--comfypoke-ui-ui.modal.run
 
-GPU = os.getenv("MODAL_GPU", "L40S")  # 48 GB; H100 for the 32B-class models
+# Tried in order each time a worker starts. When Modal has no L40S free, a prompt used to wait in
+# its queue until one turned up; now the next type boots instead. A running worker keeps the GPU it
+# got, so a fallback one idles out sooner (FALLBACK_IDLE_SECONDS) and the next boot tries L40S again.
+GPUS = [os.environ["MODAL_GPU"]] if os.getenv("MODAL_GPU") else ["L40S", "A100-40GB"]  # 48 GB, 40 GB
+
+# List prices per hour from modal.com/pricing, for the badge's cost estimate (edit if they change).
+GPU_RATES_PER_HOUR = {"L40S": 1.95, "A100-40GB": 2.10, "A100-80GB": 2.50, "H100": 3.95, "H200": 4.54, "B200": 6.25}
+
+# The plan's monthly credit allowance (Starter $30, Team $100). Modal's billing API reports the
+# credits used this month but not what is left, so the badge subtracts from this.
+MONTHLY_CREDITS = 30
 
 # Inside the containers
 COMFY_DIR = "/root/comfy/ComfyUI"
@@ -23,6 +33,7 @@ UI_PORT = 8000
 # GPU badge has a keep-warm control for longer sessions.
 WORKER_IDLE_SECONDS = 300
 UI_IDLE_SECONDS = 600
+FALLBACK_IDLE_SECONDS = 120  # a worker on anything but GPUS[0]; keep-warm still holds it
 
 # A render sends progress every step, but a one-step model (SeedVR2 7B, 16 GB)
 # sends nothing between "executing" and its result: loading it from the volume
@@ -36,9 +47,6 @@ WORKER_TIMEOUT_SECONDS = 900
 # resolution walks straight past, and the failure reads as FunctionTimeoutError rather than as
 # anything to do with the picture. An hour is past the point where you would want it to stop.
 WORKER_CALL_TIMEOUT = 3600
-
-# Shown in the GUI's GPU badge as a session cost estimate: L40S list price on modal.com/pricing (edit if it changes).
-GPU_RATE_PER_HOUR = 1.95
 
 VOLUME_MODELS = f"{APP_NAME}-models"
 VOLUME_DATA = f"{APP_NAME}-data"
@@ -65,10 +73,11 @@ CONTAINER_ENV = {
     "COMFY_MODELS_VOLUME": VOLUME_MODELS,  # extra_models: volume holding hand-uploaded files
     "COMFY_EXTRA_MODELS": "extra",  # extra_models: their path on it, linked into models/<folder>/ before every request that lists models
     "COMFY_MODELS_MOUNT": CACHE_DIR,  # extra_models: where the models volume is mounted, so the links can point into it
-    "COMFY_GPU": GPU,  # gpu_relay: shown in the GUI's GPU badge
+    "COMFY_GPU": GPUS[0],  # gpu_relay: shown in the GUI's GPU badge while no worker is up; a running one reports its own
     "COMFY_STATE_DICT": f"{APP_NAME}-worker-state",  # gpu_relay + Worker: Modal Dict with the worker's heartbeat (state, since, last job)
     "COMFY_WORKER_IDLE": str(WORKER_IDLE_SECONDS),  # gpu_relay: idle window shown as a countdown in the GUI
-    "COMFY_GPU_RATE": str(GPU_RATE_PER_HOUR),  # gpu_relay: cost estimate in the GUI
+    "COMFY_GPU_RATE": str(GPU_RATES_PER_HOUR.get(GPUS[0], 0)),  # gpu_relay: cost estimate in the GUI, same caveat
+    "COMFY_MONTHLY_CREDITS": str(MONTHLY_CREDITS),  # gpu_relay: credits left this month, in the GUI
 }
 
 
