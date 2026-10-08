@@ -38,6 +38,7 @@ function summary(d) {
   if (d.state === "starting") parts.push("booting");
   if (d.keepLeft) parts.push(`kept warm ${mmss(d.keepLeft)}`);
   if (d.sessionSeconds) parts.push(`$${d.sessionCost.toFixed(2)}`);
+  if (d.credits) parts.push(`$${d.credits.left.toFixed(2)} credit left`);
   return parts.join(" · ");
 }
 
@@ -145,7 +146,7 @@ function panel(el) {
     <table data-rows style="border-collapse:collapse;font-variant-numeric:tabular-nums"></table>
     <div data-ctl></div>
     <label style="display:flex;gap:8px;align-items:center;opacity:.85"><input type="checkbox" data-pill> Show the floating pill (drag it anywhere)</label>
-    <div style="opacity:.7;font-size:12px">The worker idles out after the window shown; Keep warm pings it inside that window. Cost is an estimate at the list rate, from this worker's boot.</div>`;
+    <div style="opacity:.7;font-size:12px">The worker idles out after the window shown; Keep warm pings it inside that window. Cost is an estimate at the list rate, from this worker's boot. Credits come from Modal's billing and refresh every 10 minutes.</div>`;
   const ctl = controls(false);
   el.querySelector("[data-ctl]").appendChild(ctl);
   const cb = el.querySelector("[data-pill]");
@@ -162,6 +163,8 @@ function panel(el) {
       row("Idle window", mmss(d.idle_limit)),
       d.keepLeft ? row("Kept warm for", mmss(d.keepLeft)) : "",
       d.sessionSeconds ? row("This worker", `${mmss(d.sessionSeconds)} · $${d.sessionCost.toFixed(2)} at $${d.rate_per_hour}/h`) : "",
+      d.credits ? row("Credits this month", `$${d.credits.left.toFixed(2)} left of $${d.credits.monthly} ($${d.credits.used.toFixed(2)} used)`) : "",
+      d.credits?.billed ? row("Billed this month", `$${d.credits.billed.toFixed(2)} beyond the credits`) : "",
     ].join("") : "";
     el.querySelector("[data-rows]").innerHTML = rows;
     ctl.update(d);

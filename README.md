@@ -12,7 +12,8 @@ around the clock, at CPU pricing. A GPU container starts when a prompt is queued
 stops itself after 5 idle minutes. Models, workflows and output files persist across restarts on
 three Modal volumes.
 
-The GUI shows the GPU worker's state, an idle countdown and a running cost estimate, with buttons
+The GUI shows the GPU worker's state, an idle countdown, a running cost estimate and the month's
+remaining Modal credits, with buttons
 to wake it early, keep it warm for a set time, or stop it. Three workflows ship by default:
 Z-Image-Turbo and FLUX.2 klein for text to image, and a SeedVR2 upscale.
 
@@ -31,7 +32,8 @@ The UI container runs ComfyUI in CPU mode and a custom node, `gpu_relay`, that i
 prompt. It validates the graph locally, so node errors show in the GUI, registers the job in its
 own queue, and streams the worker's websocket messages to your browser. The worker boots ComfyUI
 with the GPU, renders, writes to the shared io volume, and stays alive for five minutes after its
-last job. A GPU badge in the GUI shows its state, an idle countdown and a cost estimate, and lets
+last job. A GPU badge in the GUI shows its state, an idle countdown, a cost estimate and the
+credits left this month, and lets
 you wake it, keep it warm for a chosen time, or stop it now.
 
 ## Setup
@@ -94,7 +96,9 @@ it, so it doubles as a way to learn them.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
   close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
   L40S, that took about 100 seconds cold and 30 seconds when Modal still had the image cached.
-  Keep warm pings it inside the idle window for the chosen time. Stop shuts it down now.
+  Keep warm pings it inside the idle window for the chosen time. Stop shuts it down now. Credits
+  left this month come from Modal's billing API, which reports what was used, so the badge
+  subtracts that from `MONTHLY_CREDITS` in `comfy_modal/config.py` ($30 on Starter, $100 on Team).
 
 ### From the terminal
 
@@ -162,8 +166,10 @@ the models volume (uploaded, no deploy). Everything else is borrowed.
       tools/sync.sh workflows-save "new outfit swap"   # commit and push it without leaving here
 
   The numbered workflows are generated, so edit those in `tools/build_workflows.py` instead.
-- **Another GPU**: `MODAL_GPU=H100 modal deploy modal_app.py`. Every other tunable, idle windows,
-  ports, volume names, the rate shown in the badge, sits in `comfy_modal/config.py`.
+- **Another GPU**: `GPUS` in `comfy_modal/config.py` is tried in order each time a worker boots,
+  L40S then A100-40GB, so a shortage of one does not leave a prompt waiting.
+  `MODAL_GPU=H100 modal deploy modal_app.py` pins a single type. Every other tunable, idle windows,
+  ports, volume names, the GPU prices shown in the badge, sits in the same file.
 
 ## Layout
 
@@ -187,7 +193,9 @@ the models volume (uploaded, no deploy). Everything else is borrowed.
 
 Modal bills per second while a container runs. The GUI runs on a small CPU container that sleeps
 after ten idle minutes; the worker is an L40S by default at about $1.95 per hour list price and
-sleeps five minutes after its last render. Estimates from measured times at list prices,
+sleeps five minutes after its last render. When Modal has no L40S free it boots an A100 40 GB
+instead, at about $2.10 per hour, and that one sleeps after two idle minutes so the next boot
+can go back to an L40S. Estimates from measured times at list prices,
 compute only:
 
 | Session | GPU time billed | About |

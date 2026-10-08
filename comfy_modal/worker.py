@@ -3,6 +3,8 @@ ComfyUI's websocket messages, its log lines and the final history entry are
 streamed back as (kind, payload) tuples."""
 import asyncio
 import json
+import logging
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -28,7 +30,7 @@ def _error(pid, text, kind):
 
 
 @app.cls(
-    gpu=config.GPU,
+    gpu=config.GPUS,
     max_containers=1,
     volumes={config.CACHE_DIR: volumes.models, config.IO_DIR: volumes.io},
     secrets=[modal.Secret.from_dict(config.container_env())],
@@ -45,6 +47,11 @@ class Worker:
         self.since = time.time()
         self.busy = 0
         self.last_input = self.since
+        self.keep_until = 0.0  # the GUI's keep-warm deadline, sent with each ping
+        name = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True).stdout
+        # "NVIDIA A100-SXM4-40GB" -> "A100-40GB": the first known type whose family is in the device name
+        self.gpu = next((g for g in [*config.GPUS, *config.GPU_RATES_PER_HOUR] if g.split("-")[0] in name), name.strip())
+        self.idle_limit = config.FALLBACK_IDLE_SECONDS if self.gpu in config.GPUS[1:] else config.WORKER_IDLE_SECONDS
         self._beat("starting")
         self._wake = threading.Event()  # set by run() for an immediate beat: the Dict write blocks, so it stays off the event loop
         threading.Thread(target=self._heartbeat, daemon=True).start()
@@ -66,7 +73,9 @@ class Worker:
             self.state_name = state
         try:
             self.state[config.DEPLOY_ID] = {"state": self.state_name, "since": self.since, "beat": time.time(),
-                                    "busy": self.busy, "last_input": self.last_input, "deploy_id": config.DEPLOY_ID}
+                                    "busy": self.busy, "last_input": self.last_input, "deploy_id": config.DEPLOY_ID,
+                                    "gpu": self.gpu, "rate": config.GPU_RATES_PER_HOUR.get(self.gpu, 0),
+                                    "idle_limit": self.idle_limit}
         except Exception:
             pass  # the badge is informational; never let it break a render
 
@@ -74,26 +83,42 @@ class Worker:
         while True:
             self._wake.wait(20)
             self._wake.clear()
+            if self._idled_out():
+                try:
+                    self._stop()
+                    return
+                except Exception:  # keep beating; Modal's own scaledown_window still ends the container
+                    logging.exception("could not stop an idle fallback worker")
             self._beat()
+
+    def _idled_out(self):
+        """Modal's scaledown_window is per class, so a worker on a pricier fallback GPU ends itself."""
+        now = time.time()
+        return (self.idle_limit < config.WORKER_IDLE_SECONDS and self.state_name == "warm" and not self.busy
+                and now - self.last_input > self.idle_limit and now > self.keep_until)
+
+    def _stop(self):
+        import modal.experimental
+
+        modal.experimental.stop_fetching_inputs()
+        self._beat("stopping")
 
     @modal.exit()
     def stopped(self):
         self._beat("stopped")
 
     @modal.method()
-    def ping(self):
+    def ping(self, keep_until: float = 0.0):
         """A trivial input: wakes a cold worker or resets the idle window of a warm one."""
         self.last_input = time.time()
+        self.keep_until = keep_until
         self._beat()
         return config.DEPLOY_ID
 
     @modal.method()
     def stop(self):
         """Stop taking inputs; the container exits once running jobs finish (the next call boots a fresh one)."""
-        import modal.experimental
-
-        modal.experimental.stop_fetching_inputs()
-        self._beat("stopping")
+        self._stop()
 
     def log_lines(self, pid):
         if self.log_owner is None:
