@@ -21,24 +21,13 @@ the container learns the two volume names from a Secret instead. Parsing argv un
 kills the container at import, and Modal answers that by retrying it.
 """
 import argparse
-import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import modal
 
 APP_NAME = "comfypoke-transfer"
-MODAL = str(Path.home() / ".local" / "bin" / "modal")
-
-
-def volume_names() -> list[str]:
-    try:
-        raw = subprocess.run([MODAL, "volume", "list", "--json"], capture_output=True, text=True, check=True).stdout
-        return sorted(v.get("name") or v["Name"] for v in json.loads(raw))
-    except Exception:
-        return []
 
 
 def parse(argv: list[str]):
@@ -51,6 +40,7 @@ def parse(argv: list[str]):
     ap.add_argument("--list", action="store_true", help="list the volumes in this workspace and exit")
     a = ap.parse_args(argv)
     if a.list:
+        from render import volume_names  # local only: the container image has no render.py deps
         names = volume_names()
         print("\n".join(names) if names else "no volumes found (is `modal profile current` the right workspace?)")
         sys.exit(0)

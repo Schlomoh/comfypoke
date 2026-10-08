@@ -5,8 +5,8 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 const POLL_MS = 5000;
-const COLORS = { cold: "#8a8a8a", starting: "#d9a300", warm: "#3aa655", busy: "#3b82f6", stopping: "#d9a300" };
-const LABEL = { cold: "napping", starting: "waking up", warm: "awake", busy: "rendering", stopping: "dozing off" };
+const COLORS = { cold: "#8a8a8a", starting: "#d9a300", warm: "#3aa655", busy: "#3b82f6" };
+const LABEL = { cold: "napping", starting: "waking up", warm: "awake", busy: "rendering" };
 const LS = "comfy_modal.gpu";
 const state = { s: null, at: 0, views: new Set(), pill: null };
 
@@ -20,7 +20,7 @@ function derived() {
   const s = state.s;
   if (!s) return null;
   const dt = (Date.now() - state.at) / 1000;
-  const warm = ["warm", "busy", "starting", "stopping"].includes(s.state);
+  const warm = ["warm", "busy", "starting"].includes(s.state);
   return {
     ...s,
     idlesIn: s.state === "warm" && s.idles_in != null ? Math.max(0, s.idles_in - dt) : null,
@@ -67,12 +67,12 @@ const actions = {
 
 const BTN = "font:inherit;padding:3px 8px;border-radius:6px;border:1px solid var(--border-color,#555);background:var(--comfy-input-bg,#2a2a2a);color:var(--input-text,#ddd);cursor:pointer";
 
-function controls(compact) {
+function controls() {
   const el = document.createElement("span");
   el.style.cssText = "display:inline-flex;gap:6px;align-items:center";
   el.innerHTML = `<button data-a="wake" title="Poke the worker awake now so the first render does not wait">Poke</button>
     <select data-a="keep" title="Ping the worker so it never idles out; billed the whole time">
-      <option value="0">${compact ? "Keep awake: off" : "Keep awake: off"}</option><option value="15">15 min</option><option value="30">30 min</option>
+      <option value="0">Keep awake: off</option><option value="15">15 min</option><option value="30">30 min</option>
       <option value="60">60 min</option><option value="120">2 h</option></select>
     <button data-a="stop" title="Send the worker to sleep now; the next render wakes a fresh one">Sleep</button>`;
   for (const b of el.querySelectorAll("button, select")) b.style.cssText = BTN;
@@ -99,7 +99,7 @@ function mountPill() {
   const pos = prefs.pos || { left: 12, bottom: 12 };
   Object.assign(pill.style, pos.top != null ? { top: pos.top + "px", left: pos.left + "px" } : { bottom: pos.bottom + "px", left: pos.left + "px" });
   pill.innerHTML = `<span data-dot style="width:9px;height:9px;border-radius:50%;background:#8a8a8a;flex:none"></span><span data-text>GPU …</span>`;
-  const ctl = controls(true);
+  const ctl = controls();
   pill.appendChild(ctl);
   const close = document.createElement("button");
   close.textContent = "×"; close.title = "Hide (reopen from the GPU sidebar tab)";
@@ -146,8 +146,8 @@ function panel(el) {
     <table data-rows style="border-collapse:collapse;font-variant-numeric:tabular-nums"></table>
     <div data-ctl></div>
     <label style="display:flex;gap:8px;align-items:center;opacity:.85"><input type="checkbox" data-pill> Show the floating pill (drag it anywhere)</label>
-    <div style="opacity:.7;font-size:12px">The worker idles out after the window shown; Keep warm pings it inside that window. Cost is an estimate at the list rate, from this worker's boot. Credits come from Modal's billing and refresh every 10 minutes.</div>`;
-  const ctl = controls(false);
+    <div style="opacity:.7;font-size:12px">The worker idles out after the window shown; Keep awake pings it inside that window. Cost is an estimate at the list rate, from this worker's boot. Credits come from Modal's billing and refresh every 10 minutes.</div>`;
+  const ctl = controls();
   el.querySelector("[data-ctl]").appendChild(ctl);
   const cb = el.querySelector("[data-pill]");
   cb.checked = load().pill !== false;

@@ -31,16 +31,6 @@ _dispatch = asyncio.Lock()  # Worker.run calls start in submission order; the st
 _cancelled = set()  # prompt_ids cancelled while their Worker.run call was still in flight: the cancel is re-sent once the worker has the prompt
 
 
-def _basic_password(request) -> str:
-    import base64
-
-    auth = request.headers.get("Authorization", "")
-    try:
-        return base64.b64decode(auth[6:]).decode().split(":", 1)[1] if auth.startswith("Basic ") else ""
-    except Exception:
-        return ""
-
-
 def _worker():
     import modal
 
@@ -162,8 +152,6 @@ async def _relay_middleware(request, handler):
     cancel = path.startswith("/jobs/") and path.endswith("/cancel")
     if request.method != "POST" or not (path in ("/prompt", "/interrupt", "/queue") or cancel):
         return await handler(request)
-    if KEY and request.cookies.get("comfy_key") != KEY and _basic_password(request) != KEY:
-        raise web.HTTPUnauthorized(text="missing or wrong key")  # custom nodes load in listdir order; access_key may run after us
     try:
         body = await request.json()
     except json.JSONDecodeError:
@@ -259,7 +247,7 @@ async def _status():
         state = "busy"
     elif fresh:
         state = w["state"]
-    elif now < _waking["until"] or running:
+    elif now < _waking["until"]:
         state = "starting"
     else:
         state = "cold"
@@ -342,8 +330,7 @@ if os.environ.get("COMFY_RELAY") == "1":
     RATE = float(os.environ["COMFY_GPU_RATE"])
     CREDITS = float(os.environ["COMFY_MONTHLY_CREDITS"])
     GPU = os.environ.get("COMFY_GPU", "GPU")
-    KEY = os.environ.get("COMFY_ACCESS_KEY", "")
-    server.app.middlewares.append(_relay_middleware)
+    server.app.middlewares.append(_relay_middleware)  # access_key's gate is inserted at 0, so it runs before this
 
 WEB_DIRECTORY = "./js"
 

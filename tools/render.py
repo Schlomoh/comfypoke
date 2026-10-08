@@ -3,7 +3,7 @@ print what comes back. Useful for timing and for testing a workflow without
 the GUI.
 
     uv run tools/render.py turbo "a prompt"            Z-Image-Turbo quick render
-    uv run tools/render.py api some_prompt.json        any API-format prompt (Save > Export (API))
+    uv run tools/render.py api some_prompt.json        any API-format prompt (Workflow > Export (API) in the GUI)
     options: --seed N  --prefix folder/name  --url https://...  (default: this workspace's deployed UI)
 """
 import argparse
@@ -28,6 +28,14 @@ MODAL = os.environ.get("MODAL", str(Path.home() / ".local/bin/modal"))
 def default_url() -> str:
     workspace = subprocess.run([MODAL, "profile", "current"], capture_output=True, text=True, check=True).stdout.strip()
     return f"https://{workspace}--{config.APP_NAME}-ui-ui.modal.run"
+
+
+def volume_names() -> list[str]:
+    """Every volume in the current workspace, not just this deployment's."""
+    r = subprocess.run([MODAL, "volume", "list", "--json"], capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        return []
+    return sorted(n for n in ((v.get("name") or v.get("Name")) for v in json.loads(r.stdout)) if n)
 
 
 def turbo_prompt(text: str, seed: int, prefix: str) -> dict:

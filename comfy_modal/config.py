@@ -64,7 +64,8 @@ DEPLOY_ID = time.strftime("%Y%m%d-%H%M%S") if modal.is_local() else os.environ.g
 # Env-var contract with comfy_nodes/, which run inside ComfyUI and cannot import
 # this package. Both classes ship container_env() as a Modal Secret; the nodes
 # read exactly these names and fail at start when one is missing. The UI adds
-# COMFY_RELAY=1 and COMFY_ACCESS_KEY, which turn on the relay and the key gate.
+# COMFY_RELAY=1 and COMFY_ACCESS_KEY, which turn on the relay and the key gate, and
+# COMFY_DATA_VOLUME, which extra_models reloads on /userdata requests.
 CONTAINER_ENV = {
     "COMFY_MODAL_APP": APP_NAME,  # gpu_relay: app that hosts Worker
     "COMFY_IO_VOLUME": VOLUME_IO,  # gpu_relay: committed before each prompt so uploads reach the worker

@@ -10,8 +10,8 @@ they are instant whatever the file weighs. Moves are a copy followed by a delete
     tools/sync.sh rm  <volume> <path>
 
 Paths are relative to the volume root: output/ComfyUI_00012_.png, extra/loras/mine.safetensors.
-Modal cannot copy between two volumes server-side, so that is not offered here; use pull and
-push for the rare case where you need it.
+Modal cannot copy between two volumes server-side, so that is not offered here; tools/transfer.py
+does it from a small container that mounts both.
 """
 import sys
 from pathlib import Path

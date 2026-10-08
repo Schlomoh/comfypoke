@@ -54,5 +54,5 @@ class UI:
         comfy.wait_for_port(config.UI_PORT, timeout=120)  # a restored snapshot must not serve before ComfyUI answers
 
     @modal.web_server(config.UI_PORT, startup_timeout=300)
-    def ui(self):  # method name is part of the URL: <workspace>--comfy-ui-ui.modal.run
+    def ui(self):  # method name is part of the URL: <workspace>--comfypoke-ui-ui.modal.run
         pass

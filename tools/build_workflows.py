@@ -214,10 +214,9 @@ def build_krea2_outfit(image_file: str, target: str, outfit: str, seed: int):
     step, so the masked region and the pixels around it settle against each other rather than the
     mask being stamped on at the end. Hence denoise 1.0 here too.
 
-    What is missing next to 08 is the body branch. RT-DETR and SAM 3D Body still work, but nothing
-    consumes a pose or depth map for Krea 2: there is no Krea 2 controlnet on this deployment.
-    facok/comfyui-krea2-controlnet is the pack that would add one, and then the body depth wires
-    in the same way it does in 08.
+    What is missing next to 08 is the body branch: there is no Krea 2 controlnet on this
+    deployment. 10 adds the body back another way, with SAM 3D Body drawing a skeleton and a pose
+    LoRA making Krea 2 follow it.
 
     Dials, in the order worth touching: LanPaint_NumSteps (3 here, up to 10, each one costs a full
     extra pass), steps, then cfg. The LoRA slot sits at strength 0, so it does nothing until set.
