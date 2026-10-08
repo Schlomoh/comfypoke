@@ -36,7 +36,8 @@ explains where things are and how to change them without breaking the deployment
   node-pack layer in `image.py`, so a pack change never re-downloads models.
 - Tunables: `comfy_modal/config.py` only. Never hard-code a volume name, port or app name in a
   node or a tool; tools read them through `from comfy_modal import config`.
-- Workflows: `tools/build_workflows.py` writes both the GUI JSON and the API prompt. New node
+- Workflows: `tools/build_workflows.py` writes both the GUI JSON and the API prompt, for every
+  numbered workflow except `08`, which was built in the GUI and has no API prompt. New node
   types need an entry in `SPEC` and `WIDGET_NAMES` in `tools/workflow_graph.py`: the input names
   in ComfyUI's order and the widget names in the order the node declares them. Read them from the
   running server with `GET /api/object_info/<NodeType>`. A wrong order does not error: the GUI shows

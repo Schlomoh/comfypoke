@@ -27,6 +27,10 @@ SPEC = {  # node type -> (input names, output types)
     "ReferenceLatent": (["conditioning", "latent"], ["CONDITIONING"]),
     "EmptyFlux2LatentImage": ([], ["LATENT"]), "Flux2Scheduler": ([], ["SIGMAS"]),
     "KSamplerSelect": ([], ["SAMPLER"]), "RandomNoise": ([], ["NOISE"]),
+    "ModelSamplingFlux": (["model"], ["MODEL"]), "BasicScheduler": (["model"], ["SIGMAS"]),
+    "LanPaint_KSampler": (["model", "positive", "negative", "latent_image"], ["LATENT"]),
+    "TextEncodeKrea2OstrisEdit": (["clip", "vae", "image1"], ["CONDITIONING"]),
+    "Krea2OstrisEditModelPatch": (["model"], ["MODEL"]),
     "CFGGuider": (["model", "positive", "negative"], ["GUIDER"]),
     "SamplerCustomAdvanced": (["noise", "guider", "sampler", "sigmas", "latent_image"], ["LATENT", "LATENT"]),
     "ImageCompositeMasked": (["destination", "source", "mask"], ["IMAGE"]),
@@ -63,12 +67,22 @@ WIDGET_NAMES = {
     "GrowMask": ["expand", "tapered_corners"], "MaskComposite": ["x", "y", "operation"],
     "EmptyFlux2LatentImage": ["width", "height", "batch_size"], "Flux2Scheduler": ["steps", "width", "height"],
     "KSamplerSelect": ["sampler_name"], "RandomNoise": ["noise_seed", "control_after_generate"], "CFGGuider": ["cfg"],
+    "ModelSamplingFlux": ["max_shift", "base_shift", "width", "height"], "BasicScheduler": ["scheduler", "steps", "denoise"],
+    "LanPaint_KSampler": ["seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise",
+                          "LanPaint_NumSteps", "LanPaint_PromptMode", "LanPaint_Info", "Inpainting_mode"],
+    "TextEncodeKrea2OstrisEdit": ["prompt"], "Krea2OstrisEditModelPatch": ["kv_cache"],
     "ImageCompositeMasked": ["x", "y", "resize_source"],
     "TextEncodeQwenImageEditPlus": ["prompt"], "FluxKontextMultiReferenceLatentMethod": ["reference_latents_method"], "CFGNorm": ["strength", "pre_cfg"],
     "ModelPatchLoader": ["name"], "QwenImageDiffsynthControlnet": ["strength"], "ZImageFunControlnet": ["strength"],
     "RTDETR_detect": ["threshold", "class_name", "max_detections"],
     "SAM3DBody_Loader": ["model_file"], "SAM3DBody_Predict": ["run_hand_refinement", "fov", "batch_size"],
-    "SAM3DBody_Render": ["width", "height", "render_style", "render_style.shader", "render_style.opacity", "render_style.person_palette_falloff", "render_style.region"],  # mesh style
+    # openpose_2d style: a DWPose-looking skeleton, which is what the Krea 2 pose LoRA was trained
+    # to read. The mesh style takes different sub-widgets
+    # ("render_style.shader", ".opacity", ".person_palette_falloff", ".region"); swap them here if
+    # you want a depth or normals render instead.
+    "SAM3DBody_Render": ["width", "height", "render_style", "render_style.marker_radius_px", "render_style.stick_width_px",
+                         "render_style.limb_alpha", "render_style.face_style", "render_style.hand_style",
+                         "render_style.person_palette_falloff"],
     "LoadDA3Model": ["model_name", "weight_dtype"], "DA3Inference": ["resolution", "resize_method", "mode"],
     "DA3Render": ["output", "output.normalization", "output.apply_sky_clip"],
     "VAEEncodeTiled": ["tile_size", "overlap", "temporal_size", "temporal_overlap"], "VAEDecodeTiled": ["tile_size", "overlap", "temporal_size", "temporal_overlap"],

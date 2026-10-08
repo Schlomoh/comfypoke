@@ -13,9 +13,10 @@ stops itself after 5 idle minutes. Models, workflows and output files persist ac
 three Modal volumes.
 
 The GUI shows the GPU worker's state, an idle countdown, a running cost estimate and the month's
-remaining Modal credits, with buttons
-to wake it early, keep it warm for a set time, or stop it. Three workflows ship by default:
-Z-Image-Turbo and FLUX.2 klein for text to image, and a SeedVR2 upscale.
+remaining Modal credits, with buttons to wake it early, keep it warm for a set time, or stop it.
+Ten workflows ship by default: Z-Image-Turbo, FLUX.2 klein and Krea 2 (Turbo and RAW) for text to
+image, Krea 2 style reference, masked edit and outfit swap (with and without the pose held), a
+Z-Image outfit swap with the body pinned, and a SeedVR2 upscale.
 
 ## How it works
 
@@ -91,8 +92,35 @@ it, so it doubles as a way to learn them.
 ### In the GUI
 
 - Press `w` for the workflows. `01` renders with Z-Image-Turbo in about ten seconds once the
-  worker is warm, `02` with FLUX.2 klein, `03` upscales an image with SeedVR2 to the size set in
+  worker is warm, `02` with FLUX.2 klein, `04` with Krea 2 Turbo (12B, 8 steps, the best-looking
+  of the three and the slowest), `03` upscales an image with SeedVR2 to the size set in
   megapixels; upload the image with the node's button before queueing it.
+- `05` is Krea 2 RAW, the same model undistilled: 52 steps at CFG 3.5 instead of 8 at CFG 1, so a
+  minute or two per image rather than seconds. It takes a real negative prompt, which Turbo cannot,
+  and it is the checkpoint to train a LoRA on. For everyday renders, use `04`.
+- `06` takes an image in and carries its look onto a new prompt. It needs one LoRA that is not in
+  the catalog: `tools/sync.sh hf Comfy-Org/Krea-2 loras/krea2_style_reference.safetensors loras`,
+  no rebuild. Note that this is style, not editing: the open Krea 2 weights are text to image
+  only, so asking it to change something in the picture will not work. FLUX.2 klein is the
+  editing model here.
+- `07` edits part of an image. Name the thing in words ("her jacket") and SAM 3.1 makes the mask;
+  the MaskEditor on the Load Image node adds to it if SAM misses something. Only the box around
+  the mask is resized, to 1024, so the rest of the photo keeps whatever resolution you uploaded.
+  Krea 2 has no inpainting checkpoint, so it cannot see the pixels around the hole the way a real
+  one would; `denoise` is the dial between keeping the original and letting it invent, and `09`
+  is the version that solves that properly rather than working around it.
+- `08` replaces what someone is wearing on Z-Image, with the body pinned: SAM makes the mask,
+  SAM 3D Body renders the body as depth, and Z-Image's Fun Controlnet inpaints the crop while
+  holding that depth. Because the controlnet sees the pixels around the mask, it runs at full
+  denoise. The LoRA slot is off (strength 0); point it at your own LoRA if you have one.
+- `09` replaces what someone is wearing. SAM makes the mask, the masked area is cropped out and
+  edited at 1024 and stitched back, and LanPaint runs a few extra passes inside each step so the
+  new clothing and the body around it agree. `LanPaint_NumSteps` is the first dial to touch: more
+  passes, better continuity, one full extra pass of cost each.
+- `10` is `09` with the body held in place: SAM 3D Body draws a skeleton and a pose LoRA makes
+  Krea 2 follow it. Worth it when the clothing keeps changing the pose underneath. Two unproven
+  parts, so `09` stays as the one that works: the LoRA was trained on Turbo and `10` runs it on
+  RAW, and nobody has put a pose LoRA and LanPaint together before.
 - The GPU badge sits in the sidebar (the chip icon) and as a small pill you can drag anywhere or
   close. Cold means nothing is billed. Wake boots the worker before you need it; measured on an
   L40S, that took about 100 seconds cold and 30 seconds when Modal still had the image cached.
@@ -166,6 +194,7 @@ the models volume (uploaded, no deploy). Everything else is borrowed.
       tools/sync.sh workflows-save "new outfit swap"   # commit and push it without leaving here
 
   The numbered workflows are generated, so edit those in `tools/build_workflows.py` instead.
+  The exception is `08`, which was built in the GUI: edit it there and save it over the file.
 - **Another GPU**: `GPUS` in `comfy_modal/config.py` is tried in order each time a worker boots,
   L40S then A100-40GB, so a shortage of one does not leave a prompt waiting.
   `MODAL_GPU=H100 modal deploy modal_app.py` pins a single type. Every other tunable, idle windows,
@@ -230,9 +259,9 @@ Worth being straight about, because the answer is not always this.
 
 ## Workflow packs
 
-The three workflows here cover text to image and upscaling. Packs with more involved pipelines,
-masked outfit changes with the body pinned, head swaps for consistent characters, clean-up and
-restore, editing inside a mask, are sold separately and drop into the same `workflows/` folder:
+The workflows here cover text to image, upscaling and Krea 2 edits inside a mask. Packs with more
+involved pipelines, head swaps for consistent characters, clean-up and restore, are sold
+separately and drop into the same `workflows/` folder:
 they upload with the same `tools/sync.sh workflows` command. Link to follow.
 
 ## License
