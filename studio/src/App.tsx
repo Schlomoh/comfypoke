@@ -2,14 +2,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Locked, type Catalog } from "./api";
 import { closeSpace, db, migrate, saveDraft, SpaceContext, useCharacters, useRenders, useSpace, type Render, type Space } from "./db";
-import { GpuBar, useGpu } from "./gpu";
+import { ActivityButton, ActivitySheet } from "./activity";
+import { useGpu } from "./gpu";
 import { useJobs } from "./jobs";
 import { deleteRenders, KEYS, Library, revealThumb, saveImage, toggleBest } from "./library";
 import { notify } from "./toast";
 import { Viewer } from "./viewer";
 import { ModelPanel, resolve } from "./model";
 import { PromptPanel, sameCharacter } from "./prompt";
-import { BLOCKS, compose, EMPTY, fromSize, legacyUnet, size, useRecipe, type Recipe } from "./recipe";
+import { compose, EMPTY, fromSize, legacyUnet, size, useRecipe, type Recipe } from "./recipe";
 import { shortName, Stage } from "./stage";
 import { FIT, type View } from "./zoom";
 import { Btn, errorText } from "./ui";
@@ -149,6 +150,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const [focus, setFocus] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  const [sheet, setSheet] = useState(false);
   const [filter, setFilter] = useState("");
   const [best, setBest] = useState(false);
   const [keys, setKeys] = useState(false);
@@ -166,7 +168,13 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const notes = useLiveQuery(() => db.loraNotes.toArray(), []) ?? [];
   const characters = useCharacters() ?? [];
   const workspace = useLiveQuery(() => db.workspaces.get(space.id), [space.id]);
+  // A finished job stays until its render is in the library, so the viewer goes from one to the other in place.
+  const live = jobs.filter((j) => !(j.saved && renders.some((r) => r.id === j.id)));
+  useEffect(() => {
+    jobs.forEach((j) => j.saved && renders.some((r) => r.id === j.id) && dismiss(j.id));
+  }, [jobs, renders, dismiss]);
   const open = renders.find((r) => r.id === openId) ?? null; // always the stored version: Best changes it
+  const openJob = open ? null : (live.find((j) => j.id === openId) ?? null);
   const setOpen = (r: Render | null) => setOpenId(r?.id ?? null);
 
   useEffect(() => {
@@ -183,10 +191,10 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const showing = names.includes(filter) ? filter : ""; // the last render of a character may be gone
   const shown = renders.filter((r) => (!showing || r.characterName === showing) && (!best || r.best));
   const bestCount = renders.filter((r) => r.best && (!showing || r.characterName === showing)).length;
-  const job = jobs.find((j) => j.id === focus) ?? (focus ? undefined : jobs[0]);
+  const job = live.find((j) => j.id === focus) ?? (focus ? undefined : live[0]);
   const render = job ? undefined : (renders.find((r) => r.id === focus) ?? renders[0]);
   const cursor = useRef<string | null>(null);
-  cursor.current = (open ?? render)?.id ?? null; // where keyboard browsing starts
+  cursor.current = (open ?? openJob ?? job ?? render)?.id ?? null; // where keyboard browsing starts
 
   // Median render time of this model on this device: cold boots skew a mean, not a median.
   const times = renders.filter((r) => (r.unet ?? legacyUnet(r.model)) === recipe.unet).slice(0, 15).map((r) => r.seconds);
@@ -253,13 +261,14 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
     if (open) setOpen(after ?? null);
   };
 
-  /** Move through the library by n images, from the keyboard or a swipe. The zoom stays as it is. */
+  /** Move through the queue and the library by n images, from the keyboard or a swipe. The zoom stays as it is. */
   const step = (n: number) => {
-    const at = shown.findIndex((r) => r.id === cursor.current);
-    const next = shown[Math.min(shown.length - 1, Math.max(0, at + n))];
+    const items: { id: string }[] = [...live, ...shown]; // as the library lists them
+    const at = items.findIndex((r) => r.id === cursor.current);
+    const next = items[Math.min(items.length - 1, Math.max(0, at + n))];
     if (!next || next.id === cursor.current) return false;
     cursor.current = next.id; // ahead of React: held-down arrows fire faster than it re-renders
-    if (open) setOpen(next);
+    if (openId) setOpenId(next.id);
     setFocus(next.id);
     revealThumb(next.id);
     return true;
@@ -274,7 +283,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
       if (e.key === "?") return setKeys(true);
       if ((e.key === "Enter" || e.key === " ") && (e.target as HTMLElement).closest?.("button, a")) return; // activates what has focus
       const at = shown.findIndex((r) => r.id === cursor.current);
-      const cur = shown[at] ?? open ?? render; // the viewer's image, or the one on the stage
+      const cur = openJob ? undefined : (shown[at] ?? open ?? render); // the viewer's image, or the one on the stage; none on a job
       const cols = matchMedia("(min-width: 1024px)").matches ? 2 : matchMedia("(min-width: 640px)").matches ? 4 : 3;
       const go = (n: number) => step(n) && e.preventDefault();
       const zoom = (f: number) => setView({ ...view, scale: Math.min(8, (view.scale ?? 1 / f) * f) }); // from fit, + goes to 1:1
@@ -335,51 +344,29 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const blocked = !catalog.models.length
     ? error ? "model list unavailable" : "loading models…"
     : !sent.family ? "pick a family for this model" : !prompt ? "fill in a block to generate" : null;
-  const filled = BLOCKS.filter((b) => recipe.blocks[b.id].on && recipe.blocks[b.id].text.trim()).length;
+  const activity = <ActivityButton gpu={gpu} jobs={live} onOpen={() => setSheet(true)} />;
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
-      <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-line bg-bg px-4 pt-[env(safe-area-inset-top)] lg:static">
-        <div className="flex h-12 flex-1 items-center gap-4">
-          <span className="font-mono text-xs font-semibold tracking-[0.2em]">STUDIO</span>
-          <button onClick={() => setMenu(true)} className="flex h-11 min-w-0 items-center gap-1.5 border border-line px-2 fine:h-8 font-mono text-xs hover:border-edge" title="Workspace">
-            <span className="truncate">{workspace?.name}</span>
-            {workspace?.lock && <span className="hidden text-faint sm:inline">protected</span>}
-            <span className="text-faint" aria-hidden>▾</span>
-          </button>
-          <span className="hidden truncate font-mono text-xs text-faint sm:inline">
-            {characterName ?? "unsaved character"} · {filled} blocks · {active.length} LoRA
-          </span>
-        </div>
-        <button
-          onClick={() => setVeil(!veil)}
-          aria-pressed={veil}
-          title="Hide all images (H)"
-          aria-label="Hide all images"
-          className={`h-11 px-2 font-mono text-[10.5px] fine:h-8 uppercase ${veil ? "text-ink" : "text-faint hover:text-ink"}`}
-        >
-          {veil ? "show" : "hide"}
-        </button>
-        <GpuBar {...gpu} />
-      </header>
-
       <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[400px_minmax(0,1fr)_300px]">
-        <aside className="order-2 flex flex-col lg:order-none lg:min-h-0 lg:border-r lg:border-line">
-          <nav className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-10 flex border-b border-line bg-bg lg:static">
+        {/* On a phone the aside's parts join the page column: the tab row first, as the top bar, then the stage */}
+        <aside className="contents lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-line">
+          <nav className="sticky top-0 z-20 flex items-center border-b border-line bg-bg pt-[env(safe-area-inset-top)] pr-2 lg:static lg:pt-0">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 aria-pressed={tab === t.id}
-                className={`label h-11 flex-1 border-b-2 lg:h-10 ${t.id === "library" ? "lg:hidden" : ""} ${
+                className={`label h-11 min-w-0 flex-1 truncate border-b-2 px-1 lg:h-10 ${t.id === "library" ? "lg:hidden" : ""} ${
                   tab === t.id || (t.id === "prompt" && tab === "library") ? "border-ink text-ink" : "border-transparent"
                 } ${t.id === "prompt" && tab === "library" ? "max-lg:border-transparent max-lg:text-muted" : ""}`}
               >
                 {t.label}
               </button>
             ))}
+            {activity}
           </nav>
-          <div className="pb-32 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-0">
+          <div className="order-2 pb-32 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-0">
             <div className={tab === "model" ? "hidden" : tab === "library" ? "hidden lg:block" : ""}>
               <PromptPanel recipe={recipe} set={setRecipe} triggers={triggers.filter(Boolean)} />
             </div>
@@ -396,16 +383,16 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
                 best={best}
                 setBest={setBest}
                 bestCount={bestCount}
-                jobs={jobs}
+                jobs={live}
                 focus={job?.id ?? render?.id ?? null}
                 onSelect={setOpen}
-                onFocus={setFocus}
+                onFocus={(id) => (setFocus(id), setOpenId(id))}
                 onUpscale={upscaleMany}
                 upscaleLabel={upscaleLabel}
               />
             </div>
           </div>
-          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:py-3">
+          <div className="fixed inset-x-0 bottom-0 z-20 order-3 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:py-3">
             {error && <p role="alert" className="mb-2 font-mono text-xs text-bad">{error}</p>}
             <div className="flex items-center gap-3">
               <div className="min-w-0 flex-1 font-mono text-xs leading-snug text-faint tabular-nums">
@@ -430,7 +417,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
           </div>
         </aside>
 
-        <main className="order-1 h-[52svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
+        <main className="order-1 h-[56svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
           <Stage
             job={job}
             render={render}
@@ -461,7 +448,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
             best={best}
             setBest={setBest}
             bestCount={bestCount}
-            jobs={jobs.filter((j) => j !== job)}
+            jobs={live.filter((j) => j !== job)}
             focus={job?.id ?? render?.id ?? null}
             onSelect={(r) => setFocus(r.id)}
             onFocus={setFocus}
@@ -471,6 +458,10 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
 
       <Viewer
         render={open}
+        job={openJob}
+        activity={activity}
+        onCancel={cancel}
+        onDismiss={dismiss}
         all={renders}
         info={info}
         setInfo={setInfo}
@@ -482,6 +473,19 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
         view={view}
         setView={setView}
         onStep={step}
+      />
+      <ActivitySheet
+        open={sheet}
+        onClose={() => setSheet(false)}
+        gpu={gpu}
+        jobs={live}
+        onShow={(id) => (setSheet(false), setFocus(id), setOpenId(id))}
+        onCancel={cancel}
+        onDismiss={dismiss}
+        workspace={workspace}
+        onWorkspace={() => (setSheet(false), setMenu(true))}
+        veil={veil}
+        setVeil={setVeil}
       />
       <WorkspaceMenu open={menu} onClose={() => setMenu(false)} onSwitch={onClose} />
       <Shortcuts open={keys} onClose={() => setKeys(false)} />

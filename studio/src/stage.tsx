@@ -103,7 +103,7 @@ export function Stage({ job, render, aspect, booted, loading, onCancel, onDismis
         {job?.error ? (
           <>
             <span className="text-bad" role="alert">FAILED</span>
-            <span className="min-w-0 flex-1 truncate text-muted" title={job.error}>{job.error}</span>
+            <span className="line-clamp-3 min-w-0 flex-1 break-words text-muted">{job.error}</span>
             {job.image && (
               <Btn onClick={() => download(job.image!, `studio-${job.params?.seed ?? job.id}.png`)}>Download</Btn>
             )}

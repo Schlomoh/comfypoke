@@ -69,5 +69,5 @@ export const api = {
   forget: (id: string) => call(`/api/jobs/${id}`, { method: "DELETE", keepalive: true }), // also cancels; survives a reload right after
   gpu: () => call<Gpu>("/api/gpu"),
   wake: () => post<Gpu>("/api/gpu/wake"),
-  stop: () => post<Gpu>("/api/gpu/stop"),
+  stop: (force = false) => post<Gpu>(`/api/gpu/stop${force ? "?force=true" : ""}`), // force ends running renders too
 };

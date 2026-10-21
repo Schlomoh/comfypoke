@@ -37,6 +37,7 @@ jobs: dict[str, "Job"] = {}
 _waking = {"until": 0.0}
 _dispatch = asyncio.Lock()  # Worker.run calls start in submission order, as in gpu_relay
 _billing = {"at": 0.0, "data": None}
+_background: set[asyncio.Task] = set()  # asyncio keeps only weak references to tasks
 
 
 def _worker():
@@ -406,14 +407,25 @@ async def wake():
 
 
 @api.post("/api/gpu/stop")
-async def stop():
+async def stop(force: bool = False):
+    """force ends whatever runs: the studio's jobs fail as stopped, and the worker exits mid-render."""
     st = await _gpu()
-    if st["state"] in ("busy", "starting"):
+    if st["state"] in ("busy", "starting") and not force:
         raise HTTPException(409, "a render is running or the GPU is booting; wait or cancel first")
-    if st["state"] == "warm":
+    if force and st["state"] != "cold":  # a forced call on a cold worker would boot one just to exit it
+        for job in [j for j in jobs.values() if not j.ended]:
+            job.cancelled = True
+            if job.task:
+                job.task.cancel()
+            job.end("failed", {"message": "the GPU was force-stopped"})
+        # A booting worker takes the call once it is up, so it is not waited for here.
+        task = asyncio.get_running_loop().create_task(_worker().stop.remote.aio(force=True))
+        _background.add(task)
+        task.add_done_callback(lambda t: (_background.discard(t), t.cancelled() or t.exception() and logging.error("studio: force stop failed: %r", t.exception())))
+    elif st["state"] == "warm":
         await _worker().stop.remote.aio()  # the container exits; nothing is billed after that
     _waking["until"] = 0
-    return {**st, "state": "cold", "idles_in": None}
+    return {**st, "state": "cold", "idles_in": None, "running": 0}
 
 
 # ---- the app itself: the built studio/dist, index.html revalidated, hashed assets cached ----------------------

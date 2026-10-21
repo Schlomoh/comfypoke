@@ -141,7 +141,7 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
 - Everything happens in a workspace, and opening the app shows only the list of them. Each
   workspace keeps its own renders, characters, draft and jobs in flight; nothing of one shows
   in another. All of it is encrypted on the device with the workspace's own key. Give a workspace
-  a password (when creating it, or later in the dialog behind its name in the header) and that
+  a password (when creating it, or later in the workspace dialog, from the activity sheet) and that
   key is itself encrypted with the password, so without it the workspace is unreadable, to
   anyone, you included: there is no reset. Without a password the key sits next to the data and
   anyone using the browser can open it. Adding a password to an existing workspace protects it
@@ -172,8 +172,14 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
   characters, drafts, presets, LoRA trigger words and saved folders, so the app starts over as on
   a new device. Both ask for "purge" typed out. Files saved to a folder or downloaded stay; the
   browser frees the space, which is not a secure erase.
-- H, or Hide in the header, blanks every image on screen to a plain tile until pressed again;
-  it stays on across reloads. Prompts and settings stay visible.
+- H, or "Hide all images" in the activity sheet, blanks every image on screen to a plain tile
+  until pressed again; it stays on across reloads. Prompts and settings stay visible.
+- The button at the right of the tab row (and in the full-screen viewer) is always in view: the
+  GPU's state, or the running render's progress with how many more are queued and how many
+  failed. It opens the activity sheet: every job with its preview, Cancel or Dismiss, the GPU's
+  cost and Wake, Extend and Stop, and the workspace (switch it, hide images). While something
+  runs, Stop becomes Force stop, which needs its checkbox first: the running renders are lost and
+  the worker exits at once, mid-render, instead of after the job.
 - Model: any diffusion model file on the models volume, the catalog's and your own uploads in
   `extra/diffusion_models`. Krea 2 Turbo (8 steps, seconds), Krea 2 RAW (52 steps at CFG 3.5, a
   minute or two) and Z-Image-Turbo are verified. Anything else is listed as unverified and runs
@@ -189,8 +195,9 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
 - Zoom with the wheel, a pinch, double-click or double-tap, or Fit, 1:1 and 2:1; drag to pan. The
   zoom and the spot it shows stay when you move to another image, so two seeds compare at the
   same place. On a phone, swipe the image sideways for the next or previous one; zoomed in, the
-  ‹ › arrows at the edges do that, since a drag pans. The full-screen viewer closes with Back
-  (the iOS edge swipe too) or a swipe down.
+  ‹ › arrows at the edges do that, since a drag pans. Renders in progress come first, as in the
+  library, with their live preview, and turn into the finished image in place. The full-screen
+  viewer closes with Back (the iOS edge swipe too) or a swipe down.
 - Upscale runs SeedVR2 7B, workflow 03's one-step restorer, to 2, 4 or 8 MP. With a touch-up
   prompt, the image's own model first redraws it lightly at its size (the words added to its
   prompt, strength 0.05 to 0.8), then SeedVR2 upscales the result. Settings are in the Model

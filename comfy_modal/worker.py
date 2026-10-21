@@ -4,6 +4,7 @@ streamed back as (kind, payload) tuples."""
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -118,9 +119,13 @@ class Worker:
         return config.DEPLOY_ID
 
     @modal.method()
-    def stop(self):
-        """Stop taking inputs; the container exits once running jobs finish (the next call boots a fresh one)."""
+    def stop(self, force: bool = False):
+        """Stop taking inputs; the container exits once running jobs finish (the next call boots a fresh one).
+        force exits now, mid-render: for a job that will not end, and billing that should."""
         self._stop()
+        if force:
+            # a moment's delay so this call returns; then nothing that is running gets to finish
+            threading.Timer(1, os._exit, (0,)).start()
 
     def log_lines(self, pid):
         if self.log_owner is None:
@@ -145,6 +150,7 @@ class Worker:
         self.busy += 1
         self._wake.set()
         terminal_seen = False
+        closed = "no message"
         try:
             if io:
                 await volumes.io.reload.aio()  # pick up images the UI uploaded for this prompt
@@ -159,7 +165,8 @@ class Worker:
             except TimeoutError as e:
                 raise WorkerUnavailable(str(e)) from e
             async with aiohttp.ClientSession() as s:
-                async with s.ws_connect(f"{BASE}/ws?clientId={cid}") as ws:
+                # aiohttp caps a message at 4 MB by default; an upscaled PNG arrives as one binary frame larger than that
+                async with s.ws_connect(f"{BASE}/ws?clientId={cid}", max_msg_size=0) as ws:
                     async with s.get(f"{BASE}/object_info/LoraLoaderModelOnly"):
                         pass  # the extra_models node links new hand-uploaded files on this request
                     async with s.post(f"{BASE}/prompt", json=payload) as r:
@@ -172,6 +179,7 @@ class Worker:
                             yield ("bytes", m.data)
                             continue
                         if m.type != aiohttp.WSMsgType.TEXT:
+                            closed = f"{m.type.name}: {ws.exception() or m.data}"
                             break
                         msg = json.loads(m.data)
                         d = msg.get("data") or {}
@@ -203,7 +211,7 @@ class Worker:
             if lines:
                 yield ("log", lines)
             if not terminal_seen:
-                yield _error(pid, "worker websocket closed before the prompt finished", "GPUWorkerError")
+                yield _error(pid, f"worker websocket closed before the prompt finished ({closed})", "GPUWorkerError")
             elif pid in hist:
                 yield ("history", hist[pid])
         finally:
