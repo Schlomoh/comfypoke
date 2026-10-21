@@ -212,8 +212,9 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
           <p className="text-xs text-faint">A batch counts up from this seed.</p>
         )}
       </Section>
-      <Section title="Batch">
+      <Section title="Seeds">
         <Seg value={recipe.count} options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))} onChange={(v) => set({ ...recipe, count: v })} />
+        <p className="text-xs text-faint">Each version of the prompt renders once per seed.</p>
       </Section>
       <UpscaleSection recipe={recipe} set={set} />
       <Section

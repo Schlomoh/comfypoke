@@ -143,7 +143,7 @@ export function useJobs(onSaved: (id: string) => void) {
   }, [space, attach]);
 
   /** The image goes to the studio, which runs graphs.upscale: SeedVR2, after a retouch when there is a prompt. */
-  const upscale = useCallback(async (r: Render, u: Upscale) => {
+  const upscale = useCallback(async (r: Render, u: Upscale, stopAfter?: boolean) => {
     const retouch = u.prompt.trim()
       ? {
           unet: r.unet ?? legacyUnet(r.model),
@@ -154,7 +154,7 @@ export function useJobs(onSaved: (id: string) => void) {
           denoise: u.denoise,
         }
       : null;
-    const res = await api.upscale({ image: await base64(await loadImage(space, r.id)), megapixels: u.megapixels, seed: r.seed, retouch });
+    const res = await api.upscale({ image: await base64(await loadImage(space, r.id)), megapixels: u.megapixels, seed: r.seed, retouch, stop_after: stopAfter });
     await addPending(space, res.id, { upscaleOf: r, upscale: u });
     attach(res.id);
     return res;

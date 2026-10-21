@@ -51,7 +51,7 @@ explains where things are and how to change them without breaking the deployment
   the values under the wrong widgets and the API prompt sends them to the wrong inputs.
 - Studio: its graphs are `comfy_modal/graphs.py`. A model family (encoder, VAE, sampling) is one
   entry in `FAMILIES`; a file tested with the studio goes in `VERIFIED` with its settings. The prompt
-  blocks and their suggestions are `BLOCKS` in `studio/src/recipe.ts`. The phone keeps everything in
+  rows and their built-in presets are `PERSON_ROWS`, `SCENE_ROWS` and `PRESETS` in `studio/src/recipe.ts`, which also composes the prompt; `batch.tsx` turns versions and seeds into one job each. The phone keeps everything in
   IndexedDB (`studio/src/db.ts`); a schema change there is a new `db.version(n)`, never an edit of
   an old one, or existing phones lose their library. A workspace's records are sealed with its key
   (`studio/src/crypto.ts`): new per-workspace data goes through `sealJson`/`sealBlob` and carries

@@ -55,6 +55,9 @@ WORKER_CALL_TIMEOUT = 3600
 # Idle, a quarter CPU for 20 minutes is about a cent.
 STUDIO_IDLE_SECONDS = 1200
 STUDIO_JOB_TTL = 900  # seconds a finished image waits in memory for a phone that lost the stream
+# "Stop the GPU when the queue is done" waits this long after the last job: an automatic upscale is
+# sent by the phone a moment after its render is stored, and should not boot a fresh worker.
+STUDIO_STOP_GRACE_SECONDS = 20
 
 VOLUME_MODELS = f"{APP_NAME}-models"
 VOLUME_DATA = f"{APP_NAME}-data"

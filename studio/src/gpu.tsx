@@ -86,6 +86,7 @@ export function GpuPanel(handle: GpuHandle) {
   const facts = [
     ["state", <span className={TONE[gpu.state]}>{LABEL[gpu.state]}{idles != null && <span className="text-muted"> · sleeps in {clock(idles)}</span>}</span>],
     ["gpu", gpu.gpu],
+    ...(gpu.stop_after ? [["after the queue", "stops by itself"]] : []),
     ["rate", `$${gpu.rate_per_hour.toFixed(2)}/h`],
     ["session", `$${gpu.session_cost.toFixed(3)}`],
     ...(gpu.credits ? [["credits left", `$${gpu.credits.left.toFixed(2)} / $${gpu.credits.monthly}`]] : []),
