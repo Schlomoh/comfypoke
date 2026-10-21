@@ -62,15 +62,26 @@ export function Section({ title, right, children, className = "" }: {
   );
 }
 
-export function Check({ on, onChange, title }: { on: boolean; onChange: (v: boolean) => void; title: string }) {
+/** A checkbox whose label is part of it: the whole row toggles, as a native label would. */
+export function Check({ on, onChange, label, title, className = "" }: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  label?: ReactNode;
+  title?: string; // the accessible name when there is no visible label
+  className?: string;
+}) {
   return (
     <button
-      onClick={() => onChange(!on)}
-      aria-pressed={on}
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      aria-label={label ? undefined : title}
       title={title}
-      className="grid size-11 shrink-0 place-items-center fine:size-6"
+      onClick={() => onChange(!on)}
+      className={`flex h-11 min-w-11 shrink-0 items-center gap-2.5 text-left fine:h-6 fine:min-w-6 ${label ? "pr-2" : "justify-center"} ${className}`}
     >
-      <span className={`block size-3.5 border ${on ? "border-ink bg-ink" : "border-control"}`} />
+      <span className={`block size-3.5 shrink-0 border ${on ? "border-ink bg-ink" : "border-control"}`} />
+      {label}
     </button>
   );
 }

@@ -17,11 +17,20 @@ export type Render = Params & {
   model?: string; // renders from before unet/family: "turbo", "raw" or "krea2-turbo"
   characterName?: string;
   best?: boolean;
+  // yours to edit in the inspector; the fields above are the record of how it was made
+  title?: string;
+  notes?: string;
+  tags?: string[];
+  source?: string; // an upscale: the render it was made from
+  upscale?: Upscale;
 };
+export type Upscale = { megapixels: number; prompt: string; denoise: number }; // prompt "" means no retouch
 export type Character = { id: string; name: string; blocks: Partial<Blocks>; loras: StackLora[]; updatedAt: number };
 export type LoraNote = { name: string; trigger: string };
 export type Preset = { id: string; block: BlockId; text: string; label?: string; at: number };
-export type JobMeta = { recipe?: Recipe; characterName?: string }; // what the server does not know about a job
+// What the server does not know about a job: the recipe behind a render, the render behind an upscale,
+// and whether a render should be upscaled as soon as it is stored.
+export type JobMeta = { recipe?: Recipe; characterName?: string; upscaleOf?: Render; upscale?: Upscale; then?: Upscale };
 // Names are in the clear so the start screen can list them; `key` is the raw data key of a workspace without a password.
 export type Workspace = {
   id: string;
@@ -71,6 +80,13 @@ db.version(4).stores({
   drafts: "ws",
   pending: "id, ws",
 });
+// Another tab purged everything (deleted the database): this one must not quietly recreate it
+// with its own draft or jobs. Reloading drops all of its state.
+db.on("versionchange", () => {
+  db.close();
+  location.reload();
+  return false;
+});
 db.on("populate", (tx) => {
   tx.table("presets").bulkAdd(starterPresets()); // a new device starts with them too
 });
@@ -100,6 +116,30 @@ export async function openWorkspace(w: Workspace, password = ""): Promise<Space>
 /** Sets, changes or (with "") removes the password. The data key stays, so nothing is re-encrypted. */
 export const setPassword = async (space: Space, password: string) => db.workspaces.update(space.id, await guard(space.key, password));
 export const renameWorkspace = (id: string, name: string) => db.workspaces.update(id, { name });
+
+/** The deep purge. Without inputs: every generated image in every workspace (protected ones too:
+ *  deleting needs no key) and every job in flight. With inputs: the whole database and the app's
+ *  settings, so the next load starts as a new device. Returns the ids of the jobs that were in
+ *  flight, for the server to drop. The browser frees the space; it is not a secure erase. */
+export async function purge(inputs: boolean) {
+  const jobs = (await db.pending.toCollection().primaryKeys()) as string[];
+  closeSpace();
+  if (inputs) {
+    db.close();
+    await Dexie.delete("studio");
+    try {
+      Object.keys(localStorage).filter((k) => k.startsWith("studio.")).forEach((k) => localStorage.removeItem(k));
+    } catch {
+      // storage blocked: nothing of ours is in it then
+    }
+  } else {
+    await db.transaction("rw", [db.shots, db.thumbs, db.images, db.pending, db.renders], () =>
+      Promise.all([db.shots.clear(), db.thumbs.clear(), db.images.clear(), db.pending.clear(), db.renders.clear()]),
+    );
+    window.dispatchEvent(new Event("studio-purged")); // job cards still holding an image let go of it
+  }
+  return jobs;
+}
 
 export async function deleteWorkspace(id: string) {
   await db.transaction("rw", [db.workspaces, db.shots, db.thumbs, db.images, db.chars, db.drafts, db.pending], async () => {
@@ -291,9 +331,10 @@ export const addPending = async (space: Space, id: string, meta: JobMeta) => db.
 export const pendingIds = (space: Space) => db.pending.where("ws").equals(space.id).primaryKeys();
 export const dropPending = (id: string) => db.pending.delete(id);
 
+/** null when the job is no longer wanted here: purged, or its workspace deleted, while it ran. */
 export async function pendingMeta(space: Space, id: string) {
   const row = await db.pending.get(id);
-  return row ? unsealJson<JobMeta>(space.key, row.sealed) : ({} as JobMeta);
+  return row ? unsealJson<JobMeta>(space.key, row.sealed) : null;
 }
 
 let migrating: Promise<void> | undefined;

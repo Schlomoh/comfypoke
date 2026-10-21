@@ -166,6 +166,12 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
   workspace can have a folder instead: Choose folder in the library, and Save, S and "Save N
   shown" write the PNGs straight into it, skip the ones already there, and keep
   `studio-metadata.json` in it up to date. After a browser restart it asks once more for access.
+- Purge, in the workspace dialog, deletes every generated image on the device, in every
+  workspace (protected ones included, since deleting needs no password), and stops renders in
+  flight. Its "also delete the inputs" toggle wipes everything else as well: workspaces,
+  characters, drafts, presets, LoRA trigger words and saved folders, so the app starts over as on
+  a new device. Both ask for "purge" typed out. Files saved to a folder or downloaded stay; the
+  browser frees the space, which is not a secure erase.
 - H, or Hide in the header, blanks every image on screen to a plain tile until pressed again;
   it stays on across reloads. Prompts and settings stay visible.
 - Model: any diffusion model file on the models volume, the catalog's and your own uploads in
@@ -182,10 +188,26 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
   models were trained at; above it, expect repeated subjects).
 - Zoom with the wheel, a pinch, double-click or double-tap, or Fit, 1:1 and 2:1; drag to pan. The
   zoom and the spot it shows stay when you move to another image, so two seeds compare at the
-  same place. On a phone, swipe the image sideways for the next or previous one.
+  same place. On a phone, swipe the image sideways for the next or previous one; zoomed in, the
+  ‹ › arrows at the edges do that, since a drag pans. The full-screen viewer closes with Back
+  (the iOS edge swipe too) or a swipe down.
+- Upscale runs SeedVR2 7B, workflow 03's one-step restorer, to 2, 4 or 8 MP. With a touch-up
+  prompt, the image's own model first redraws it lightly at its size (the words added to its
+  prompt, strength 0.05 to 0.8), then SeedVR2 upscales the result. Settings are in the Model
+  tab's Upscale section, which can also upscale every new render right away; U, the Upscale
+  button, or a library selection start one. The upscale is a new image linked to its source:
+  deleting the source deletes its upscales too. The phone sends the image with the request
+  (`comfy_nodes/studio_image` decodes it), so nothing touches the io volume.
+- Info (or I) in the viewer shows everything recorded about an image: the prompt, model, seed,
+  LoRAs, size, file size, source and upscales, and the whole record as JSON. Title, notes, tags
+  and character are yours to edit; how the image was made is not. Saved, downloaded and zipped
+  PNGs carry the record as text chunks: `parameters` (the plain-text shape other tools read)
+  and `studio` (JSON).
+- Select, in the library, picks images for ★, Upscale, Save or Zip, and Delete.
 - On a computer the library works from the keyboard: arrow keys (or J and K) browse, Z toggles
-  1:1, + and - zoom, 0 fits, F or Enter opens full screen, B stars, H hides images, R reuses, S saves, Delete deletes,
-  Escape closes, and Cmd or Ctrl+Enter renders.
+  1:1, + and - zoom, 0 fits, F or Enter opens full screen, I shows the info, B stars, U upscales,
+  H hides images, R reuses, S saves, Delete deletes, Escape closes, Cmd or Ctrl+Enter renders,
+  and ? lists all of them.
 - Batches of up to four: random seeds, or counting up from a fixed seed. Reuse on any render loads
   everything that made it. The bar above Generate estimates the time and cost from this device's
   past renders of the same model.
@@ -202,7 +224,11 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
 - Save in the image viewer opens the share sheet on a phone, which is how an image gets into
   the photo library; on a computer it downloads the PNG.
 - `npm --prefix studio run dev` runs the app locally with hot reload against a deployed studio:
-  set `STUDIO_URL=https://<workspace>--comfypoke-studio.modal.run` first.
+  set `STUDIO_URL=https://<workspace>--comfypoke-studio.modal.run` first. Without it `/api` is
+  not proxied: the app opens and shows what is stored, and says the studio is not answering.
+  `npm --prefix studio run dev:mock` runs it against `tools/studio_mock.py` instead: the real
+  studio API with a fake worker, so renders and upscales are free flat colors with fake progress.
+  The key is `mock`; a prompt with "fail" in it fails.
 
 ### From the terminal
 

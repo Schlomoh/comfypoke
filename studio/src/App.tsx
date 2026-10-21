@@ -4,7 +4,9 @@ import { api, Locked, type Catalog } from "./api";
 import { closeSpace, db, migrate, saveDraft, SpaceContext, useCharacters, useRenders, useSpace, type Render, type Space } from "./db";
 import { GpuBar, useGpu } from "./gpu";
 import { useJobs } from "./jobs";
-import { deleteRender, KEYS, Library, revealThumb, saveImage, toggleBest, Viewer } from "./library";
+import { deleteRenders, KEYS, Library, revealThumb, saveImage, toggleBest } from "./library";
+import { notify } from "./toast";
+import { Viewer } from "./viewer";
 import { ModelPanel, resolve } from "./model";
 import { PromptPanel, sameCharacter } from "./prompt";
 import { BLOCKS, compose, EMPTY, fromSize, legacyUnet, size, useRecipe, type Recipe } from "./recipe";
@@ -134,6 +136,9 @@ function useVeil() {
   return [veil, setVeil] as const;
 }
 
+/** The Upscale section's settings as what a job carries. */
+const upscaleOf = ({ upscale: { megapixels, prompt, denoise } }: Recipe) => ({ megapixels, prompt, denoise });
+
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 type Tab = "prompt" | "model" | "library";
 
@@ -153,7 +158,9 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const [sending, setSending] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>({ models: [], families: [], loras: [] });
   const gpu = useGpu(onLocked);
-  const { jobs, generate, cancel, dismiss } = useJobs(setFocus);
+  const { jobs, generate, upscale, cancel, dismiss } = useJobs(setFocus);
+  const [info, setInfo] = useState(false);
+  const closeViewer = useCallback(() => setOpenId(null), []);
   const loaded = useRenders();
   const renders = loaded ?? [];
   const notes = useLiveQuery(() => db.loraNotes.toArray(), []) ?? [];
@@ -205,7 +212,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
             cfg: recipe.cfg,
             loras: active.map(({ name, strength }) => ({ name, strength })),
           },
-          { recipe, characterName },
+          { recipe, characterName, then: recipe.upscale.auto ? upscaleOf(recipe) : undefined },
         );
         if (i === 0) setFocus(r.id);
       }
@@ -216,6 +223,34 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
     } finally {
       setSending(false);
     }
+  };
+
+  /** Upscales with the Model tab's settings, one job each; the results land in the library as new images. */
+  const upscaleMany = async (rs: Render[]) => {
+    const u = upscaleOf(recipe);
+    notify(`Upscaling ${rs.length > 1 ? `${rs.length} images` : "the image"} to ${u.megapixels} MP${u.prompt.trim() ? " with a touch-up" : ""}`);
+    for (const r of rs) {
+      try {
+        await upscale(r, u);
+      } catch (e) {
+        if (e instanceof Locked) return onLocked();
+        return notify(`Could not start the upscale: ${errorText(e)}`, { bad: true });
+      }
+    }
+  };
+  const upscaleLabel = `Upscale to ${recipe.upscale.megapixels} MP${recipe.upscale.prompt.trim() ? `, touch-up "${recipe.upscale.prompt.trim()}"` : ""}, set in the Model tab`;
+
+  /** Delete one image (and its upscales), then show the next one where it was. */
+  const remove = async (r: Render) => {
+    const gone = await deleteRenders([r], renders);
+    if (!gone) return;
+    const at = shown.findIndex((x) => x.id === r.id);
+    const left = (from: number, dir: 1 | -1) => {
+      for (let i = from; i >= 0 && i < shown.length; i += dir) if (!gone.has(shown[i].id)) return shown[i];
+    };
+    const after = left(at + 1, 1) ?? left(at - 1, -1); // its upscales sit next to it and went with it
+    setFocus(after?.id ?? null);
+    if (open) setOpen(after ?? null);
   };
 
   /** Move through the library by n images, from the keyboard or a swipe. The zoom stays as it is. */
@@ -253,20 +288,14 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
       else if (k === "h") setVeil(!veil);
       else if (k === "=" || k === "+") zoom(1.25);
       else if (k === "-") view.scale != null && zoom(0.8); // the zoom view turns anything below fit into fit
-      else if (!cur) return;
+      else if (!cur || (e.repeat && "bsu".includes(k) || e.repeat && (k === "Delete" || k === "Backspace"))) return; // a held key acts once
       else if ((k === "f" || k === "Enter") && !open) (e.preventDefault(), setOpen(cur));
+      else if (k === "i") open ? setInfo(!info) : (setInfo(true), setOpen(cur));
       else if (k === "r") reuse(cur);
       else if (k === "s") saveImage(space, cur);
       else if (k === "b") toggleBest(space, cur);
-      else if (k === "Delete" || k === "Backspace") {
-        e.preventDefault();
-        const after = shown[at + 1] ?? shown[at - 1];
-        deleteRender(cur).then((gone) => {
-          if (!gone) return;
-          setFocus(after?.id ?? null);
-          if (open) setOpen(after ?? null);
-        });
-      }
+      else if (k === "u") upscaleMany([cur]);
+      else if (k === "Delete" || k === "Backspace") (e.preventDefault(), remove(cur));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -358,7 +387,22 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
               <ModelPanel recipe={recipe} set={setRecipe} catalog={catalog} />
             </div>
             <div className={tab === "library" ? "lg:hidden" : "hidden"}>
-              <Library shown={shown} names={names} filter={showing} setFilter={setFilter} best={best} setBest={setBest} bestCount={bestCount} jobs={jobs} focus={job?.id ?? render?.id ?? null} onSelect={setOpen} onFocus={setFocus} />
+              <Library
+                shown={shown}
+                all={renders}
+                names={names}
+                filter={showing}
+                setFilter={setFilter}
+                best={best}
+                setBest={setBest}
+                bestCount={bestCount}
+                jobs={jobs}
+                focus={job?.id ?? render?.id ?? null}
+                onSelect={setOpen}
+                onFocus={setFocus}
+                onUpscale={upscaleMany}
+                upscaleLabel={upscaleLabel}
+              />
             </div>
           </div>
           <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:py-3">
@@ -397,6 +441,8 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
             onDismiss={dismiss}
             onOpen={setOpen}
             onReuse={reuse}
+            onUpscale={(r) => upscaleMany([r])}
+            onDelete={remove}
             view={view}
             setView={setView}
             onStep={step}
@@ -406,6 +452,9 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
         <aside className="hidden lg:block lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-line">
           <Library
             shown={shown}
+            all={renders}
+            onUpscale={upscaleMany}
+            upscaleLabel={upscaleLabel}
             names={names}
             filter={showing}
             setFilter={setFilter}
@@ -420,7 +469,20 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
         </aside>
       </div>
 
-      <Viewer render={open} onClose={() => setOpen(null)} onReuse={reuse} view={view} setView={setView} onStep={step} />
+      <Viewer
+        render={open}
+        all={renders}
+        info={info}
+        setInfo={setInfo}
+        onClose={closeViewer}
+        onOpen={(r) => (setOpen(r), setFocus(r.id))}
+        onReuse={reuse}
+        onUpscale={(r) => upscaleMany([r])}
+        onDelete={remove}
+        view={view}
+        setView={setView}
+        onStep={step}
+      />
       <WorkspaceMenu open={menu} onClose={() => setMenu(false)} onSwitch={onClose} />
       <Shortcuts open={keys} onClose={() => setKeys(false)} />
     </div>

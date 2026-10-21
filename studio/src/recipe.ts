@@ -66,7 +66,10 @@ export type Recipe = {
   cfg: number | null;
   loras: StackLora[];
   count: number;
+  upscale: UpscaleSettings;
 };
+// auto: every new render is upscaled once it is stored; prompt "" upscales without a retouch
+export type UpscaleSettings = { auto: boolean; megapixels: number; prompt: string; denoise: number };
 
 const isText = (v: unknown): v is string => typeof v === "string";
 const isBlock = (b: unknown): b is Block =>
@@ -96,6 +99,7 @@ export const EMPTY: Recipe = {
   cfg: null,
   loras: [],
   count: 1,
+  upscale: { auto: false, megapixels: 4, prompt: "", denoise: 0.3 },
 };
 
 /** Krea 2 reads its prompt with Qwen3-VL, which follows sentences better than a pile of tags. */
@@ -134,7 +138,19 @@ export const legacyUnet = (model?: string) => (model === "raw" ? "krea2_raw_bf16
 export function parseRecipe(saved: any): Recipe {
   if (saved?.model && !saved.unet) saved.unet = legacyUnet(saved.model);
   delete saved?.model;
-  return { ...EMPTY, ...saved, blocks: { ...empty(), ...cleanBlocks(saved?.blocks) }, loras: isStack(saved?.loras) ? saved.loras : [] };
+  const up = saved?.upscale ?? {};
+  return {
+    ...EMPTY,
+    ...saved,
+    blocks: { ...empty(), ...cleanBlocks(saved?.blocks) },
+    loras: isStack(saved?.loras) ? saved.loras : [],
+    upscale: {
+      auto: up.auto === true,
+      megapixels: [2, 4, 8].includes(up.megapixels) ? up.megapixels : EMPTY.upscale.megapixels,
+      prompt: isText(up.prompt) ? up.prompt : "",
+      denoise: Number.isFinite(up.denoise) ? Math.min(0.8, Math.max(0.05, up.denoise)) : EMPTY.upscale.denoise,
+    },
+  };
 }
 
 /** The recipe being edited, written back through `save` once typing pauses. */

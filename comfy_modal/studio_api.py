@@ -109,7 +109,7 @@ def _handle(job: Job, msg) -> bool:
         d = data.get("data") or {}
         if data["type"] == "executing" and d.get("node") in graphs.STAGES:
             job.emit("stage", graphs.STAGES[d["node"]])
-        elif data["type"] == "progress" and d.get("node") == graphs.SAMPLER:
+        elif data["type"] == "progress" and d.get("node") == graphs.SAMPLER:  # SeedVR2's one step needs no counter
             job.emit("progress", {"value": d["value"], "max": d["max"]})
         elif data["type"] == "execution_success":
             job.end("done", {"seconds": round(time.time() - job.started, 1)})
@@ -232,6 +232,64 @@ async def generate(request: Request):
                           [(x["name"], x["strength"]) for x in p["loras"]])
     job.task = asyncio.create_task(_run(job, prompt))
     return {"id": job.id, **job.params}
+
+
+MAX_IMAGE = 40 * 2**20  # base64 characters: a 2048-square PNG is well under half of it
+
+
+def _png_size(data: bytes) -> tuple[int, int]:
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise HTTPException(400, "the image is not a PNG")
+    w, h = struct.unpack(">II", data[16:24])
+    if not (16 <= w <= 8192 and 16 <= h <= 8192):
+        raise HTTPException(400, f"the image is {w}×{h}; 16 to 8192 pixels a side")
+    return w, h
+
+
+@api.post("/api/upscale")
+async def upscale(request: Request):
+    """SeedVR2 to a megapixel size, with an optional prompt retouch first (graphs.upscale). The phone
+    sends the image itself; with `retouch`, the settings it was made with plus a prompt and strength."""
+    body = await request.json()
+    b64 = str(body.get("image", ""))
+    if not b64 or len(b64) > MAX_IMAGE:
+        raise HTTPException(400, "missing image, or larger than 40 MB")
+    try:
+        w, h = _png_size(base64.b64decode(b64[:64]))  # the header is enough to know the size
+        mp = float(body.get("megapixels", 4))
+        seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, f"malformed image or number: {e}")
+    if mp not in graphs.UPSCALE_MEGAPIXELS:
+        raise HTTPException(400, f"megapixels must be one of {graphs.UPSCALE_MEGAPIXELS}")
+    if w * h >= mp * 1024 * 1024:
+        raise HTTPException(400, f"the image is {w}×{h}, already {mp} MP or more; pick a larger size")
+    retouch = None
+    if body.get("retouch"):
+        r = body["retouch"]
+        if not isinstance(r, dict):
+            raise HTTPException(400, "retouch must be an object")
+        if w * h > 2048 * 2048:  # the retouch samples at the image's own size, where these models stop working well
+            raise HTTPException(400, f"a touch-up works on images up to 4 MP; this one is {w}×{h}. Upscale it without one.")
+        p = _params({**r, "width": 1024, "height": 1024, "seed": seed})  # same checks as a render; the size is the image's
+        try:
+            denoise = float(r.get("denoise", 0.3))
+        except (TypeError, ValueError) as e:
+            raise HTTPException(400, f"malformed strength: {e}")
+        if not 0.05 <= denoise <= 0.8:
+            raise HTTPException(400, "retouch strength must be between 0.05 and 0.8")
+        retouch = {"family": p["family"], "unet": p["unet"], "text": p["prompt"], "negative": p["negative"], "steps": p["steps"],
+                   "cfg": p["cfg"], "loras": [(x["name"], x["strength"]) for x in p["loras"]], "denoise": denoise}
+    s = (mp * 1024 * 1024 / (w * h)) ** 0.5  # ImageScaleToTotalPixels at resolution_steps 1
+    params = {"kind": "upscale", "unet": "seedvr2_7b_fp16.safetensors", "family": "seedvr2", "prompt": retouch["text"] if retouch else "",
+              "negative": "", "width": round(w * s), "height": round(h * s), "steps": 1, "cfg": 1.0, "seed": seed, "loras": [],
+              "megapixels": mp, "denoise": retouch["denoise"] if retouch else 0}
+    _purge()
+    job = Job(params)
+    jobs[job.id] = job
+    job.emit("queued", {**params, "started": job.started})
+    job.task = asyncio.create_task(_run(job, graphs.upscale(b64, mp, seed, retouch)))
+    return {"id": job.id, **params}
 
 
 @api.get("/api/jobs/{job_id}/events")

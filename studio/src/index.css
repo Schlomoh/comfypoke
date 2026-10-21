@@ -88,3 +88,10 @@ dialog::backdrop {
 html.veil img {
   visibility: hidden;
 }
+
+/* the page under the full-screen viewer stays put (viewer.tsx) */
+html.locked,
+html.locked body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}

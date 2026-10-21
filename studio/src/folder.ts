@@ -2,6 +2,7 @@
 // have it (and Chrome on Android); Safari, iOS and Firefox do not, and keep the zip and the share
 // sheet. Each workspace remembers its folder; the browser asks again for write access after a restart.
 import { db, loadImage, type Render, type Space } from "./db";
+import { withMetadata } from "./png";
 
 type Dir = FileSystemDirectoryHandle & {
   queryPermission(d: { mode: "readwrite" }): Promise<PermissionState>;
@@ -73,7 +74,7 @@ async function writeAll(space: Space, dir: Dir, renders: Render[], onProgress: (
   for (const [i, r] of renders.entries()) {
     const file = folderName(r);
     if (!(await exists(dir, file))) {
-      await write(dir, file, await loadImage(space, r.id));
+      await write(dir, file, await withMetadata(await loadImage(space, r.id), r));
       added++;
     }
     const { id: _, recipe: __, ...settings } = r;

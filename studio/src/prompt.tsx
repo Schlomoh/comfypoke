@@ -84,8 +84,13 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
   return (
     <div className={`flex flex-col gap-1.5 ${block.on ? "" : "opacity-45"}`}>
       <div className="flex items-center gap-1">
-        <Check on={block.on} onChange={(on) => put({ on })} title={block.on ? "Leave out of the prompt" : "Use in the prompt"} />
-        <span className="flex-1 text-[13px] font-medium">{def.label}</span>
+        <Check
+          on={block.on}
+          onChange={(on) => put({ on })}
+          title={block.on ? "Leave out of the prompt" : "Use in the prompt"}
+          className="flex-1"
+          label={<span className="text-[13px] font-medium">{def.label}</span>}
+        />
         <button ref={toggle} onClick={() => setEditing(!editing)} aria-pressed={editing} className={`${tool} aria-pressed:text-ink`}>
           {editing ? "done" : "edit presets"}
         </button>

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "uv run --directory .. --with fastapi --with uvicorn --with pillow tools/studio_mock.py",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit"
   },

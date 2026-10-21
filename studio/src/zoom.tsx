@@ -1,7 +1,8 @@
 // A zoomable, pannable image. The view is kept by the caller as a scale and the point of the image at
 // the center of the frame (fractions, not pixels), so it stays put when the image changes: same
 // spot, same magnification, which is how two seeds get compared. At fit, a horizontal swipe asks for
-// the next or previous image.
+// the next or previous image and, in the full-screen viewer, a swipe down closes it. Zoomed in, a
+// drag pans, so arrows at the edges take over going to the next image.
 import { useEffect, useRef, useState } from "react";
 
 export type View = { scale: number | null; cx: number; cy: number }; // scale: screen px per image px; null fits
@@ -16,9 +17,10 @@ type Props = {
   setView: (v: View) => void;
   onSwipe?: (dir: 1 | -1) => void;
   onTap?: () => void;
+  onDismiss?: () => void; // a swipe down at fit; the frame then handles vertical drags itself
 };
 
-export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
+export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [nat, setNat] = useState({ w: 0, h: 0 });
   const [vp, setVp] = useState({ w: 0, h: 0 });
@@ -26,6 +28,7 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
   const gesture = useRef<{ x: number; y: number; dist: number; view: View; scale: number; moved: boolean; t: number } | null>(null);
   const lastTap = useRef(0);
   const tapTimer = useRef<number>(undefined);
+  const [pull, setPull] = useState(0); // how far a swipe down has dragged the image, for the viewer's close
 
   useEffect(() => {
     const ro = new ResizeObserver(([e]) => setVp({ w: e.contentRect.width, h: e.contentRect.height }));
@@ -64,8 +67,22 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
       const r = el.getBoundingClientRect();
       zoomAt(scale * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
     };
+    // Two fingers on the image zoom the image, not the page. touch-action alone does not stop
+    // iOS Safari, which needs the touch and its own gesture events cancelled as well.
+    const touch = (e: TouchEvent) => e.touches.length > 1 && e.preventDefault();
+    const gesture = (e: Event) => e.preventDefault();
     el.addEventListener("wheel", wheel, { passive: false }); // React's onWheel is passive and cannot stop the page scrolling
-    return () => el.removeEventListener("wheel", wheel);
+    el.addEventListener("touchstart", touch, { passive: false });
+    el.addEventListener("touchmove", touch, { passive: false });
+    el.addEventListener("gesturestart", gesture);
+    el.addEventListener("gesturechange", gesture);
+    return () => {
+      el.removeEventListener("wheel", wheel);
+      el.removeEventListener("touchstart", touch);
+      el.removeEventListener("touchmove", touch);
+      el.removeEventListener("gesturestart", gesture);
+      el.removeEventListener("gesturechange", gesture);
+    };
   });
 
   const local = (e: React.PointerEvent) => {
@@ -80,8 +97,8 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
   return (
     <div
       ref={box}
-      className="relative size-full overflow-hidden select-none"
-      style={{ touchAction: view.scale == null ? "pan-y" : "none", cursor: view.scale == null ? "zoom-in" : "grab" }}
+      className="group relative size-full overflow-hidden select-none"
+      style={{ touchAction: view.scale == null && !onDismiss ? "pan-y" : "none", cursor: view.scale == null ? "zoom-in" : "grab" }}
       onPointerDown={(e) => {
         try {
           e.currentTarget.setPointerCapture(e.pointerId); // keeps a drag going outside the frame
@@ -109,6 +126,7 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
         const dx = p.x - g.x;
         const dy = p.y - g.y;
         if (Math.hypot(dx, dy) > 6) g.moved = true;
+        if (g.view.scale == null && onDismiss && !g.dist && dy > 0 && dy > Math.abs(dx)) setPull(dy);
         if (g.view.scale != null) setView({ ...g.view, cx: clamp(g.view.cx - dx / (nat.w * g.scale), 0, 1), cy: clamp(g.view.cy - dy / (nat.h * g.scale), 0, 1) });
       }}
       onPointerUp={(e) => {
@@ -125,6 +143,8 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
         gesture.current = null;
         const dx = p.x - g.x;
         const dy = p.y - g.y;
+        setPull(0);
+        if (onDismiss && g.view.scale == null && !g.dist && dy > 90 && dy > 1.5 * Math.abs(dx)) return onDismiss();
         const sideways = !g.dist && Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy);
         if (sideways && g.view.scale == null) return onSwipe?.(dx < 0 ? 1 : -1);
         if (sideways) {
@@ -144,6 +164,7 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
       onPointerCancel={(e) => {
         pointers.current.delete(e.pointerId); // the browser took over, for a vertical page scroll
         gesture.current = null;
+        setPull(0);
       }}
     >
       <img
@@ -152,8 +173,35 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap }: Props) {
         draggable={false}
         onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
         className="absolute max-w-none"
-        style={{ left, top, width: w || undefined, height: h || undefined, imageRendering: scale >= 2 ? "pixelated" : "auto" }}
+        style={{
+          left,
+          top: top + pull,
+          width: w || undefined,
+          height: h || undefined,
+          opacity: pull ? Math.max(0.3, 1 - pull / 400) : undefined,
+          imageRendering: scale >= 2 ? "pixelated" : "auto",
+        }}
       />
+      {onSwipe && (
+        // zoomed in, a drag pans the image, so these are how to get to the next one; with a mouse they show on hover
+        <div
+          className={`pointer-events-none absolute inset-0 items-center justify-between px-2 ${
+            view.scale == null ? "hidden opacity-0 group-hover:opacity-100 [@media(pointer:fine)]:flex" : "flex" // at fit a finger swipes instead
+          }`}
+        >
+          {([[-1, "‹", "Previous image"], [1, "›", "Next image"]] as const).map(([dir, glyph, label]) => (
+            <button
+              key={dir}
+              aria-label={label}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => onSwipe(dir)}
+              className="pointer-events-auto grid size-11 place-items-center border border-line bg-bg/75 text-lg text-ink backdrop-blur-sm hover:border-edge"
+            >
+              {glyph}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

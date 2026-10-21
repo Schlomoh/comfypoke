@@ -4,7 +4,18 @@
 // collected when it is next opened, within the server's job TTL.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Params, type Request } from "./api";
-import { addPending, dropPending, pendingIds, pendingMeta, saveRender, useSpace, type JobMeta } from "./db";
+import { addPending, dropPending, loadImage, pendingIds, pendingMeta, saveRender, useSpace, type JobMeta, type Render, type Upscale } from "./db";
+import { legacyUnet } from "./recipe";
+import { notify } from "./toast";
+import { errorText } from "./ui";
+
+const base64 = (blob: Blob) =>
+  new Promise<string>((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(",", 2)[1]);
+    r.onerror = () => fail(r.error);
+    r.readAsDataURL(blob);
+  });
 
 export type Job = {
   id: string;
@@ -25,6 +36,7 @@ export function useJobs(onSaved: (id: string) => void) {
   const retries = useRef(new Set<number>()); // cleared on unmount: a closed workspace must not reattach
   const saved = useRef(onSaved);
   saved.current = onSaved;
+  const upscaleRef = useRef<(r: Render, u: Upscale) => Promise<unknown>>(null!); // the done handler starts the automatic one
 
   const update = useCallback((id: string, patch: Partial<Job>) => {
     setJobs((js) => js.map((j) => (j.id === id ? { ...j, ...patch } : j)));
@@ -61,9 +73,23 @@ export function useJobs(onSaved: (id: string) => void) {
       es.close(); // before the await: the server ends the stream and EventSource would reconnect
       if (!image || !params) return finish(id, "The render finished but no image came back.");
       const blob = await (await fetch(`data:image/png;base64,${image}`)).blob();
+      let then: (() => Promise<unknown>) | undefined;
       try {
         const meta = await pendingMeta(space, id);
-        await saveRender(space, { ...params, id, createdAt: Date.now(), seconds, recipe: meta.recipe, characterName: meta.characterName }, blob);
+        if (!meta) return finish(id); // purged while it ran: the image is not wanted
+        // the PNG's own size: a retouch's VAE crops to its grid, so the server's estimate can be a few pixels off
+        const head = new DataView(await blob.slice(16, 24).arrayBuffer());
+        const [width, height] = [head.getUint32(0), head.getUint32(4)];
+        // An upscale is a new image with its source's record, its own size, and a link back.
+        const record: Render = meta.upscaleOf
+          ? { ...meta.upscaleOf, id, createdAt: Date.now(), seconds, width, height, source: meta.upscaleOf.id, upscale: meta.upscale,
+              best: false, title: undefined, notes: undefined }
+          : { ...params, id, createdAt: Date.now(), seconds, recipe: meta.recipe, characterName: meta.characterName };
+        await saveRender(space, record, blob);
+        if (meta.then) {
+          await dropPending(id); // now, not in finish: a reload in between would resave it and upscale it twice
+          then = () => upscaleRef.current(record, meta.then!);
+        }
       } catch (e) {
         // Not finish(): that would delete the server's copy. The job stays listed, so a reload retries the save.
         sources.current.delete(id);
@@ -71,6 +97,7 @@ export function useJobs(onSaved: (id: string) => void) {
       }
       finish(id);
       saved.current(id);
+      then?.().catch((e) => notify(`Could not start the upscale: ${errorText(e)}`, { bad: true })); // the render's card is gone by now
     });
     on("failed", ({ message }: { message: string }) => finish(id, message === "cancelled" ? undefined : message));
     es.onerror = () => {
@@ -94,10 +121,13 @@ export function useJobs(onSaved: (id: string) => void) {
       map.forEach((es) => es.close()); // a page restored from the back/forward cache gets fresh ones
       map.clear();
     };
+    const purged = () => setJobs((js) => js.filter((j) => !j.error));
     resume();
+    window.addEventListener("studio-purged", purged);
     window.addEventListener("pageshow", resume);
     window.addEventListener("pagehide", leave);
     return () => {
+      window.removeEventListener("studio-purged", purged);
       window.removeEventListener("pageshow", resume);
       window.removeEventListener("pagehide", leave);
       leave();
@@ -111,8 +141,27 @@ export function useJobs(onSaved: (id: string) => void) {
     return r;
   }, [space, attach]);
 
+  /** The image goes to the studio, which runs graphs.upscale: SeedVR2, after a retouch when there is a prompt. */
+  const upscale = useCallback(async (r: Render, u: Upscale) => {
+    const retouch = u.prompt.trim()
+      ? {
+          unet: r.unet ?? legacyUnet(r.model),
+          family: r.family ?? null,
+          prompt: `${r.prompt} ${u.prompt.trim()}`, // the touch-up is said on top of what the image already is
+          negative: r.negative ?? "",
+          loras: r.loras ?? [],
+          denoise: u.denoise,
+        }
+      : null;
+    const res = await api.upscale({ image: await base64(await loadImage(space, r.id)), megapixels: u.megapixels, seed: r.seed, retouch });
+    await addPending(space, res.id, { upscaleOf: r, upscale: u });
+    attach(res.id);
+    return res;
+  }, [space, attach]);
+  upscaleRef.current = upscale;
+
   const cancel = useCallback((id: string) => api.cancel(id).catch(() => finish(id)), [finish]);
   const dismiss = useCallback((id: string) => setJobs((js) => js.filter((j) => j.id !== id)), []);
 
-  return { jobs, generate, cancel, dismiss };
+  return { jobs, generate, upscale, cancel, dismiss };
 }
