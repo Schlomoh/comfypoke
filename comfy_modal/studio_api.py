@@ -38,6 +38,40 @@ _waking = {"until": 0.0}
 _dispatch = asyncio.Lock()  # Worker.run calls start in submission order, as in gpu_relay
 _billing = {"at": 0.0, "data": None}
 _background: set[asyncio.Task] = set()  # asyncio keeps only weak references to tasks
+_stop_after = {"on": False, "turn": 0}  # stop the worker once no job is left; on is set by the latest request that says
+# turn counts job starts and ends: a stop scheduled at one quiet moment gives way to any later work
+
+
+def _background_task(coro, what: str):
+    task = asyncio.get_running_loop().create_task(coro)
+    _background.add(task)
+    task.add_done_callback(lambda t: (_background.discard(t), t.cancelled() or t.exception() and logging.error("studio: %s failed: %r", what, t.exception())))
+
+
+def _note_stop_after(body: dict):
+    _stop_after["turn"] += 1
+    if "stop_after" in body:
+        _stop_after["on"] = bool(body["stop_after"])
+
+
+def _running() -> bool:
+    return any(not j.ended for j in jobs.values())
+
+
+async def _stop_when_idle(turn: int):
+    await asyncio.sleep(config.STUDIO_STOP_GRACE_SECONDS)
+    if turn != _stop_after["turn"] or not _stop_after["on"] or _running():
+        return  # later work came (its own end schedules the stop), or it was switched off
+    state = (await _gpu())["state"]
+    if turn != _stop_after["turn"] or _running():
+        return  # a render arrived while the state was read
+    if state == "warm":
+        _stop_after["on"] = False
+        await _worker().stop.remote.aio()
+    elif state == "cold":
+        _stop_after["on"] = False  # nothing to stop; a stop call would boot a worker
+    else:  # busy with the GUI's work, or booting: look again after another grace period
+        _background_task(_stop_when_idle(turn), "stopping the GPU after the queue")
 
 
 def _worker():
@@ -135,6 +169,10 @@ async def _run(job: Job, prompt: dict):
     except Exception as e:
         logging.exception("studio: job %s failed", job.id)
         job.end("failed", {"message": f"GPU worker: {e}"})
+    finally:
+        _stop_after["turn"] += 1
+        if _stop_after["on"] and not _running():
+            _background_task(_stop_when_idle(_stop_after["turn"]), "stopping the GPU after the queue")
 
 
 def _purge():
@@ -224,7 +262,9 @@ def _params(body: dict) -> dict:
 
 @api.post("/api/generate")
 async def generate(request: Request):
-    p = _params(await request.json())
+    body = await request.json()
+    p = _params(body)
+    _note_stop_after(body)
     _purge()
     job = Job(p)
     jobs[job.id] = job
@@ -289,6 +329,7 @@ async def upscale(request: Request):
     job = Job(params)
     jobs[job.id] = job
     job.emit("queued", {**params, "started": job.started})
+    _note_stop_after(body)
     job.task = asyncio.create_task(_run(job, graphs.upscale(b64, mp, seed, retouch)))
     return {"id": job.id, **params}
 
@@ -381,6 +422,7 @@ async def _gpu():
         "idles_in": max(0, int(idle_limit - (now - w.get("last_input", now)))) if state == "warm" else None,
         "session_cost": round((now - w["since"]) / 3600 * rate, 3) if fresh else 0,
         "credits": await _credits(),
+        "stop_after": _stop_after["on"],
     }
 
 
@@ -397,6 +439,13 @@ async def _ping():
         logging.exception("studio: ping failed")
     finally:
         _waking["until"] = 0
+
+
+@api.post("/api/gpu/stop-after")
+async def stop_after(on: bool = False):
+    """The toggle in the render list. Off cancels a pending stop; on applies to the queue in progress, if any."""
+    _stop_after["on"] = on and _running()
+    return await _gpu()
 
 
 @api.post("/api/gpu/wake")
@@ -419,13 +468,12 @@ async def stop(force: bool = False):
                 job.task.cancel()
             job.end("failed", {"message": "the GPU was force-stopped"})
         # A booting worker takes the call once it is up, so it is not waited for here.
-        task = asyncio.get_running_loop().create_task(_worker().stop.remote.aio(force=True))
-        _background.add(task)
-        task.add_done_callback(lambda t: (_background.discard(t), t.cancelled() or t.exception() and logging.error("studio: force stop failed: %r", t.exception())))
+        _background_task(_worker().stop.remote.aio(force=True), "force stop")
     elif st["state"] == "warm":
         await _worker().stop.remote.aio()  # the container exits; nothing is billed after that
     _waking["until"] = 0
-    return {**st, "state": "cold", "idles_in": None, "running": 0}
+    _stop_after["on"] = False
+    return {**st, "state": "cold", "idles_in": None, "running": 0, "stop_after": False}
 
 
 # ---- the app itself: the built studio/dist, index.html revalidated, hashed assets cached ----------------------

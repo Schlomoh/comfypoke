@@ -149,16 +149,29 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
   storage; for work that must never have been readable, create the workspace with a password.
   Section presets and LoRA trigger words are shared by all workspaces. A library from before
   workspaces moves into one called Default the first time the new version opens.
-- The prompt is built from blocks. Subject, face and hair, and outfit are the character; pose,
-  setting, camera and light, and style are the scene. Each block takes free text and can be
-  switched off. Its presets are chips that toggle their text in and out of the block; Presets
-  edits them per block (add your own, remove the ones you do not use, or save the whole block as
-  one named preset, an outfit for instance). A new device starts with a few. The prompt actually sent is shown underneath, in sentences,
-  since Krea 2's text encoder reads sentences better than tags.
-- Save a character to keep its blocks and LoRAs, then change only the scene for each shot. The
-  library filters by character. A workspace's characters, with the block presets and LoRA trigger
-  words, export to one JSON file, which is the backup and the way to move them to another device;
-  the file is not encrypted.
+- The prompt is the people in the picture (one to five tabs) and its scene. A person has the rows
+  Who, Look, Wearing and Doing, plus Side and Depth once there are two or more; the scene has
+  Where, Shot, Style and Extra (verbatim). A row holds phrases, one idea each, and tapping a phrase
+  or "+ add" opens that row's sheet: every phrase as a card (switch it off, edit it, remove it),
+  and a picker pinned at the bottom with the presets in subcategories (women, real-life scenes,
+  underwear and lingerie campaigns) and a field to type your own, which can be kept as presets
+  under Yours. The prompt sent is shown underneath, in sentences, since Krea 2's text encoder
+  reads sentences better than tags; names never go into it.
+- Versions: "+ versions to compare" on a phrase adds alternatives (other bras for a bra). Every
+  combination of versions is a separate render, once per seed, with the same seeds for every
+  version by default, so the images differ only by what varies. The bar under the prompt says
+  what it will send ("6 renders: 3 wearing × 2 shot"); tapping it lists each render, sets the
+  seeds, and can stop the GPU once the queue is done (the studio waits 20 s after the last job,
+  for an automatic upscale, then stops a warm worker). Reuse on one of them brings back exactly
+  the version it used.
+- A tab is either linked to a saved character (or scene) or new, and says so: "new", "edited", or
+  nothing when it matches. Its ⋯ menu saves it, updates or discards changes, saves it as a new
+  one, or uses another saved one in its place, with Undo. Saved characters keep their rows with
+  versions; side, depth and LoRAs stay with the picture. Characters saved before people and
+  versions open with their old text split into phrases; their LoRAs are no longer applied by
+  them. The library filters by the saved people in a render. A workspace's saved characters and
+  scenes, with your presets and LoRA trigger words, export to one JSON file, which is the backup
+  and the way to move them to another device; the file is not encrypted.
 - Mark the keepers with the star (or B) and the library's ★ filter shows only those. Download
   zips whatever the library shows, all of it or the starred ones, for one character or all, as
   the PNGs plus `metadata.json` with each one's prompt and settings. The zip is not encrypted.

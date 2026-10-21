@@ -95,3 +95,18 @@ html.locked body {
   overflow: hidden;
   overscroll-behavior: none;
 }
+
+/* a phrase's card in its row sheet, briefly marked when its chip was the way in (prompt.tsx) */
+.flash-card {
+  animation: flash-card 1s;
+}
+@keyframes flash-card {
+  from {
+    background: color-mix(in srgb, var(--color-warn) 18%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flash-card {
+    animation: none;
+  }
+}

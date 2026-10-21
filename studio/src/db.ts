@@ -7,7 +7,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Params } from "./api";
 import { exportKey, importKey, lock, newKey, sealBlob, sealJson, unlock, unsealBlob, unsealJson, type Lock, type Sealed } from "./crypto";
-import { BLOCKS, cleanBlocks, isStack, parseRecipe, type BlockId, type Blocks, type Recipe, type StackLora } from "./recipe";
+import { cleanRows, fromBlocks, LEGACY_ROW, parseRecipe, PERSON_ROWS, SCENE_ROWS, type Phrase, type Recipe, type RowId } from "./recipe";
 
 export type Render = Params & {
   id: string;
@@ -25,9 +25,10 @@ export type Render = Params & {
   upscale?: Upscale;
 };
 export type Upscale = { megapixels: number; prompt: string; denoise: number }; // prompt "" means no retouch
-export type Character = { id: string; name: string; blocks: Partial<Blocks>; loras: StackLora[]; updatedAt: number };
+// A saved character or scene: the rows of phrases it keeps, versions included. Both live in the chars table.
+export type Saved = { id: string; name: string; kind: "person" | "scene"; rows: Partial<Record<RowId, Phrase[]>>; updatedAt: number };
 export type LoraNote = { name: string; trigger: string };
-export type Preset = { id: string; block: BlockId; text: string; label?: string; at: number };
+export type Preset = { id: string; block: RowId; text: string; label?: string; at: number }; // block: the row it is offered in
 // What the server does not know about a job: the recipe behind a render, the render behind an upscale,
 // and whether a render should be upscaled as soon as it is stored.
 export type JobMeta = { recipe?: Recipe; characterName?: string; upscaleOf?: Render; upscale?: Upscale; then?: Upscale };
@@ -50,7 +51,7 @@ type Legacy = Omit<Render, "best"> & { image: Blob; thumb: Blob };
 
 export const db = new Dexie("studio") as Dexie & {
   renders: EntityTable<Legacy, "id">; // before workspaces; emptied by migrate()
-  characters: EntityTable<Character, "id">; // the same
+  characters: EntityTable<{ id: string }, "id">; // the same
   loraNotes: EntityTable<LoraNote, "name">;
   presets: EntityTable<Preset, "id">;
   workspaces: EntityTable<Workspace, "id">;
@@ -62,8 +63,19 @@ export const db = new Dexie("studio") as Dexie & {
   pending: EntityTable<Row, "id">;
 };
 
-const starterPresets = (): Preset[] =>
-  BLOCKS.flatMap((b, i) => b.chips.map((text, j) => ({ id: crypto.randomUUID(), block: b.id, text, at: i * 100 + j })));
+// The chips a device used to start with, by the block ids of the time. Version 5 takes them out again:
+// the built-in presets are in recipe.ts now, and only presets someone added stay in the table.
+const STARTERS: Record<string, string[]> = {
+  subject: ["young adult woman", "middle-aged man", "elderly person", "athletic build", "slender build", "freckled skin"],
+  face: ["short undercut hair", "long wavy auburn hair", "braided silver hair", "green eyes", "scar across the left eyebrow", "light stubble"],
+  outfit: ["worn leather armor", "tailored charcoal suit", "oversized knit sweater", "techwear jacket with straps", "flowing linen robe"],
+  pose: ["neutral expression", "slight smile", "determined look", "looking over the shoulder", "arms crossed", "walking toward the camera"],
+  setting: ["plain grey studio backdrop", "rain-soaked neon street at night", "misty pine forest", "sunlit kitchen", "desert ruins at dusk"],
+  camera: ["close-up portrait", "medium shot", "full body shot", "three-quarter view", "85mm lens, shallow depth of field", "soft overcast light", "hard rim light", "golden hour"],
+  style: ["film photo, natural grain", "editorial photography", "digital painting", "anime illustration", "character turnaround sheet, white background"],
+};
+const starterPresets = () =>
+  Object.entries(STARTERS).flatMap(([block, chips], i) => chips.map((text, j) => ({ id: crypto.randomUUID(), block, text, at: i * 100 + j })));
 
 db.version(1).stores({ renders: "id, createdAt" });
 db.version(2).stores({ renders: "id, createdAt", characters: "id, name", loraNotes: "name" });
@@ -82,13 +94,17 @@ db.version(4).stores({
 });
 // Another tab purged everything (deleted the database): this one must not quietly recreate it
 // with its own draft or jobs. Reloading drops all of its state.
+// Presets move to the rows of the people-and-scene prompt; the starter chips go.
+db.version(5).stores({}).upgrade((tx) =>
+  tx.table("presets").toCollection().modify((p: Preset & { block: string }, ref: { value?: Preset }) => {
+    if (!p.label && STARTERS[p.block]?.includes(p.text)) return void delete ref.value;
+    p.block = LEGACY_ROW[p.block] ?? p.block;
+  }),
+);
 db.on("versionchange", () => {
   db.close();
   location.reload();
   return false;
-});
-db.on("populate", (tx) => {
-  tx.table("presets").bulkAdd(starterPresets()); // a new device starts with them too
 });
 
 export const SpaceContext = createContext<Space>(null!);
@@ -201,14 +217,26 @@ export function useRenders() {
   return useUnsealed<Render>(rows);
 }
 
-export function useCharacters() {
-  const space = useSpace();
-  const rows = useLiveQuery(() => db.chars.where("ws").equals(space.id).toArray(), [space.id]);
-  return useUnsealed<Character>(rows)?.sort((a, b) => a.name.localeCompare(b.name));
+/** A saved entry as stored now. Characters from before people and versions kept free-text blocks and their own LoRAs; the blocks become rows, the LoRAs stay with the Model tab. */
+export function toSaved(raw: any): Saved | null {
+  if (!raw || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
+  const kind = raw.kind === "scene" ? "scene" : "person";
+  const rows = raw.blocks && !raw.rows ? fromBlocks(raw.blocks) : raw.rows;
+  return { id: raw.id, name: raw.name, kind, rows: cleanRows(rows, kind === "scene" ? SCENE_ROWS : PERSON_ROWS), updatedAt: Number(raw.updatedAt) || 0 };
 }
 
-export const putCharacter = async (space: Space, c: Character) => db.chars.put({ id: c.id, ws: space.id, sealed: await sealJson(space.key, c) });
-export const deleteCharacter = (id: string) => db.chars.delete(id);
+/** This workspace's saved characters and scenes, by name. */
+export function useSaved() {
+  const space = useSpace();
+  const rows = useLiveQuery(() => db.chars.where("ws").equals(space.id).toArray(), [space.id]);
+  return useUnsealed<unknown>(rows)?.map(toSaved).filter((x): x is Saved => !!x).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export const putSaved = async (space: Space, c: Saved) => db.chars.put({ id: c.id, ws: space.id, sealed: await sealJson(space.key, c) });
+export const deleteSaved = (id: string) => db.chars.delete(id);
+
+/** Your presets, shared by all workspaces, with the row each is offered in. */
+export const usePresets = () => useLiveQuery(() => db.presets.orderBy("at").toArray(), []);
 
 export async function loadDraft(space: Space) {
   const row = await db.drafts.get(space.id);
@@ -362,7 +390,8 @@ async function moveLegacy() {
     await db.renders.delete(id);
   }
   for (const c of await db.characters.toArray()) {
-    await putCharacter(space, c);
+    const saved = toSaved(c);
+    if (saved) await putSaved(space, saved);
     await db.characters.delete(c.id);
   }
   if (draft) {
@@ -378,47 +407,48 @@ async function moveLegacy() {
   }
 }
 
-/** This workspace's characters and the shared presets and LoRA notes as one JSON file: the backup, and how a library moves between devices. */
+/** This workspace's saved characters and scenes and the shared presets and LoRA notes as one JSON file: the backup, and how a library moves between devices. */
 export async function exportLibrary(space: Space) {
   const rows = await db.chars.where("ws").equals(space.id).toArray();
   const data = {
-    version: 1,
-    characters: await Promise.all(rows.map((r) => unsealJson<Character>(space.key, r.sealed))),
+    version: 2,
+    saved: (await Promise.all(rows.map((r) => unsealJson(space.key, r.sealed)))).map(toSaved).filter(Boolean),
     loraNotes: await db.loraNotes.toArray(),
     presets: await db.presets.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
 }
 
-/** Merges a backup into this workspace: malformed entries are skipped, and a character edited here since the backup keeps its newer version. */
+/** Merges a backup into this workspace: malformed entries are skipped, and an entry edited here since the backup keeps its newer version. */
 export async function importLibrary(space: Space, file: File) {
   const data = JSON.parse(await file.text());
-  if (data?.version !== 1) throw new Error("not a studio library file");
+  if (data?.version !== 1 && data?.version !== 2) throw new Error("not a studio library file");
   const list = (v: unknown) => (Array.isArray(v) ? v : []);
-  const characters: Character[] = list(data.characters)
-    .filter((c) => c && typeof c.id === "string" && typeof c.name === "string" && isStack(c.loras))
-    .map((c) => ({ id: c.id, name: c.name, blocks: cleanBlocks(c.blocks), loras: c.loras, updatedAt: Number(c.updatedAt) || 0 }));
+  const raw = list(data.version === 1 ? data.characters : data.saved); // version 1 had characters only, in blocks
+  const saved = raw.map(toSaved).filter((x): x is Saved => !!x);
   const notes: LoraNote[] = list(data.loraNotes)
     .filter((n) => n && typeof n.name === "string" && typeof n.trigger === "string")
     .map((n) => ({ name: n.name, trigger: n.trigger }));
-  const blockIds: string[] = BLOCKS.map((b) => b.id);
+  const rowIds: string[] = [...PERSON_ROWS, ...SCENE_ROWS].map((r) => r.id);
   const presets: Preset[] = list(data.presets)
-    .filter((p) => p && typeof p.id === "string" && blockIds.includes(p.block) && typeof p.text === "string")
+    .filter((p) => p && typeof p.block === "string" && !(!p.label && STARTERS[p.block]?.includes(p.text))) // the old starter chips stay out, as in version 5
+    .map((p) => ({ ...p, block: LEGACY_ROW[p.block] ?? p.block }))
+    .filter((p) => typeof p.id === "string" && rowIds.includes(p.block) && typeof p.text === "string")
     .map((p) => ({ id: p.id, block: p.block, text: p.text, label: typeof p.label === "string" ? p.label : undefined, at: Number(p.at) || 0 }));
   let added = 0;
   const here = await db.chars.where("ws").equals(space.id).toArray();
-  const mine = new Map((await Promise.all(here.map((r) => unsealJson<Character>(space.key, r.sealed)))).map((c) => [c.id, c]));
+  const mine = new Map((await Promise.all(here.map((r) => unsealJson(space.key, r.sealed)))).map(toSaved).filter((x): x is Saved => !!x).map((c) => [c.id, c]));
   const taken = new Set((await db.chars.toCollection().primaryKeys()).filter((id) => !mine.has(id)));
-  for (const c of characters) {
+  for (const c of saved) {
     const local = mine.get(c.id);
     if (local && local.updatedAt >= c.updatedAt) continue;
     // the same backup imported into a second workspace makes copies there, not moves
-    await putCharacter(space, taken.has(c.id) ? { ...c, id: crypto.randomUUID() } : c);
+    await putSaved(space, taken.has(c.id) ? { ...c, id: crypto.randomUUID() } : c);
     added++;
   }
   await db.loraNotes.bulkPut(notes);
   await db.transaction("rw", db.presets, async () => {
-    // Same text in the same section is the same preset, whatever its id, and an id already used
+    // Same text in the same row is the same preset, whatever its id, and an id already used
     // here is never overwritten: a backup only adds presets.
     const local = await db.presets.toArray();
     const have = new Set(local.map((p) => `${p.block}\u0000${p.text.toLowerCase()}`));
@@ -431,6 +461,6 @@ export async function importLibrary(space: Space, file: File) {
     });
     await db.presets.bulkAdd(fresh.map((p) => (ids.has(p.id) ? { ...p, id: crypto.randomUUID() } : p)));
   });
-  const skipped = list(data.characters).length - characters.length;
-  return `Imported ${added} of ${characters.length} characters${skipped ? `, skipped ${skipped} malformed` : ""}.`;
+  const skipped = raw.length - saved.length;
+  return `Imported ${added} of ${saved.length} saved characters and scenes${skipped ? `, skipped ${skipped} malformed` : ""}.`;
 }

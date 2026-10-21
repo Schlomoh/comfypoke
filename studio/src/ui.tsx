@@ -1,6 +1,6 @@
 // The handful of controls everything is built from. Square, hairline, monochrome: color is
 // reserved for state (GPU, errors), so it means something when it appears.
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 const VARIANTS = {
   primary: "bg-ink text-bg hover:bg-white",
@@ -78,11 +78,45 @@ export function Check({ on, onChange, label, title, className = "" }: {
       aria-label={label ? undefined : title}
       title={title}
       onClick={() => onChange(!on)}
-      className={`flex h-11 min-w-11 shrink-0 items-center gap-2.5 text-left fine:h-6 fine:min-w-6 ${label ? "pr-2" : "justify-center"} ${className}`}
+      className={`flex min-h-11 min-w-11 shrink-0 items-center gap-2.5 text-left fine:min-h-6 fine:min-w-6 ${label ? "pr-2" : "justify-center"} ${className}`}
     >
       <span className={`block size-3.5 shrink-0 border ${on ? "border-ink bg-ink" : "border-control"}`} />
       {label}
     </button>
+  );
+}
+
+/** A sheet from the bottom on a phone, a centered panel on a desktop. Closing it (Escape, the backdrop, Done) calls onClose. */
+export function Sheet({ open, onClose, title, children, className = "" }: {
+  open: boolean;
+  onClose: () => void;
+  title: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dialog.current;
+    if (open && !d?.open) d?.showModal();
+    if (!open && d?.open) d.close();
+  }, [open]);
+  return (
+    <dialog
+      ref={dialog}
+      onClose={onClose}
+      onClick={(e) => e.target === dialog.current && onClose()}
+      className={`mx-0 mt-auto mb-0 max-h-[90dvh] w-screen max-w-none overscroll-contain border-t border-line bg-panel p-0 text-ink lg:m-auto lg:w-[30rem] lg:border ${className}`}
+    >
+      {open && (
+        <div className="flex flex-col gap-3 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-3">
+            <h2 className="label min-w-0 flex-1 truncate">{title}</h2>
+            <Btn onClick={onClose}>Done</Btn>
+          </div>
+          {children}
+        </div>
+      )}
+    </dialog>
   );
 }
 

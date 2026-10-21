@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Locked, type Catalog } from "./api";
-import { closeSpace, db, migrate, saveDraft, SpaceContext, useCharacters, useRenders, useSpace, type Render, type Space } from "./db";
+import { closeSpace, db, migrate, saveDraft, SpaceContext, useRenders, useSpace, type Render, type Space } from "./db";
 import { ActivityButton, ActivitySheet } from "./activity";
 import { useGpu } from "./gpu";
 import { useJobs } from "./jobs";
@@ -9,8 +9,9 @@ import { deleteRenders, KEYS, Library, revealThumb, saveImage, toggleBest } from
 import { notify } from "./toast";
 import { Viewer } from "./viewer";
 import { ModelPanel, resolve } from "./model";
-import { PromptPanel, sameCharacter } from "./prompt";
-import { compose, EMPTY, fromSize, legacyUnet, size, useRecipe, type Recipe } from "./recipe";
+import { plan, RenderSheet, summary } from "./batch";
+import { PromptPanel } from "./prompt";
+import { compose, EMPTY, fromSize, legacyUnet, parseRecipe, phrase, size, useRecipe, type Recipe } from "./recipe";
 import { shortName, Stage } from "./stage";
 import { FIT, type View } from "./zoom";
 import { Btn, errorText } from "./ui";
@@ -166,7 +167,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const loaded = useRenders();
   const renders = loaded ?? [];
   const notes = useLiveQuery(() => db.loraNotes.toArray(), []) ?? [];
-  const characters = useCharacters() ?? [];
+  const [renderSheet, setRenderSheet] = useState(false);
   const workspace = useLiveQuery(() => db.workspaces.get(space.id), [space.id]);
   // A finished job stays until its render is in the library, so the viewer goes from one to the other in place.
   const live = jobs.filter((j) => !(j.saved && renders.some((r) => r.id === j.id)));
@@ -183,10 +184,10 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
 
   const active = recipe.loras.filter((l) => l.on);
   const triggers = active.map((l) => notes.find((n) => n.name === l.name)?.trigger ?? "");
-  const prompt = compose(recipe.blocks, triggers);
+  const prompt = compose(recipe, triggers);
   const aspect = size(recipe.aspect, recipe.mp);
   const sent = resolve(recipe, catalog);
-  const characterName = characters.find((c) => c.id === recipe.character)?.name;
+  const characterName = recipe.cast.filter((c) => c.savedId).map((c) => c.name).join(" & ") || undefined; // the library filters by it
   const names = [...new Set(renders.map((r) => r.characterName).filter(Boolean))] as string[];
   const showing = names.includes(filter) ? filter : ""; // the last render of a character may be gone
   const shown = renders.filter((r) => (!showing || r.characterName === showing) && (!best || r.best));
@@ -198,7 +199,10 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
 
   // Median render time of this model on this device: cold boots skew a mean, not a median.
   const times = renders.filter((r) => (r.unet ?? legacyUnet(r.model)) === recipe.unet).slice(0, 15).map((r) => r.seconds);
-  const seconds = times.length ? median(times) * recipe.count : null;
+  const each = times.length ? median(times) : null;
+  const batch = summary(recipe);
+  const runs = batch ? Number(batch.split(" ")[0]) : 1;
+  const seconds = each == null ? null : each * runs;
   const cost = seconds != null && gpu.gpu ? (seconds * gpu.gpu.rate_per_hour) / 3600 : null;
 
   const submit = async () => {
@@ -206,21 +210,23 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
     setError("");
     setSending(true);
     try {
-      for (let i = 0; i < recipe.count; i++) {
+      // one job per version and seed; stop_after rides on each, so the last one sent decides
+      for (const [i, run] of plan(recipe, triggers).entries()) {
         const r = await generate(
           {
             unet: recipe.unet,
             family: sent.family.id,
-            prompt,
+            prompt: run.prompt,
             negative: sent.negative ? recipe.negative : "",
             width: aspect.width,
             height: aspect.height,
-            seed: recipe.seed == null ? null : recipe.seed + i,
+            seed: run.seed,
             steps: recipe.steps,
             cfg: recipe.cfg,
             loras: active.map(({ name, strength }) => ({ name, strength })),
+            stop_after: recipe.stopAfter,
           },
-          { recipe, characterName, then: recipe.upscale.auto ? upscaleOf(recipe) : undefined },
+          { recipe: run.recipe, characterName, then: recipe.upscale.auto ? upscaleOf(recipe) : undefined },
         );
         if (i === 0) setFocus(r.id);
       }
@@ -239,7 +245,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
     notify(`Upscaling ${rs.length > 1 ? `${rs.length} images` : "the image"} to ${u.megapixels} MP${u.prompt.trim() ? " with a touch-up" : ""}`);
     for (const r of rs) {
       try {
-        await upscale(r, u);
+        await upscale(r, u, recipe.stopAfter);
       } catch (e) {
         if (e instanceof Locked) return onLocked();
         return notify(`Could not start the upscale: ${errorText(e)}`, { bad: true });
@@ -311,23 +317,17 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   });
 
   const reuse = (r: Render) => {
-    const base: Recipe = r.recipe ?? {
-      ...EMPTY,
-      blocks: { ...EMPTY.blocks, extra: { text: r.prompt, on: true } },
-      ...fromSize(r.width, r.height),
-    };
+    // a render from before recipes were kept comes back as its prompt, verbatim, in the scene's Extra row
+    const base: Recipe = r.recipe ? parseRecipe(r.recipe) : { ...EMPTY, scene: { ...EMPTY.scene, extra: [phrase(r.prompt)] }, ...fromSize(r.width, r.height) };
     // The model as actually rendered; older renders and recipes only knew "turbo" or "raw".
     const unet = r.unet ?? legacyUnet(r.model);
     const suggested = catalog.models.find((m) => m.file === unet)?.family;
-    // Keep the character link only if it still matches, or Save would overwrite it with these old blocks.
-    const linked = characters.find((c) => c.id === base.character);
     setRecipe({
       ...EMPTY,
       ...base,
       unet,
       // pinned only when it differs from what the model list suggests; with no list loaded yet, keep it as rendered
       family: r.family && (catalog.models.length === 0 || r.family !== suggested) ? r.family : null,
-      character: linked && sameCharacter(linked, base) ? linked.id : null,
       seed: r.seed,
       count: 1,
     });
@@ -343,7 +343,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   // Why Generate is greyed out, said where the estimate would be
   const blocked = !catalog.models.length
     ? error ? "model list unavailable" : "loading models…"
-    : !sent.family ? "pick a family for this model" : !prompt ? "fill in a block to generate" : null;
+    : !sent.family ? "pick a family for this model" : !prompt ? "add a phrase to generate" : null;
   const activity = <ActivityButton gpu={gpu} jobs={live} onOpen={() => setSheet(true)} />;
 
   return (
@@ -368,7 +368,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
           </nav>
           <div className="order-2 pb-32 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-0">
             <div className={tab === "model" ? "hidden" : tab === "library" ? "hidden lg:block" : ""}>
-              <PromptPanel recipe={recipe} set={setRecipe} triggers={triggers.filter(Boolean)} />
+              <PromptPanel recipe={recipe} set={setRecipe} triggers={triggers.filter(Boolean)} onRenders={() => setRenderSheet(true)} />
             </div>
             <div className={tab === "model" ? "" : "hidden"}>
               <ModelPanel recipe={recipe} set={setRecipe} catalog={catalog} />
@@ -395,22 +395,24 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
           <div className="fixed inset-x-0 bottom-0 z-20 order-3 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:py-3">
             {error && <p role="alert" className="mb-2 font-mono text-xs text-bad">{error}</p>}
             <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1 font-mono text-xs leading-snug text-faint tabular-nums">
+              {/* the summary opens the list of renders, seeds and stop-after */}
+              <button onClick={() => setRenderSheet(true)} aria-label="Each render, seeds and stopping the GPU after"
+                className="min-w-0 flex-1 text-left font-mono text-xs leading-snug text-faint tabular-nums">
                 <div className="truncate text-muted">
-                  {shortName(recipe.unet)} · {aspect.width}×{aspect.height}
-                  {recipe.count > 1 && ` · ×${recipe.count}`}
+                  {batch ?? `${shortName(recipe.unet)} · ${aspect.width}×${aspect.height}`} <span aria-hidden>›</span>
                 </div>
                 <div className={`truncate ${blocked ? "text-warn" : ""}`}>
                   {blocked ?? (
                     <>
-                      {seconds != null ? `≈ ${Math.round(seconds)}s · $${cost?.toFixed(3) ?? "?"}` : "no estimate yet"}
+                      {seconds != null ? `≈ ${seconds < 90 ? `${Math.round(seconds)}s` : `${(seconds / 60).toFixed(1)} min`} · $${cost?.toFixed(3) ?? "?"}` : "no estimate yet"}
                       {gpu.gpu && !gpu.gpu.booted && " + boot"}
+                      {recipe.stopAfter && " · GPU stops after"}
                     </>
                   )}
                 </div>
-              </div>
+              </button>
               <Btn variant="primary" onClick={submit} disabled={!!blocked || sending} className="h-12 w-40 text-sm fine:h-10">
-                {sending ? "Sending…" : "Generate"}
+                {sending ? "Sending…" : runs > 1 ? `Generate ${runs}` : "Generate"}
                 <kbd className="hidden font-mono text-[10.5px] opacity-50 [@media(pointer:fine)]:inline">{MOD}↵</kbd>
               </Btn>
             </div>
@@ -486,6 +488,15 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
         onWorkspace={() => (setSheet(false), setMenu(true))}
         veil={veil}
         setVeil={setVeil}
+      />
+      <RenderSheet
+        open={renderSheet}
+        onClose={() => setRenderSheet(false)}
+        recipe={recipe}
+        set={setRecipe}
+        triggers={triggers.filter(Boolean)}
+        seconds={each}
+        rate={gpu.gpu?.rate_per_hour ?? null}
       />
       <WorkspaceMenu open={menu} onClose={() => setMenu(false)} onSwitch={onClose} />
       <Shortcuts open={keys} onClose={() => setKeys(false)} />

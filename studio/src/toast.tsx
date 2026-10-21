@@ -1,6 +1,9 @@
 // One line of feedback at the bottom of the screen for actions that otherwise happen out of sight:
-// a save into a folder, a copy, a deletion that can be undone. Screen readers hear it too.
+// a save into a folder, a copy, a deletion that can be undone. Screen readers hear it too. With a
+// sheet open it is drawn inside that sheet: a modal dialog makes everything outside it inert, and
+// Undo has to stay tappable.
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Toast = { id: number; text: string; bad?: boolean; action?: { label: string; run: () => void } };
 
@@ -14,8 +17,13 @@ export function notify(text: string, opts: { bad?: boolean; action?: Toast["acti
 export function Toasts() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [held, setHeld] = useState(false); // pointer or focus on it: stays until let go
+  const [host, setHost] = useState<Element>(document.body);
   useEffect(() => {
-    show = setToast;
+    show = (t) => {
+      // the sheet that has focus is the one on top; without one, the page
+      setHost(document.activeElement?.closest("dialog[open]") ?? document.querySelector("dialog:modal") ?? document.body);
+      setToast(t);
+    };
     return () => {
       show = () => {};
     };
@@ -26,7 +34,7 @@ export function Toasts() {
     return () => clearTimeout(t);
   }, [toast, held]);
 
-  return (
+  return createPortal(
     <div
       role="status"
       aria-live="polite"
@@ -54,6 +62,7 @@ export function Toasts() {
           )}
         </div>
       )}
-    </div>
+    </div>,
+    host,
   );
 }
