@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+@theme {
+  --color-bg: #0b0b0c;
+  --color-panel: #111113;
+  --color-raised: #19191c;
+  --color-line: #26262a;
+  --color-edge: #3a3a40;
+  --color-ink: #e6e6e8;
+  --color-muted: #8c8c94;
+  --color-faint: #5c5c64;
+  --color-ok: #5fd08a;
+  --color-warn: #e8b84a;
+  --color-bad: #f0716a;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Section and field labels: the one typographic device the interface leans on. */
+@utility label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* iOS zooms into any input under 16px on focus, so fields are 16px on touch screens. */
+@utility field {
+  background: var(--color-bg);
+  border: 1px solid var(--color-line);
+  outline: none;
+  font-size: 16px;
+  @media (pointer: fine) {
+    font-size: 13px;
+  }
+  &:focus {
+    border-color: var(--color-muted);
+  }
+}
+
+input[type="range"] {
+  accent-color: var(--color-ink);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.7);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+}
+
+/* H: the images stay where they are, as blank tiles, until shown again */
+html.veil img {
+  visibility: hidden;
+}

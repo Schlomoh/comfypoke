@@ -219,8 +219,13 @@ def pick_folder() -> str:
 
 # ---- actions ----------------------------------------------------------------
 
+def studio_url() -> str:
+    return default_url().replace(f"--{config.APP_NAME}-ui-ui.", f"--{config.APP_NAME}-studio.")
+
+
 def status():
     out.print(f"UI  [link]{default_url()}[/]")
+    out.print(f"Studio (phone app)  [link]{studio_url()}[/]")
     problem = sync_dir_problem(sync_dir())
     out.print(f"sync folder  {sync_dir()}  " + (f"[yellow]{problem}[/]" if problem else "[green]ok[/]"))
     running = containers()
@@ -279,6 +284,11 @@ def stop():
 
 
 def deploy():
+    # The studio endpoint serves studio/dist, so the app is built first; modal_app refuses without it.
+    if run(["npm", "--prefix", "studio", "ci"]) != 0:
+        return
+    if run(["npm", "--prefix", "studio", "run", "build"]) != 0:
+        return
     if run([MODAL, "deploy", "modal_app.py"], collapse_progress=True) != 0:
         return
     if ask(questionary.confirm("Run the acceptance check now (stops stale containers, about a minute, costs cents)?", default=True)):

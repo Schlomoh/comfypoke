@@ -48,6 +48,14 @@ WORKER_TIMEOUT_SECONDS = 900
 # anything to do with the picture. An hour is past the point where you would want it to stop.
 WORKER_CALL_TIMEOUT = 3600
 
+# The phone app's endpoint (comfy_modal/studio.py). A render keeps running after the phone drops
+# its connection, and the image waits in that container's memory until the phone fetches it. A
+# running render is not a Modal input, so a phone locked mid-render sends nothing and the window
+# below is all that keeps the container: it must outlast WORKER_TIMEOUT_SECONDS plus a cold boot.
+# Idle, a quarter CPU for 20 minutes is about a cent.
+STUDIO_IDLE_SECONDS = 1200
+STUDIO_JOB_TTL = 900  # seconds a finished image waits in memory for a phone that lost the stream
+
 VOLUME_MODELS = f"{APP_NAME}-models"
 VOLUME_DATA = f"{APP_NAME}-data"
 VOLUME_IO = f"{APP_NAME}-io"

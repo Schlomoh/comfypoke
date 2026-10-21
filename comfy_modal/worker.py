@@ -108,10 +108,12 @@ class Worker:
         self._beat("stopped")
 
     @modal.method()
-    def ping(self, keep_until: float = 0.0):
-        """A trivial input: wakes a cold worker or resets the idle window of a warm one."""
+    def ping(self, keep_until: float | None = 0.0):
+        """A trivial input: wakes a cold worker or resets the idle window of a warm one. None
+        (the studio) leaves the GUI's keep-warm deadline as it is."""
         self.last_input = time.time()
-        self.keep_until = keep_until
+        if keep_until is not None:
+            self.keep_until = keep_until
         self._beat()
         return config.DEPLOY_ID
 
@@ -136,17 +138,22 @@ class Worker:
         pid = payload["prompt_id"]
         cid = f"relay-{pid}"
         payload = {**payload, "client_id": cid}
+        # The studio's graphs read nothing from /io and save over the websocket, so it sends io=False. A
+        # reload swaps the mount under any run already in progress: a second run's mkdir failed with
+        # "Operation not permitted", and running streams stalled for up to a minute while it happened.
+        io = payload.pop("io", True)
         self.busy += 1
         self._wake.set()
         terminal_seen = False
         try:
-            await volumes.io.reload.aio()  # pick up images the UI uploaded for this prompt
-            for d in ("output", "input", "temp"):
-                Path(config.IO_DIR, d).mkdir(exist_ok=True)  # tools/sync.sh clear empties them; an older clear removed them
-            inputs = [n["inputs"]["image"] for n in payload["prompt"].values() if n.get("class_type") == "LoadImage"]
-            if any(not Path(config.IO_DIR, "input", f).exists() for f in inputs):
-                await asyncio.sleep(2)  # the UI's commit can lag a moment behind the upload
-                await volumes.io.reload.aio()
+            if io:
+                await volumes.io.reload.aio()  # pick up images the UI uploaded for this prompt
+                for d in ("output", "input", "temp"):
+                    Path(config.IO_DIR, d).mkdir(exist_ok=True)  # tools/sync.sh clear empties them; an older clear removed them
+                inputs = [n["inputs"]["image"] for n in payload["prompt"].values() if n.get("class_type") == "LoadImage"]
+                if any(not Path(config.IO_DIR, "input", f).exists() for f in inputs):
+                    await asyncio.sleep(2)  # the UI's commit can lag a moment behind the upload
+                    await volumes.io.reload.aio()
             try:
                 await asyncio.to_thread(comfy.wait_for_port, config.WORKER_PORT, 120)
             except TimeoutError as e:
@@ -180,13 +187,14 @@ class Worker:
                             continue
                         if msg["type"] == "status":
                             d.pop("sid", None)  # the browser would adopt the worker's socket id as its own
-                        if msg["type"] == "executed":
+                        if msg["type"] == "executed" and io:
                             await volumes.io.commit.aio()  # make the new files visible to the UI container
                         yield ("json", msg)
                         if msg["type"] in TERMINAL and d.get("prompt_id") == pid:
                             terminal_seen = True
                             break
-                await volumes.io.commit.aio()
+                if io:
+                    await volumes.io.commit.aio()
                 hist = {}
                 if terminal_seen:
                     async with s.get(f"{BASE}/history/{pid}") as r:

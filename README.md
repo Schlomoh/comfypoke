@@ -39,12 +39,15 @@ you wake it, keep it warm for a chosen time, or stop it now.
 
 ## Setup
 
-You need Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), and a Modal account.
+You need Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), Node 22 or newer, and a Modal
+account. The console's Deploy entry builds the phone app for you; a bare `modal deploy` refuses
+to run until `studio/dist` exists.
 
 ```bash
 uv sync                       # local tools only; the app runs on Modal
 uv tool install modal && modal setup
 python3 -c "import secrets; print(secrets.token_urlsafe(24))" > .access_key
+npm --prefix studio ci && npm --prefix studio run build   # the phone app; needs Node 22 or newer
 modal deploy modal_app.py     # the first run downloads about 80 GB of models to a volume
 tools/sync.sh workflows       # upload the workflows in workflows/
 ```
@@ -128,6 +131,79 @@ it, so it doubles as a way to learn them.
   left this month come from Modal's billing API, which reports what was used, so the badge
   subtracts that from `MONTHLY_CREDITS` in `comfy_modal/config.py` ($30 on Starter, $100 on Team).
 
+### The studio (on your phone)
+
+A second front end at `https://<workspace>--comfypoke-studio.modal.run` (the console's Status
+prints it), built for designing characters with Krea 2 from a phone or a desktop. It talks to the
+GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once with the same
+`.access_key`; the cookie lasts a year.
+
+- Everything happens in a workspace, and opening the app shows only the list of them. Each
+  workspace keeps its own renders, characters, draft and jobs in flight; nothing of one shows
+  in another. All of it is encrypted on the device with the workspace's own key. Give a workspace
+  a password (when creating it, or later in the dialog behind its name in the header) and that
+  key is itself encrypted with the password, so without it the workspace is unreadable, to
+  anyone, you included: there is no reset. Without a password the key sits next to the data and
+  anyone using the browser can open it. Adding a password to an existing workspace protects it
+  from then on, but the browser may keep the old unprotected key on disk until it compacts its
+  storage; for work that must never have been readable, create the workspace with a password.
+  Section presets and LoRA trigger words are shared by all workspaces. A library from before
+  workspaces moves into one called Default the first time the new version opens.
+- The prompt is built from blocks. Subject, face and hair, and outfit are the character; pose,
+  setting, camera and light, and style are the scene. Each block takes free text and can be
+  switched off. Its presets are chips that toggle their text in and out of the block; Presets
+  edits them per block (add your own, remove the ones you do not use, or save the whole block as
+  one named preset, an outfit for instance). A new device starts with a few. The prompt actually sent is shown underneath, in sentences,
+  since Krea 2's text encoder reads sentences better than tags.
+- Save a character to keep its blocks and LoRAs, then change only the scene for each shot. The
+  library filters by character. A workspace's characters, with the block presets and LoRA trigger
+  words, export to one JSON file, which is the backup and the way to move them to another device;
+  the file is not encrypted.
+- Mark the keepers with the star (or B) and the library's ★ filter shows only those. Download
+  zips whatever the library shows, all of it or the starred ones, for one character or all, as
+  the PNGs plus `metadata.json` with each one's prompt and settings. The zip is not encrypted.
+  In Chrome or Edge (not Safari, iOS or Firefox, which lack the File System Access API) a
+  workspace can have a folder instead: Choose folder in the library, and Save, S and "Save N
+  shown" write the PNGs straight into it, skip the ones already there, and keep
+  `studio-metadata.json` in it up to date. After a browser restart it asks once more for access.
+- H, or Hide in the header, blanks every image on screen to a plain tile until pressed again;
+  it stays on across reloads. Prompts and settings stay visible.
+- Model: any diffusion model file on the models volume, the catalog's and your own uploads in
+  `extra/diffusion_models`. Krea 2 Turbo (8 steps, seconds), Krea 2 RAW (52 steps at CFG 3.5, a
+  minute or two) and Z-Image-Turbo are verified. Anything else is listed as unverified and runs
+  with the family you pick, Krea 2 or Z-Image, which decides the text encoder, VAE and sampler;
+  the family is guessed from the file name. A file that does not fit its family fails after the
+  GPU has loaded it, and that time is billed. A negative prompt is used whenever CFG is above 1.
+  Steps and CFG can be overridden. LoRAs come from `extra/loras` on the models volume,
+  which is where `tools/sync.sh lora` puts them; stack up to eight with a strength each (the
+  slider covers -6 to 6, typing goes to -8 to 8). A LoRA's
+  trigger words are noted once and added to the front of the prompt whenever it is on.
+- Size is an aspect ratio times a megapixel count, 0.25 to 2 MP (1 MP is 1024×1024, what the
+  models were trained at; above it, expect repeated subjects).
+- Zoom with the wheel, a pinch, double-click or double-tap, or Fit, 1:1 and 2:1; drag to pan. The
+  zoom and the spot it shows stay when you move to another image, so two seeds compare at the
+  same place. On a phone, swipe the image sideways for the next or previous one.
+- On a computer the library works from the keyboard: arrow keys (or J and K) browse, Z toggles
+  1:1, + and - zoom, 0 fits, F or Enter opens full screen, B stars, H hides images, R reuses, S saves, Delete deletes,
+  Escape closes, and Cmd or Ctrl+Enter renders.
+- Batches of up to four: random seeds, or counting up from a fixed seed. Reuse on any render loads
+  everything that made it. The bar above Generate estimates the time and cost from this device's
+  past renders of the same model.
+
+- Renders are stored on the device only, in the browser's IndexedDB. The graph ends in
+  ComfyUI's `SaveImageWebsocket` node, so the image streams back over the worker's socket and no
+  file is written to the io volume. The endpoint holds a finished image in memory until the phone
+  has saved it, or for 15 minutes if the phone never comes back for it.
+- Locking the phone mid-render is fine: the render keeps going, and the app picks it up again
+  when it is opened. On iOS, add it to the Home Screen (Share, Add to Home Screen): Safari clears
+  a site's storage after seven days without a visit, and a Home Screen app is exempt from that.
+- The GPU chip in the corner shows the worker's state and idle countdown; tap it for the session
+  cost, the credits left, and Wake, Extend or Stop now.
+- Save in the image viewer opens the share sheet on a phone, which is how an image gets into
+  the photo library; on a computer it downloads the PNG.
+- `npm --prefix studio run dev` runs the app locally with hot reload against a deployed studio:
+  set `STUDIO_URL=https://<workspace>--comfypoke-studio.modal.run` first.
+
 ### From the terminal
 
 - **Tokens.** Civitai downloads need `CIVITAI_TOKEN` (an API key from civitai.com/user/account);
@@ -206,13 +282,17 @@ the models volume (uploaded, no deploy). Everything else is borrowed.
 
 | Path                          | What it is                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
-| `modal_app.py`                | Deploy entry point; imports the two container classes                                |
+| `modal_app.py`                | Deploy entry point; imports the container classes and the studio endpoint            |
 | `comfy_modal/config.py`       | Every tunable and the env-var contract with the custom nodes                         |
 | `comfy_modal/catalog.py`      | Models and node packs to install                                                     |
 | `comfy_modal/image.py`        | The container image: ComfyUI, node packs, model downloads                            |
 | `comfy_modal/ui.py`           | The CPU class that serves the GUI                                                    |
 | `comfy_modal/worker.py`       | The GPU class: runs prompts, streams progress and logs back, publishes its heartbeat |
 | `comfy_modal/comfy.py`        | Starts ComfyUI inside a container                                                    |
+| `comfy_modal/studio.py`       | The studio endpoint: a small CPU function serving the phone app and its API          |
+| `comfy_modal/studio_api.py`   | The studio's API: login, render jobs streamed as server-sent events, GPU controls    |
+| `comfy_modal/graphs.py`       | The studio's text-to-image graphs, one per model family (Krea 2, Z-Image)            |
+| `studio/`                     | The phone app: React, Vite, TypeScript; built to `studio/dist` before a deploy       |
 | `comfy_nodes/gpu_relay`       | Custom node in the UI container: relays prompts, serves the GPU badge                |
 | `comfy_nodes/access_key`      | Custom node: the login gate                                                          |
 | `comfy_nodes/extra_models`    | Custom node: makes hand-uploaded models visible without a restart                    |
@@ -224,7 +304,8 @@ the models volume (uploaded, no deploy). Everything else is borrowed.
 
 Modal bills per second while a container runs. The GUI runs on a small CPU container that sleeps
 after ten idle minutes; the worker is an L40S by default at about $1.95 per hour list price and
-sleeps five minutes after its last render. When Modal has no L40S free it boots an A100 40 GB
+sleeps five minutes after its last render. The studio endpoint is a quarter of a CPU that sleeps
+after ten idle minutes, a fraction of a cent each time. When Modal has no L40S free it boots an A100 40 GB
 instead, at about $2.10 per hour, and that one sleeps after two idle minutes so the next boot
 can go back to an L40S. Estimates from measured times at list prices,
 compute only:
