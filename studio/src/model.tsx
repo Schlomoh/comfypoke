@@ -1,7 +1,7 @@
 // Everything about how the image is made rather than what is in it.
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
-import type { Catalog } from "./api";
+import { UPSCALE_MEGAPIXELS, type Catalog } from "./api";
 import { db } from "./db";
 import { ASPECTS, MEGAPIXELS, size, type Recipe, type StackLora } from "./recipe";
 import { shortName } from "./stage";
@@ -73,8 +73,13 @@ function Loras({ recipe, set, available }: { recipe: Recipe; set: (r: Recipe) =>
       {recipe.loras.map((l, i) => (
         <div key={l.name} className={`flex flex-col gap-1.5 border border-line bg-bg p-2 ${l.on ? "" : "opacity-45"}`}>
           <div className="flex items-center gap-1">
-            <Check on={l.on} onChange={(on) => put(i, { on })} title={l.on ? "Bypass" : "Enable"} />
-            <span className="min-w-0 flex-1 truncate font-mono text-xs" title={l.name}>{shortName(l.name)}</span>
+            <Check
+              on={l.on}
+              onChange={(on) => put(i, { on })}
+              title={l.name}
+              className="min-w-0 flex-1"
+              label={<span className="truncate font-mono text-xs">{shortName(l.name)}</span>}
+            />
             <button
               onClick={() => set({ ...recipe, loras: recipe.loras.filter((_, j) => j !== i) })}
               className="h-11 px-2 font-mono text-[10.5px] fine:h-8 text-faint uppercase hover:text-bad"
@@ -210,6 +215,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
       <Section title="Batch">
         <Seg value={recipe.count} options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))} onChange={(v) => set({ ...recipe, count: v })} />
       </Section>
+      <UpscaleSection recipe={recipe} set={set} />
       <Section
         title="Sampling"
         right={(recipe.steps != null || recipe.cfg != null) && (
@@ -243,5 +249,35 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
         <p className="text-xs text-faint">Empty uses the model's default.</p>
       </Section>
     </div>
+  );
+}
+
+function UpscaleSection({ recipe, set }: { recipe: Recipe; set: (r: Recipe) => void }) {
+  const u = recipe.upscale;
+  const put = (patch: Partial<Recipe["upscale"]>) => set({ ...recipe, upscale: { ...u, ...patch } });
+  return (
+    <Section title="Upscale">
+      <Check on={u.auto} onChange={(auto) => put({ auto })} label={<span className="text-[13px]">Upscale every new render right away</span>} />
+      <Seg value={u.megapixels} options={UPSCALE_MEGAPIXELS.map((m) => ({ value: m, label: `${m} MP` }))} onChange={(megapixels) => put({ megapixels })} />
+      <textarea
+        value={u.prompt}
+        onChange={(e) => put({ prompt: e.target.value })}
+        placeholder="touch-up, optional: sharper eyes, cleaner skin"
+        rows={1}
+        className="field field-sizing-content min-h-11 resize-none px-2.5 py-2 placeholder:text-faint fine:min-h-10"
+      />
+      {u.prompt.trim() && (
+        <label className="flex items-center gap-3">
+          <span className="label w-16">Strength</span>
+          <input type="range" min={0.05} max={0.8} step={0.05} value={u.denoise} onChange={(e) => put({ denoise: Number(e.target.value) })} className="flex-1" />
+          <span className="w-10 text-right font-mono text-xs tabular-nums">{u.denoise.toFixed(2)}</span>
+        </label>
+      )}
+      <p className="text-xs text-faint">
+        SeedVR2 restores detail at {u.megapixels} MP{u.megapixels === 4 ? " (2048 square)" : ""}. With a touch-up, the image's own model first
+        redraws it lightly at its size, the words added to its prompt; more strength changes more. The upscale is a new image linked
+        to its source. Also from the library: select images, then Upscale.
+      </p>
+    </Section>
   );
 }

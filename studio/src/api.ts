@@ -19,6 +19,15 @@ export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg"> & {
   steps: number | null;
   cfg: number | null;
 };
+/** An upscale: SeedVR2 to `megapixels`, with an optional prompt retouch at the image's own size first. */
+export type UpscaleRequest = {
+  image: string; // base64 PNG
+  megapixels: number;
+  seed?: number | null;
+  retouch?: { unet: string; family: string | null; prompt: string; negative: string; loras: Lora[]; denoise: number } | null;
+};
+export const UPSCALE_MEGAPIXELS = [2, 4, 8] as const; // as graphs.UPSCALE_MEGAPIXELS on the server
+
 export type Model = { file: string; family: string; verified: boolean; steps: number; cfg: number };
 export type Family = { id: string; label: string; steps: number; cfg: number };
 export type Catalog = { models: Model[]; families: Family[]; loras: string[] };
@@ -39,6 +48,10 @@ export class Locked extends Error {}
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(path, { ...init, headers: init.body ? { "Content-Type": "application/json" } : undefined });
   if (r.status === 401) throw new Locked();
+  // Anything but JSON is not the studio answering: a dev server without its proxy serves the
+  // app's own index.html with 200, a proxy in trouble serves an error page.
+  if (!r.headers.get("content-type")?.includes("application/json"))
+    throw new Error(r.ok ? "The studio API is not answering. In development, start Vite with STUDIO_URL set." : `HTTP ${r.status}`);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.detail ?? body.error ?? `HTTP ${r.status}`);
   return body as T;
@@ -51,8 +64,9 @@ export const api = {
   login: (key: string) => post<{ ok: true }>("/api/login", { key }),
   models: () => call<Catalog>("/api/models"),
   generate: (p: Request) => post<Params & { id: string }>("/api/generate", p),
+  upscale: (u: UpscaleRequest) => post<Params & { id: string }>("/api/upscale", u),
   cancel: (id: string) => post(`/api/jobs/${id}/cancel`),
-  forget: (id: string) => call(`/api/jobs/${id}`, { method: "DELETE" }),
+  forget: (id: string) => call(`/api/jobs/${id}`, { method: "DELETE", keepalive: true }), // also cancels; survives a reload right after
   gpu: () => call<Gpu>("/api/gpu"),
   wake: () => post<Gpu>("/api/gpu/wake"),
   stop: () => post<Gpu>("/api/gpu/stop"),

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useImage, useSpace, type Render } from "./db";
 import type { Job } from "./jobs";
-import { BestBtn, deleteRender, download, saveImage } from "./library";
+import { BestBtn, download, saveImage } from "./library";
 import { Btn } from "./ui";
 import { ZoomBar, ZoomView, type View } from "./zoom";
 
@@ -26,6 +26,8 @@ export function status(job: Job, booted?: boolean) {
       return "Encoding prompt";
     case "sampling":
       return job.steps ? `Step ${job.step}/${job.steps}` : "Sampling";
+    case "upscaling":
+      return "Upscaling";
     case "decoding":
       return "Decoding";
     default:
@@ -54,12 +56,14 @@ type Props = {
   onDismiss: (id: string) => void;
   onOpen: (r: Render) => void;
   onReuse: (r: Render) => void;
+  onUpscale: (r: Render) => void;
+  onDelete: (r: Render) => void;
   view: View;
   setView: (v: View) => void;
   onStep: (dir: 1 | -1) => void;
 };
 
-export function Stage({ job, render, aspect, booted, loading, onCancel, onDismiss, onOpen, onReuse, view, setView, onStep }: Props) {
+export function Stage({ job, render, aspect, booted, loading, onCancel, onDismiss, onOpen, onReuse, onUpscale, onDelete, view, setView, onStep }: Props) {
   const space = useSpace();
   const url = useObjectUrl(useImage(render?.id));
   const [now, setNow] = useState(Date.now());
@@ -127,7 +131,8 @@ export function Stage({ job, render, aspect, booted, loading, onCancel, onDismis
             <BestBtn render={render} className="max-sm:w-14" />
             <Btn onClick={() => onReuse(render)} title="Load these settings" className="max-sm:flex-1">Reuse</Btn>
             <Btn onClick={() => saveImage(space, render)} className="max-sm:flex-1">Save</Btn>
-            <Btn variant="danger" onClick={() => deleteRender(render)} >Delete</Btn>
+            <Btn onClick={() => onUpscale(render)} title="Upscale with the settings in the Model tab (U)" className="max-sm:hidden">Upscale</Btn>
+            <Btn variant="danger" onClick={() => onDelete(render)}>Delete</Btn>
           </>
         ) : (
           <span className="text-faint">{loading ? "" : "Ready"}</span>

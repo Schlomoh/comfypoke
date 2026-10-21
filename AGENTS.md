@@ -57,6 +57,10 @@ explains where things are and how to change them without breaking the deployment
   (`studio/src/crypto.ts`): new per-workspace data goes through `sealJson`/`sealBlob` and carries
   `ws`, never in the clear or in localStorage. WebCrypto cannot run inside a Dexie upgrade, so
   moving data between tables is a function like `migrate()`, run before the start screen.
+  Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
+  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Try UI changes with
+  `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it
+  keys off the graphs' node ids, so a renumbered node needs the mock updated too.
 - Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that
   shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,

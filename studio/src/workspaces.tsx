@@ -3,10 +3,11 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
 import { WrongPassword } from "./crypto";
-import { createWorkspace, db, deleteWorkspace, loadDraft, openWorkspace, renameWorkspace, setPassword, useSpace, type Space, type Workspace } from "./db";
+import { api } from "./api";
+import { createWorkspace, db, deleteWorkspace, purge, loadDraft, openWorkspace, renameWorkspace, setPassword, useSpace, type Space, type Workspace } from "./db";
 import type { Recipe } from "./recipe";
 import { notify } from "./toast";
-import { Btn, errorText, Section } from "./ui";
+import { Btn, Check, errorText, Section } from "./ui";
 
 const NO_RESET = "There is no reset: without the password nothing in it can be read again, by you or anyone.";
 
@@ -233,9 +234,59 @@ export function WorkspaceMenu({ open, onClose, onSwitch }: { open: boolean; onCl
         </form>
         <p className="text-xs text-faint">Removes its {count} images, characters and draft from this device. This cannot be undone.</p>
       </Section>
+      <Purge />
       <div className="border-t border-line p-4">
         <Btn onClick={onSwitch} className="w-full">Switch workspace</Btn>
       </div>
     </dialog>
+  );
+}
+
+/** Every generated image on this device, in every workspace; with the toggle, everything else too. */
+function Purge() {
+  const images = useLiveQuery(() => db.shots.count(), []) ?? 0;
+  const [inputs, setInputs] = useState(false);
+  const [sure, setSure] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      // forget also stops the render on the server; not awaited, a slow worker must not hold up the purge
+      for (const id of await purge(inputs)) api.forget(id).catch(() => {});
+      if (inputs) return;
+      notify(`Purged ${images} images`);
+      setSure("");
+    } catch (e) {
+      notify(`Purge failed: ${errorText(e)}`, { bad: true });
+    } finally {
+      setBusy(false);
+      // the database was closed for deletion, whether or not that worked: start over as a new device
+      if (inputs) location.reload();
+    }
+  };
+
+  return (
+    <Section title="Purge this device">
+      <div className="flex items-center gap-1">
+        <Check on={inputs} onChange={setInputs} label={<span className="text-[13px]">Also delete the inputs</span>} />
+      </div>
+      <p className="text-xs text-faint">
+        {inputs
+          ? "Deletes everything the studio keeps here: every workspace with its images, characters and draft, the section presets, LoRA trigger words and saved folders. The app starts over as on a new device, with the starter presets."
+          : `Deletes all ${images} generated images in every workspace, protected ones included, and stops renders in flight. Workspaces, characters, drafts and presets stay.`}{" "}
+        Files already saved to a folder or downloaded are not touched. This cannot be undone.
+      </p>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run();
+        }}
+      >
+        <input value={sure} onChange={(e) => setSure(e.target.value)} placeholder="type purge to confirm" className="field h-11 min-w-0 flex-1 px-2 fine:h-8" />
+        <Btn variant="danger" disabled={sure !== "purge" || busy}>{busy ? "Purging…" : inputs ? "Purge everything" : `Purge ${images} images`}</Btn>
+      </form>
+    </Section>
   );
 }
