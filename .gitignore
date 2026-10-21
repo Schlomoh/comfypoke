@@ -6,6 +6,10 @@ __pycache__/
 .DS_Store
 tools/*_api.json
 
+# the phone app's dependencies and build output (built before every deploy)
+studio/node_modules/
+studio/dist/
+
 # private launch drafts, not part of the public repo
 docs/launch/
 

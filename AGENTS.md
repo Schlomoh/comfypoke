@@ -8,6 +8,13 @@ explains where things are and how to change them without breaking the deployment
 - Two Modal classes in one app: `UI` (CPU, `comfy_modal/ui.py`) and `Worker` (GPU,
   `comfy_modal/worker.py`). Both build from the image in `comfy_modal/image.py`. Adding a
   container role means a new module plus one import in `modal_app.py`.
+- A third, lighter piece: the studio endpoint (`comfy_modal/studio.py`, `studio_api.py`), a
+  FastAPI function on its own slim image that serves the phone app in `studio/` (React, Vite,
+  TypeScript; `studio/dist` must be built before a deploy) and calls `Worker` directly with the
+  graphs in `comfy_modal/graphs.py`. Jobs live in that one container's memory
+  (`max_containers=1`) and stream as server-sent events that end after 100 s and resume with
+  Last-Event-ID, because Modal cuts any HTTP response at 150 s. Images reach the phone through
+  `SaveImageWebsocket` and are stored in the browser's IndexedDB; nothing is written to a volume.
 - Custom nodes in `comfy_nodes/` run inside ComfyUI in the containers. They cannot import
   `comfy_modal`, so everything they need arrives through environment variables. The contract is
   `CONTAINER_ENV` in `comfy_modal/config.py`: the nodes read exactly those names and fail at
@@ -42,10 +49,19 @@ explains where things are and how to change them without breaking the deployment
   in ComfyUI's order and the widget names in the order the node declares them. Read them from the
   running server with `GET /api/object_info/<NodeType>`. A wrong order does not error: the GUI shows
   the values under the wrong widgets and the API prompt sends them to the wrong inputs.
+- Studio: its graphs are `comfy_modal/graphs.py`. A model family (encoder, VAE, sampling) is one
+  entry in `FAMILIES`; a file tested with the studio goes in `VERIFIED` with its settings. The prompt
+  blocks and their suggestions are `BLOCKS` in `studio/src/recipe.ts`. The phone keeps everything in
+  IndexedDB (`studio/src/db.ts`); a schema change there is a new `db.version(n)`, never an edit of
+  an old one, or existing phones lose their library. A workspace's records are sealed with its key
+  (`studio/src/crypto.ts`): new per-workspace data goes through `sealJson`/`sealBlob` and carries
+  `ws`, never in the clear or in localStorage. WebCrypto cannot run inside a Dexie upgrade, so
+  moving data between tables is a function like `migrate()`, run before the start screen.
 - Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that
   shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,
-  `app.extensionManager.registerSidebarTab`). No build step.
+  `app.extensionManager.registerSidebarTab`). No build step. The studio app is the exception:
+  `npm --prefix studio run build`, which the console's Deploy runs, and CI type-checks it.
 
 ## Verifying
 

@@ -22,6 +22,8 @@ jobs:
         run: |
           bash -n tools/sync.sh
           node -e "new Function(require('fs').readFileSync('comfy_nodes/gpu_relay/js/gpu_status.js','utf8').replace(/^import .*$/mg,''))"
+      - name: Studio app type-checks and builds
+        run: npm --prefix studio ci && npm --prefix studio run build
       - name: Workflows match the builder
         run: |
           uv run tools/build_workflows.py

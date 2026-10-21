@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* Control sizes follow the pointer, not the screen width: 44px targets for a finger (an iPad in the
+   three-pane layout too), compact ones for a mouse. */
+@custom-variant fine (@media (pointer: fine));
+
+:root {
+  color-scheme: dark;
+}
+
+@theme {
+  --color-bg: #0b0b0c;
+  --color-panel: #111113;
+  --color-raised: #19191c;
+  --color-line: #26262a;
+  --color-edge: #3a3a40;
+  --color-ink: #e6e6e8;
+  --color-control: #606068; /* borders of inputs and checkboxes: 3:1 against the background (WCAG 1.4.11) */
+  --color-muted: #a4a4ac;
+  --color-faint: #7e7e86; /* the dimmest text: 4.5:1 on panels (WCAG 1.4.3) */
+  --color-ok: #5fd08a;
+  --color-warn: #e8b84a;
+  --color-bad: #f0716a;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* The 13px base is set on body, not html: html's size is the rem every Tailwind size is measured
+   in, and at 13px a 40px touch target would come out at 32. */
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Section and field labels: the one typographic device the interface leans on. */
+@utility label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* iOS zooms into any input under 16px on focus, so fields are 16px on touch screens. */
+@utility field {
+  background: var(--color-bg);
+  border: 1px solid var(--color-control);
+  outline: none;
+  font-size: 16px;
+  @media (pointer: fine) {
+    font-size: 13px;
+  }
+  &:focus {
+    border-color: var(--color-ink);
+  }
+}
+
+/* One focus ring for everything the keyboard can reach, drawn inside so grid gaps do not clip it. */
+:focus-visible {
+  outline: 1px solid var(--color-ink);
+  outline-offset: -1px;
+}
+.field:focus-visible {
+  outline: none;
+}
+
+input[type="range"] {
+  accent-color: var(--color-ink);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.7);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+}
+
+/* H: the images stay where they are, as blank tiles, until shown again */
+html.veil img {
+  visibility: hidden;
+}
