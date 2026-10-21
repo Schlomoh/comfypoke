@@ -8,6 +8,7 @@ import { canPickFolder, chooseFolder, folderOf, forgetFolder, saveToFolder } fro
 import { db, exportLibrary, importLibrary, loadImage, removeRender, updateRender, useImage, useSpace, useThumb, type Render, type Space } from "./db";
 import type { Job } from "./jobs";
 import { describe, progress, useObjectUrl } from "./stage";
+import { notify } from "./toast";
 import { ZoomBar, ZoomView } from "./zoom";
 import { Btn, errorText, Seg } from "./ui";
 import type { View } from "./zoom";
@@ -15,15 +16,20 @@ import type { View } from "./zoom";
 const fileName = (r: Render) => `studio-${r.characterName ? `${r.characterName.replace(/[^\w-]+/g, "_")}-` : ""}${r.seed}`;
 
 export async function saveImage(space: Space, r: Render) {
-  const dir = canPickFolder ? await folderOf(space).catch(() => null) : null;
-  // a folder that cannot be written to falls back to a plain download, so S never does nothing
-  if (dir && (await saveToFolder(space, dir, [r]).then(() => true, () => false))) return;
-  const file = new File([await loadImage(space, r.id)], `${fileName(r)}.png`, { type: "image/png" });
-  if (navigator.canShare?.({ files: [file] }) && matchMedia("(pointer: coarse)").matches) {
-    // the share sheet is how a phone puts an image into its photo library
-    return navigator.share({ files: [file] }).catch(() => {});
+  try {
+    const dir = canPickFolder ? await folderOf(space).catch(() => null) : null;
+    // a folder that cannot be written to falls back to a plain download, so S never does nothing
+    if (dir && (await saveToFolder(space, dir, [r]).then(() => true, () => false))) return notify(`Saved to ${dir.name}`);
+    const file = new File([await loadImage(space, r.id)], `${fileName(r)}.png`, { type: "image/png" });
+    if (navigator.canShare?.({ files: [file] }) && matchMedia("(pointer: coarse)").matches) {
+      // the share sheet is how a phone puts an image into its photo library; it is its own feedback
+      return navigator.share({ files: [file] }).catch(() => {});
+    }
+    download(file);
+    notify(`Downloaded ${file.name}`);
+  } catch (e) {
+    notify(`Could not save: ${errorText(e)}`, { bad: true });
   }
-  download(file);
 }
 
 export function download(file: Blob & { name?: string }, name = file.name ?? "download") {
@@ -100,7 +106,20 @@ function Pending({ job, active, onFocus }: { job: Job; active: boolean; onFocus:
   );
 }
 
-export const KEYS = "← → ↑ ↓ browse · Z zoom · + − 0 · F full screen · B best · H hide · R reuse · S save · Del delete · ⌘↵ generate";
+export const KEYS = [
+  ["← → or J K", "previous, next image"],
+  ["↑ ↓", "a row up or down"],
+  ["F or ↵", "full screen"],
+  ["Z", "1:1 or fit"],
+  ["+ − 0", "zoom in, out, fit"],
+  ["B", "mark as best"],
+  ["S", "save"],
+  ["R", "reuse its settings"],
+  ["Del", "delete"],
+  ["H", "hide all images"],
+  ["⌘↵", "generate"],
+  ["?", "this list"],
+];
 
 export function Library({ shown, names, filter, setFilter, best, setBest, bestCount, jobs, focus, onSelect, onFocus }: {
   shown: Render[];
@@ -116,7 +135,8 @@ export function Library({ shown, names, filter, setFilter, best, setBest, bestCo
   onFocus: (id: string) => void;
 }) {
   const space = useSpace();
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(""); // Download
+  const [backupNote, setBackupNote] = useState("");
   const [zipping, setZipping] = useState<number | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
   const folder = useLiveQuery(() => db.workspaces.get(space.id).then((w) => w?.folder?.name ?? ""), [space.id]);
@@ -165,7 +185,7 @@ export function Library({ shown, names, filter, setFilter, best, setBest, bestCo
           className="w-28"
         />
         {names.length > 0 && (
-          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="field h-10 max-w-40 px-2 lg:h-8">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="field h-11 max-w-40 px-2 fine:h-8">
             <option value="">All characters</option>
             {names.map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -173,7 +193,9 @@ export function Library({ shown, names, filter, setFilter, best, setBest, bestCo
           </select>
         )}
       </div>
-      <p className="hidden border-b border-line px-4 py-2 font-mono text-[10.5px] text-faint [@media(pointer:fine)]:block">{KEYS}</p>
+      <p className="hidden border-b border-line px-4 py-2 font-mono text-[10.5px] text-faint [@media(pointer:fine)]:block">
+        ← → browse · F full screen · B best · press ? for all keys
+      </p>
       {jobs.length + shown.length === 0 ? (
         <p className="px-4 py-6 font-mono text-xs text-faint">
           {best ? "Nothing marked best here. Press B or ★ on an image to mark it." : "Nothing here yet. Renders are kept on this device only."}
@@ -201,6 +223,7 @@ export function Library({ shown, names, filter, setFilter, best, setBest, bestCo
         <Btn onClick={downloadAll} disabled={!shown.length || zipping != null}>
           {zipping != null ? `Zipping ${zipping}/${shown.length}` : `Download ${shown.length} shown as zip`}
         </Btn>
+        {note && <p role="status" className="font-mono text-xs text-ink">{note}</p>}
         <p className="text-xs text-faint">
           The images the filters above show, with their settings in metadata.json. Neither the files nor the zip are encrypted.
           {canPickFolder
@@ -223,14 +246,14 @@ export function Library({ shown, names, filter, setFilter, best, setBest, bestCo
               e.target.value = "";
               if (!f) return;
               try {
-                setNote(await importLibrary(space, f));
+                setBackupNote(await importLibrary(space, f));
               } catch (err) {
-                setNote(errorText(err));
+                setBackupNote(errorText(err));
               }
             }}
           />
         </div>
-        <p className="text-xs text-faint">{note || "This workspace's characters, plus section presets and LoRA trigger words. The file is not encrypted."}</p>
+        <p className="text-xs text-faint">{backupNote || "This workspace's characters, plus section presets and LoRA trigger words. The file is not encrypted."}</p>
       </div>
     </div>
   );
@@ -239,7 +262,13 @@ export function Library({ shown, names, filter, setFilter, best, setBest, bestCo
 export function BestBtn({ render, className = "" }: { render: Render; className?: string }) {
   const space = useSpace();
   return (
-    <Btn onClick={() => toggleBest(space, render)} aria-pressed={!!render.best} title="Mark as best (B)" className={`${render.best ? "text-ink" : "text-faint"} ${className}`}>
+    <Btn
+      onClick={() => toggleBest(space, render)}
+      aria-pressed={!!render.best}
+      aria-label="Best"
+      title="Mark as best (B)"
+      className={`text-base ${render.best ? "text-warn" : "text-muted hover:text-ink"} ${className}`}
+    >
       {render.best ? "★" : "☆"}
     </Btn>
   );
@@ -262,7 +291,7 @@ export function Viewer({ render, onClose, onReuse, view, setView, onStep }: {
   }, [render]);
 
   return (
-    <dialog ref={dialog} onClose={onClose} className="m-0 h-dvh max-h-none w-screen max-w-none bg-bg p-0 text-ink">
+    <dialog ref={dialog} data-viewer onClose={onClose} className="m-0 h-dvh max-h-none w-screen max-w-none bg-bg p-0 text-ink">
       {render && (
         <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
           <div className="flex h-12 items-center gap-2 border-b border-line px-3">

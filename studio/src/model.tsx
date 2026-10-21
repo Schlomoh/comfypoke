@@ -77,7 +77,7 @@ function Loras({ recipe, set, available }: { recipe: Recipe; set: (r: Recipe) =>
             <span className="min-w-0 flex-1 truncate font-mono text-xs" title={l.name}>{shortName(l.name)}</span>
             <button
               onClick={() => set({ ...recipe, loras: recipe.loras.filter((_, j) => j !== i) })}
-              className="h-8 px-2 font-mono text-[10.5px] text-faint uppercase hover:text-bad"
+              className="h-11 px-2 font-mono text-[10.5px] fine:h-8 text-faint uppercase hover:text-bad"
             >
               remove
             </button>
@@ -94,7 +94,7 @@ function Loras({ recipe, set, available }: { recipe: Recipe; set: (r: Recipe) =>
           <select
             value=""
             onChange={(e) => set({ ...recipe, loras: [...recipe.loras, { name: e.target.value, strength: 1, on: true }] })}
-            className="field h-10 px-2 text-muted lg:h-8"
+            className="field h-11 px-2 text-muted fine:h-8"
           >
             <option value="">+ Add LoRA</option>
             {unused.map((n) => (
@@ -137,7 +137,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
         <select
           value={recipe.unet}
           onChange={(e) => set({ ...recipe, unet: e.target.value, family: null, steps: null, cfg: null })}
-          className="field h-10 px-2 font-mono lg:h-8"
+          className="field h-11 px-2 font-mono fine:h-8"
         >
           {!model && catalog.models.length > 0 && <option value={recipe.unet}>{shortName(recipe.unet)} (not on the volume)</option>}
           <optgroup label="Verified">{catalog.models.filter((m) => m.verified).map(option)}</optgroup>
@@ -188,7 +188,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
           <Seg
             className="w-40"
             value={recipe.seed == null ? "random" : "fixed"}
-            options={[{ value: "random", label: "random" }, { value: "fixed", label: "fixed" }]}
+            options={[{ value: "random", label: "Random" }, { value: "fixed", label: "Fixed" }]}
             onChange={(v) => set({ ...recipe, seed: v === "random" ? null : newSeed() })}
           />
           {recipe.seed != null && (
@@ -197,7 +197,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
                 inputMode="numeric"
                 value={recipe.seed}
                 onChange={(e) => set({ ...recipe, seed: Number(e.target.value.replace(/\D/g, "")) || 0 })}
-                className="field h-10 min-w-0 flex-1 px-2 font-mono tabular-nums lg:h-8"
+                className="field h-11 min-w-0 flex-1 px-2 font-mono tabular-nums fine:h-8"
               />
               <Btn onClick={() => set({ ...recipe, seed: newSeed() })} title="New seed">New</Btn>
             </>
@@ -213,7 +213,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
       <Section
         title="Sampling"
         right={(recipe.steps != null || recipe.cfg != null) && (
-          <button onClick={() => set({ ...recipe, steps: null, cfg: null })} className="h-8 px-2 font-mono text-[10.5px] text-muted uppercase hover:text-ink">
+          <button onClick={() => set({ ...recipe, steps: null, cfg: null })} className="h-11 px-2 font-mono text-[10.5px] fine:h-8 text-muted uppercase hover:text-ink">
             reset
           </button>
         )}
@@ -226,7 +226,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
               value={recipe.steps ?? ""}
               placeholder={String(defaults?.steps ?? "")}
               onChange={(e) => set({ ...recipe, steps: num(e.target.value, true) })}
-              className="field h-10 px-2 font-mono tabular-nums placeholder:text-faint lg:h-8"
+              className="field h-11 px-2 font-mono tabular-nums placeholder:text-faint fine:h-8"
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -236,7 +236,7 @@ export function ModelPanel({ recipe, set, catalog }: { recipe: Recipe; set: (r: 
               value={recipe.cfg ?? ""}
               placeholder={String(defaults?.cfg ?? "")}
               onChange={(e) => set({ ...recipe, cfg: num(e.target.value) })}
-              className="field h-10 px-2 font-mono tabular-nums placeholder:text-faint lg:h-8"
+              className="field h-11 px-2 font-mono tabular-nums placeholder:text-faint fine:h-8"
             />
           </label>
         </div>

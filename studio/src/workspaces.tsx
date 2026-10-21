@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { WrongPassword } from "./crypto";
 import { createWorkspace, db, deleteWorkspace, loadDraft, openWorkspace, renameWorkspace, setPassword, useSpace, type Space, type Workspace } from "./db";
 import type { Recipe } from "./recipe";
+import { notify } from "./toast";
 import { Btn, errorText, Section } from "./ui";
 
 const NO_RESET = "There is no reset: without the password nothing in it can be read again, by you or anyone.";
@@ -14,13 +15,20 @@ function NewPassword({ name, value, set, repeat, setRepeat }: { name: string; va
   return (
     <>
       <input type="text" name="username" autoComplete="username" value={`studio: ${name}`} hidden readOnly />
-      <input type="password" autoComplete="new-password" value={value} onChange={(e) => set(e.target.value)} placeholder="password" className="field h-11 px-3 lg:h-9" />
+      <input type="password" autoComplete="new-password" value={value} onChange={(e) => set(e.target.value)} placeholder="password" className="field h-11 px-3 fine:h-9" />
       {value && (
-        <input type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} placeholder="repeat password" className="field h-11 px-3 lg:h-9" />
+        <input type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} placeholder="repeat password" className="field h-11 px-3 fine:h-9" />
       )}
+      {value && repeat && value !== repeat && <p role="alert" className="font-mono text-xs text-bad">The passwords do not match.</p>}
     </>
   );
 }
+
+const days = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+const opened = (t: number) => {
+  const d = Math.round((new Date(t).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+  return d > -7 ? days.format(d, "day") : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
 
 function useCounts() {
   return useLiveQuery(async () => {
@@ -36,6 +44,7 @@ export function Workspaces({ onOpen }: { onOpen: (space: Space, draft: Recipe) =
   const [picked, setPicked] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState("");
+  const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [password, setPw] = useState("");
@@ -59,6 +68,7 @@ export function Workspaces({ onOpen }: { onOpen: (space: Space, draft: Recipe) =
   const pick = (w: Workspace) => {
     setError("");
     setPw("");
+    setOpening(w.id);
     if (!w.lock) return enter(() => openWorkspace(w), "Opening");
     setPicked(w.id);
   };
@@ -71,11 +81,15 @@ export function Workspaces({ onOpen }: { onOpen: (space: Space, draft: Recipe) =
           <h2 className="label border-b border-line px-4 py-3">Workspaces</h2>
           {sorted.map((w) => (
             <div key={w.id} className="border-b border-line last:border-b-0">
-              <button onClick={() => pick(w)} disabled={!!busy} className="flex h-14 w-full items-center gap-3 px-4 text-left hover:bg-raised lg:h-12">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{w.name}</span>
-                <span className="font-mono text-[10.5px] text-faint uppercase tabular-nums">
-                  {w.lock ? "locked" : `${counts?.get(w.id) ?? 0} images`}
+              <button onClick={() => pick(w)} disabled={!!busy} className="flex h-16 w-full items-center gap-3 px-4 text-left hover:bg-raised fine:h-14">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium">{w.name}</span>
+                  <span className="text-xs text-faint">opened {opened(w.opened)}</span>
                 </span>
+                <span className="font-mono text-[10.5px] text-faint uppercase tabular-nums">
+                  {busy && opening === w.id ? busy : w.lock ? "protected" : `${counts?.get(w.id) ?? 0} images`}
+                </span>
+                <span className="text-faint" aria-hidden>›</span>
               </button>
               {picked === w.id && (
                 <form
@@ -94,9 +108,9 @@ export function Workspaces({ onOpen }: { onOpen: (space: Space, draft: Recipe) =
                       onChange={(e) => setPw(e.target.value)}
                       placeholder="password"
                       autoFocus
-                      className="field h-11 min-w-0 flex-1 px-3 lg:h-9"
+                      className="field h-11 min-w-0 flex-1 px-3 fine:h-9"
                     />
-                    <Btn variant="primary" disabled={!password || !!busy} className="h-11 lg:h-9">{busy || "Unlock"}</Btn>
+                    <Btn variant="primary" disabled={!password || !!busy} className="h-11 fine:h-9">{busy || "Unlock"}</Btn>
                   </div>
                 </form>
               )}
@@ -104,7 +118,7 @@ export function Workspaces({ onOpen }: { onOpen: (space: Space, draft: Recipe) =
           ))}
         </section>
       )}
-      {error && <p className="font-mono text-xs text-bad">{error}</p>}
+      {error && <p role="alert" className="font-mono text-xs text-bad">{error}</p>}
       {fresh ? (
         <form
           className="flex flex-col gap-3 border border-line bg-panel p-4"
@@ -117,7 +131,7 @@ export function Workspaces({ onOpen }: { onOpen: (space: Space, draft: Recipe) =
           <p className="text-xs text-faint">
             Each workspace keeps its own renders, characters and draft, encrypted on this device. Nothing of one shows in another.
           </p>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name" autoFocus={!sorted.length} className="field h-11 px-3 lg:h-9" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name" autoFocus={!sorted.length} className="field h-11 px-3 fine:h-9" />
           <NewPassword name={name} value={password} set={setPw} repeat={repeat} setRepeat={setRepeat} />
           <p className="text-xs text-faint">{password ? NO_RESET : "Optional. Without one, anyone using this browser can open it."}</p>
           <div className="flex gap-2">
@@ -144,12 +158,14 @@ export function WorkspaceMenu({ open, onClose, onSwitch }: { open: boolean; onCl
   const [password, setPw] = useState("");
   const [repeat, setRepeat] = useState("");
   const [note, setNote] = useState("");
+  const [sure, setSure] = useState(""); // the name, typed again to delete
   useEffect(() => {
     if (open && !dialog.current?.open) {
       setName(w?.name ?? "");
       setPw("");
       setRepeat("");
       setNote("");
+      setSure("");
       dialog.current?.showModal();
     }
     if (!open && dialog.current?.open) dialog.current.close();
@@ -167,17 +183,17 @@ export function WorkspaceMenu({ open, onClose, onSwitch }: { open: boolean; onCl
     <dialog ref={dialog} onClose={onClose} className="m-auto w-[min(28rem,calc(100vw-2rem))] border border-line bg-bg p-0 text-ink backdrop:bg-black/60">
       <div className="flex h-12 items-center gap-2 border-b border-line px-4">
         <span className="label flex-1">Workspace</span>
-        <Btn onClick={() => dialog.current?.close()}>Close</Btn>
+        <Btn onClick={() => dialog.current?.close()}>Done</Btn>
       </div>
       <Section title="Name">
         <form
           className="flex gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (name.trim()) renameWorkspace(space.id, name.trim());
+            if (name.trim()) renameWorkspace(space.id, name.trim()).then(() => notify("Renamed"));
           }}
         >
-          <input value={name} onChange={(e) => setName(e.target.value)} className="field h-10 min-w-0 flex-1 px-2 lg:h-8" />
+          <input value={name} onChange={(e) => setName(e.target.value)} className="field h-11 min-w-0 flex-1 px-2 fine:h-8" />
           <Btn disabled={!name.trim() || name.trim() === w.name}>Rename</Btn>
         </form>
       </Section>
@@ -204,19 +220,21 @@ export function WorkspaceMenu({ open, onClose, onSwitch }: { open: boolean; onCl
         </p>
       </Section>
       <Section title="Delete">
-        <Btn
-          variant="danger"
-          onClick={async () => {
-            if (!confirm(`Delete "${w.name}" with its ${count} images, characters and draft from this device? This cannot be undone.`)) return;
+        <form
+          className="flex gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
             await deleteWorkspace(space.id);
             onSwitch();
           }}
         >
-          Delete workspace
-        </Btn>
+          <input value={sure} onChange={(e) => setSure(e.target.value)} placeholder={`type ${w.name} to confirm`} className="field h-11 min-w-0 flex-1 px-2 fine:h-8" />
+          <Btn variant="danger" disabled={sure !== w.name}>Delete</Btn>
+        </form>
+        <p className="text-xs text-faint">Removes its {count} images, characters and draft from this device. This cannot be undone.</p>
       </Section>
       <div className="border-t border-line p-4">
-        <Btn variant="primary" onClick={onSwitch} className="w-full">Close workspace</Btn>
+        <Btn onClick={onSwitch} className="w-full">Switch workspace</Btn>
       </div>
     </dialog>
   );

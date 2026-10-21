@@ -1,9 +1,10 @@
 // The prompt as blocks: the character half is what a saved character keeps, the scene half is
 // what changes between shots. The composed prompt underneath is exactly what is sent.
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { db, deleteCharacter, putCharacter, useCharacters, useSpace, type Character, type Preset } from "./db";
 import { BLOCKS, characterBlocks, compose, hasPhrase, togglePhrase, type BlockId, type Recipe } from "./recipe";
+import { notify } from "./toast";
 import { Btn, Check, Section } from "./ui";
 
 export function sameCharacter(c: Character, r: Recipe) {
@@ -32,6 +33,7 @@ function CharacterBar({ recipe, set }: { recipe: Recipe; set: (r: Recipe) => voi
     }
     await putCharacter(space, { id, name, blocks: characterBlocks(recipe.blocks), loras: recipe.loras, updatedAt: Date.now() });
     set({ ...recipe, character: id });
+    notify(`Saved ${name}`);
   };
   const remove = async () => {
     if (!current || !confirm(`Delete the character "${current.name}"? Renders made with it stay.`)) return;
@@ -48,7 +50,7 @@ function CharacterBar({ recipe, set }: { recipe: Recipe; set: (r: Recipe) => voi
         <select
           value={recipe.character ?? ""}
           onChange={(e) => load(e.target.value)}
-          className="field h-10 min-w-0 flex-1 px-2 lg:h-8"
+          className="field h-11 min-w-0 flex-1 px-2 fine:h-8"
         >
           <option value="">None (unsaved)</option>
           {characters.map((c) => (
@@ -57,7 +59,7 @@ function CharacterBar({ recipe, set }: { recipe: Recipe; set: (r: Recipe) => voi
         </select>
         <Btn onClick={() => save(false)} disabled={!!current && !edited}>Save</Btn>
         {current && <Btn onClick={() => save(true)}>Save as</Btn>}
-        {current && <Btn variant="danger" onClick={remove} title="Delete character">Del</Btn>}
+        {current && <Btn variant="danger" onClick={remove} title="Delete character">Delete</Btn>}
       </div>
       <p className="text-xs text-faint">A character keeps the subject, face, outfit and LoRAs. Pose, setting, camera and style stay with the scene.</p>
     </Section>
@@ -68,6 +70,7 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
   const def = BLOCKS.find((b) => b.id === id)!;
   const block = recipe.blocks[id];
   const [editing, setEditing] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
   const [draft, setDraft] = useState("");
   const put = (patch: Partial<typeof block>) => set({ ...recipe, blocks: { ...recipe.blocks, [id]: { ...block, ...patch } } });
   const addPreset = (text: string, label?: string) =>
@@ -76,15 +79,15 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
     const label = prompt(`Name this ${def.label.toLowerCase()} preset (empty uses the text)`, "");
     if (label !== null) addPreset(block.text, label.trim() || undefined);
   };
-  const tool = "h-8 px-2 font-mono text-[10.5px] uppercase text-faint hover:text-ink";
+  const tool = "h-11 px-2 font-mono text-[10.5px] fine:h-8 uppercase text-faint hover:text-ink";
 
   return (
     <div className={`flex flex-col gap-1.5 ${block.on ? "" : "opacity-45"}`}>
       <div className="flex items-center gap-1">
         <Check on={block.on} onChange={(on) => put({ on })} title={block.on ? "Leave out of the prompt" : "Use in the prompt"} />
         <span className="flex-1 text-[13px] font-medium">{def.label}</span>
-        <button onClick={() => setEditing(!editing)} aria-pressed={editing} className={`${tool} aria-pressed:text-ink`}>
-          {editing ? "done" : "presets"}
+        <button ref={toggle} onClick={() => setEditing(!editing)} aria-pressed={editing} className={`${tool} aria-pressed:text-ink`}>
+          {editing ? "done" : "edit presets"}
         </button>
         {block.text && (
           <button onClick={() => put({ text: "" })} className={tool}>clear</button>
@@ -95,7 +98,7 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
         onChange={(e) => put({ text: e.target.value })}
         placeholder={def.hint}
         rows={1}
-        className="field field-sizing-content min-h-10 resize-none px-2.5 py-2 placeholder:text-faint"
+        className="field field-sizing-content min-h-11 resize-none fine:min-h-10 px-2.5 py-2 placeholder:text-faint"
       />
       {(presets.length > 0 || editing) && (
         <div className={editing ? "flex flex-wrap gap-1" : "-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none]"}>
@@ -105,9 +108,14 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
               <button
                 key={p.id}
                 title={editing ? `Delete "${p.text}"` : p.text}
-                onClick={() => (editing ? db.presets.delete(p.id) : put({ text: togglePhrase(block.text, p.text), on: true }))}
+                onClick={() => {
+                  if (!editing) return put({ text: togglePhrase(block.text, p.text), on: true });
+                  db.presets.delete(p.id);
+                  toggle.current?.focus(); // the chip that had focus is gone
+                  notify(`Deleted "${p.label ?? p.text}"`, { action: { label: "Undo", run: () => db.presets.put(p) } });
+                }}
                 aria-pressed={!editing && on}
-                className={`flex h-8 max-w-64 shrink-0 items-center gap-1.5 border px-2 text-xs lg:h-6 ${
+                className={`flex h-9 max-w-64 shrink-0 items-center gap-1.5 border px-2 text-xs fine:h-6 ${
                   editing
                     ? "border-line text-muted hover:border-bad hover:text-bad"
                     : on
@@ -136,13 +144,13 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={`new ${def.label.toLowerCase()} preset`}
-              className="field h-10 min-w-0 flex-1 px-2 placeholder:text-faint lg:h-8"
+              className="field h-11 min-w-0 flex-1 px-2 placeholder:text-faint fine:h-8"
             />
             <Btn disabled={!draft.trim()}>Add</Btn>
           </form>
           <div className="flex items-center gap-2">
             <Btn onClick={saveSection} disabled={!block.text.trim()}>Save section as preset</Btn>
-            <span className="text-xs text-faint">Tap a preset to delete it.</span>
+            <span className="text-xs text-faint">Tap a preset to delete it. Presets are shared by all workspaces.</span>
           </div>
         </div>
       )}
@@ -153,7 +161,6 @@ function BlockField({ id, recipe, set, presets }: { id: BlockId; recipe: Recipe;
 export function PromptPanel({ recipe, set, triggers }: { recipe: Recipe; set: (r: Recipe) => void; triggers: string[] }) {
   const text = compose(recipe.blocks, triggers);
   const presets = useLiveQuery(() => db.presets.orderBy("at").toArray(), []) ?? [];
-  const [copied, setCopied] = useState(false);
   return (
     <div>
       <CharacterBar recipe={recipe} set={set} />
@@ -172,11 +179,12 @@ export function PromptPanel({ recipe, set, triggers }: { recipe: Recipe; set: (r
         right={
           <button
             disabled={!text}
-            onClick={() => navigator.clipboard?.writeText(text).then(() => setCopied(true), () => {})}
-            onBlur={() => setCopied(false)}
-            className="h-8 px-2 font-mono text-[10.5px] text-muted uppercase hover:text-ink disabled:opacity-35"
+            onClick={() =>
+              navigator.clipboard?.writeText(text).then(() => notify("Prompt copied"), () => notify("Could not copy the prompt", { bad: true }))
+            }
+            className="h-11 px-2 font-mono text-[10.5px] fine:h-8 text-muted uppercase hover:text-ink disabled:opacity-35"
           >
-            {copied ? "copied" : "copy"}
+            copy
           </button>
         }
       >

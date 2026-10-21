@@ -105,18 +105,20 @@ export function GpuBar({ gpu, at, set }: { gpu: Gpu | null; at: number; set: (g:
         {error && <span className="max-w-60 truncate font-mono text-xs text-bad" title={error}>{error}</span>}
         <div className="flex gap-1">{controls}</div>
       </div>
-      <button onClick={() => sheet.current?.showModal()} className="flex h-10 items-center border border-line px-3 lg:hidden">
+      <button onClick={() => sheet.current?.showModal()} className="flex h-11 items-center border border-line px-3 lg:hidden">
         {state}
       </button>
       <dialog
         ref={sheet}
+        aria-labelledby="gpu-title"
         onClick={(e) => e.target === sheet.current && sheet.current.close()}
         className="mx-0 mt-auto mb-0 w-screen max-w-none border-t border-line bg-panel p-0 text-ink"
       >
         <div className="flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <div className="flex items-center justify-between">
-            <h2 className="label">GPU worker</h2>
+          <div className="flex items-center gap-3">
+            <h2 id="gpu-title" className="label flex-1">GPU worker</h2>
             {state}
+            <Btn onClick={() => sheet.current?.close()}>Done</Btn>
           </div>
           <dl className="grid grid-cols-2 border-t border-line font-mono text-xs tabular-nums">
             {facts.map(([k, v]) => (

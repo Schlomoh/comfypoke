@@ -49,6 +49,7 @@ type Props = {
   render?: Render;
   aspect: { width: number; height: number };
   booted?: boolean;
+  loading?: boolean; // the workspace's renders are still being decrypted
   onCancel: (id: string) => void;
   onDismiss: (id: string) => void;
   onOpen: (r: Render) => void;
@@ -58,7 +59,7 @@ type Props = {
   onStep: (dir: 1 | -1) => void;
 };
 
-export function Stage({ job, render, aspect, booted, onCancel, onDismiss, onOpen, onReuse, view, setView, onStep }: Props) {
+export function Stage({ job, render, aspect, booted, loading, onCancel, onDismiss, onOpen, onReuse, view, setView, onStep }: Props) {
   const space = useSpace();
   const url = useObjectUrl(useImage(render?.id));
   const [now, setNow] = useState(Date.now());
@@ -83,7 +84,7 @@ export function Stage({ job, render, aspect, booted, onCancel, onDismiss, onOpen
           {job?.preview && <img src={job.preview} alt="" className="absolute inset-0 size-full object-cover" />}
           {!job && !render && (
             <div className="absolute inset-0 grid place-items-center p-6 text-center font-mono text-xs text-faint">
-              No renders in this workspace yet
+              {loading ? "Opening…" : "No renders in this workspace yet. Fill in a block and press Generate."}
             </div>
           )}
           {running && (
@@ -94,10 +95,10 @@ export function Stage({ job, render, aspect, booted, onCancel, onDismiss, onOpen
         </div>
         )}
       </div>
-      <div className="flex min-h-12 items-center gap-2 border-t border-line bg-panel px-3 font-mono text-xs">
+      <div className="flex min-h-12 items-center gap-2 border-t border-line bg-panel px-3 py-1 font-mono text-xs">
         {job?.error ? (
           <>
-            <span className="text-bad">FAILED</span>
+            <span className="text-bad" role="alert">FAILED</span>
             <span className="min-w-0 flex-1 truncate text-muted" title={job.error}>{job.error}</span>
             {job.image && (
               <Btn onClick={() => download(job.image!, `studio-${job.params?.seed ?? job.id}.png`)}>Download</Btn>
@@ -106,9 +107,11 @@ export function Stage({ job, render, aspect, booted, onCancel, onDismiss, onOpen
           </>
         ) : job ? (
           <>
-            <span className="text-ink">{status(job, booted)}</span>
-            <span className="text-faint tabular-nums">{Math.max(0, Math.round((now - job.startedAt) / 1000))}s</span>
-            <span className="min-w-0 flex-1 truncate text-faint">{job.params && describe(job.params)}</span>
+            <span className="text-ink" aria-live="polite">{status(job, booted)}</span>
+            <span className="text-faint tabular-nums" aria-hidden>{Math.max(0, Math.round((now - job.startedAt) / 1000))}s</span>
+            <span className="min-w-0 flex-1 truncate text-faint">
+              <span className="max-sm:hidden">{job.params && describe(job.params)}</span>
+            </span>
             <Btn onClick={() => onCancel(job.id)}>Cancel</Btn>
           </>
         ) : render ? (
@@ -116,17 +119,18 @@ export function Stage({ job, render, aspect, booted, onCancel, onDismiss, onOpen
             <div className="hidden sm:block">
               <ZoomBar view={view} setView={setView} />
             </div>
-            <span className="min-w-0 flex-1 truncate text-faint" title={describe(render)}>
+            {/* on a phone the settings are a tap away in the viewer; the bar keeps room for the buttons */}
+            <span className="min-w-0 flex-1 truncate text-faint max-sm:hidden" title={describe(render)}>
               {render.characterName && <span className="text-muted">{render.characterName} · </span>}
               {describe(render)} · {render.seconds}s
             </span>
-            <Btn onClick={() => onReuse(render)} title="Load these settings">Reuse</Btn>
-            <BestBtn render={render} />
-            <Btn onClick={() => saveImage(space, render)}>Save</Btn>
-            <Btn variant="danger" onClick={() => deleteRender(render)} className="hidden sm:inline-flex">Delete</Btn>
+            <BestBtn render={render} className="max-sm:w-14" />
+            <Btn onClick={() => onReuse(render)} title="Load these settings" className="max-sm:flex-1">Reuse</Btn>
+            <Btn onClick={() => saveImage(space, render)} className="max-sm:flex-1">Save</Btn>
+            <Btn variant="danger" onClick={() => deleteRender(render)} >Delete</Btn>
           </>
         ) : (
-          <span className="text-faint">Ready</span>
+          <span className="text-faint">{loading ? "" : "Ready"}</span>
         )}
       </div>
     </div>

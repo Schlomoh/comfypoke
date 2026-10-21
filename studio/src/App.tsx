@@ -4,13 +4,14 @@ import { api, Locked, type Catalog } from "./api";
 import { closeSpace, db, migrate, saveDraft, SpaceContext, useCharacters, useRenders, useSpace, type Render, type Space } from "./db";
 import { GpuBar, useGpu } from "./gpu";
 import { useJobs } from "./jobs";
-import { deleteRender, Library, revealThumb, saveImage, toggleBest, Viewer } from "./library";
+import { deleteRender, KEYS, Library, revealThumb, saveImage, toggleBest, Viewer } from "./library";
 import { ModelPanel, resolve } from "./model";
 import { PromptPanel, sameCharacter } from "./prompt";
 import { BLOCKS, compose, EMPTY, fromSize, legacyUnet, size, useRecipe, type Recipe } from "./recipe";
 import { shortName, Stage } from "./stage";
 import { FIT, type View } from "./zoom";
 import { Btn, errorText } from "./ui";
+import { Toasts } from "./toast";
 import { WorkspaceMenu, Workspaces } from "./workspaces";
 
 export default function App() {
@@ -21,10 +22,25 @@ export default function App() {
       (e) => setAuth(e instanceof Locked ? "locked" : "open"),
     );
   }, []);
-  if (auth === "checking") return null;
-  if (auth === "locked") return <Login onOpen={() => setAuth("open")} />;
-  return <Shell onLocked={() => setAuth("locked")} />;
+  return (
+    <>
+      {auth === "checking" ? <Splash text="Connecting" /> : auth === "locked" ? <Login onOpen={() => setAuth("open")} /> : <Shell onLocked={() => setAuth("locked")} />}
+      <Toasts />
+    </>
+  );
 }
+
+/** What shows while something loads, instead of an empty black screen. */
+function Splash({ text }: { text: string }) {
+  return (
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-4 pt-[max(3rem,env(safe-area-inset-top))]">
+      <h1 className="font-mono text-xs font-semibold tracking-[0.2em]">STUDIO</h1>
+      <p className="font-mono text-xs text-faint">{text}…</p>
+    </main>
+  );
+}
+
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl ";
 
 /** No workspace open means nothing shown: the start screen lists names and nothing else. */
 function Shell({ onLocked }: { onLocked: () => void }) {
@@ -42,7 +58,7 @@ function Shell({ onLocked }: { onLocked: () => void }) {
         <Btn onClick={() => setReady(true)}>Continue</Btn>
       </main>
     );
-  if (!ready) return null;
+  if (!ready) return <Splash text="Opening the library" />;
   if (!open) return <Workspaces onOpen={(space, draft) => setOpen({ space, draft })} />;
   return (
     <SpaceContext.Provider value={open.space}>
@@ -62,16 +78,19 @@ function Shell({ onLocked }: { onLocked: () => void }) {
 function Login({ onOpen }: { onOpen: () => void }) {
   const [key, setKey] = useState("");
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   return (
     <main className="grid min-h-dvh place-items-center px-4">
       <form
         onSubmit={async (e) => {
           e.preventDefault();
+          setPending(true);
           try {
             await api.login(key.trim());
             onOpen();
           } catch (err) {
             setError(err instanceof Locked ? "Wrong key." : errorText(err));
+            setPending(false);
           }
         }}
         className="flex w-full max-w-sm flex-col gap-3 border border-line bg-panel p-5"
@@ -83,13 +102,13 @@ function Login({ onOpen }: { onOpen: () => void }) {
           type="password"
           autoComplete="current-password"
           value={key}
-          onChange={(e) => setKey(e.target.value)}
+          onChange={(e) => (setKey(e.target.value), setError(""))}
           placeholder="access key"
           autoFocus
           className="field h-11 px-3 font-mono"
         />
-        {error && <p className="font-mono text-xs text-bad">{error}</p>}
-        <Btn variant="primary" className="h-11">Unlock</Btn>
+        {error && <p role="alert" className="font-mono text-xs text-bad">{error}</p>}
+        <Btn variant="primary" className="h-11" disabled={!key.trim() || pending}>{pending ? "Unlocking…" : "Unlock"}</Btn>
       </form>
     </main>
   );
@@ -127,6 +146,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const [menu, setMenu] = useState(false);
   const [filter, setFilter] = useState("");
   const [best, setBest] = useState(false);
+  const [keys, setKeys] = useState(false);
   const [veil, setVeil] = useVeil();
   const [view, setView] = useState<View>(FIT); // one zoom for the stage and the viewer, kept across images
   const [error, setError] = useState("");
@@ -134,7 +154,8 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
   const [catalog, setCatalog] = useState<Catalog>({ models: [], families: [], loras: [] });
   const gpu = useGpu(onLocked);
   const { jobs, generate, cancel, dismiss } = useJobs(setFocus);
-  const renders = useRenders() ?? [];
+  const loaded = useRenders();
+  const renders = loaded ?? [];
   const notes = useLiveQuery(() => db.loraNotes.toArray(), []) ?? [];
   const characters = useCharacters() ?? [];
   const workspace = useLiveQuery(() => db.workspaces.get(space.id), [space.id]);
@@ -211,9 +232,12 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]:not([data-viewer])")) return; // a dialog over the studio: keys belong to it
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) return void submit();
       const typing = (e.target as HTMLElement).closest?.("input, textarea, select, [contenteditable]");
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "?") return setKeys(true);
+      if ((e.key === "Enter" || e.key === " ") && (e.target as HTMLElement).closest?.("button, a")) return; // activates what has focus
       const at = shown.findIndex((r) => r.id === cursor.current);
       const cur = shown[at] ?? open ?? render; // the viewer's image, or the one on the stage
       const cols = matchMedia("(min-width: 1024px)").matches ? 2 : matchMedia("(min-width: 640px)").matches ? 4 : 3;
@@ -278,6 +302,10 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
     { id: "model", label: "Model" },
     { id: "library", label: `Library ${renders.length}` },
   ];
+  // Why Generate is greyed out, said where the estimate would be
+  const blocked = !catalog.models.length
+    ? error ? "model list unavailable" : "loading models…"
+    : !sent.family ? "pick a family for this model" : !prompt ? "fill in a block to generate" : null;
   const filled = BLOCKS.filter((b) => recipe.blocks[b.id].on && recipe.blocks[b.id].text.trim()).length;
 
   return (
@@ -285,7 +313,7 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
       <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-line bg-bg px-4 pt-[env(safe-area-inset-top)] lg:static">
         <div className="flex h-12 flex-1 items-center gap-4">
           <span className="font-mono text-xs font-semibold tracking-[0.2em]">STUDIO</span>
-          <button onClick={() => setMenu(true)} className="flex h-8 min-w-0 items-center gap-1.5 border border-line px-2 font-mono text-xs hover:border-edge" title="Workspace">
+          <button onClick={() => setMenu(true)} className="flex h-11 min-w-0 items-center gap-1.5 border border-line px-2 fine:h-8 font-mono text-xs hover:border-edge" title="Workspace">
             <span className="truncate">{workspace?.name}</span>
             {workspace?.lock && <span className="hidden text-faint sm:inline">protected</span>}
             <span className="text-faint" aria-hidden>▾</span>
@@ -298,7 +326,8 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
           onClick={() => setVeil(!veil)}
           aria-pressed={veil}
           title="Hide all images (H)"
-          className={`h-8 px-2 font-mono text-[10.5px] uppercase ${veil ? "text-ink" : "text-faint hover:text-ink"}`}
+          aria-label="Hide all images"
+          className={`h-11 px-2 font-mono text-[10.5px] fine:h-8 uppercase ${veil ? "text-ink" : "text-faint hover:text-ink"}`}
         >
           {veil ? "show" : "hide"}
         </button>
@@ -333,32 +362,37 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
             </div>
           </div>
           <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:py-3">
-            {error && <p className="mb-2 font-mono text-xs text-bad">{error}</p>}
+            {error && <p role="alert" className="mb-2 font-mono text-xs text-bad">{error}</p>}
             <div className="flex items-center gap-3">
               <div className="min-w-0 flex-1 font-mono text-xs leading-snug text-faint tabular-nums">
                 <div className="truncate text-muted">
                   {shortName(recipe.unet)} · {aspect.width}×{aspect.height}
                   {recipe.count > 1 && ` · ×${recipe.count}`}
                 </div>
-                <div className="truncate">
-                  {seconds != null ? `≈ ${Math.round(seconds)}s · $${cost?.toFixed(3) ?? "?"}` : "no estimate yet"}
-                  {gpu.gpu && !gpu.gpu.booted && " + boot"}
+                <div className={`truncate ${blocked ? "text-warn" : ""}`}>
+                  {blocked ?? (
+                    <>
+                      {seconds != null ? `≈ ${Math.round(seconds)}s · $${cost?.toFixed(3) ?? "?"}` : "no estimate yet"}
+                      {gpu.gpu && !gpu.gpu.booted && " + boot"}
+                    </>
+                  )}
                 </div>
               </div>
-              <Btn variant="primary" onClick={submit} disabled={!prompt || sending || !sent.family} className="h-12 w-40 text-sm lg:h-10">
-                Generate
-                <kbd className="hidden font-mono text-[10.5px] opacity-50 lg:inline">⌘↵</kbd>
+              <Btn variant="primary" onClick={submit} disabled={!!blocked || sending} className="h-12 w-40 text-sm fine:h-10">
+                {sending ? "Sending…" : "Generate"}
+                <kbd className="hidden font-mono text-[10.5px] opacity-50 [@media(pointer:fine)]:inline">{MOD}↵</kbd>
               </Btn>
             </div>
           </div>
         </aside>
 
-        <main className="order-1 h-[52vh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
+        <main className="order-1 h-[52svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
           <Stage
             job={job}
             render={render}
             aspect={aspect}
             booted={gpu.gpu?.booted}
+            loading={!loaded}
             onCancel={cancel}
             onDismiss={dismiss}
             onOpen={setOpen}
@@ -388,6 +422,31 @@ function Studio({ draft, onLocked, onClose }: { draft: Recipe; onLocked: () => v
 
       <Viewer render={open} onClose={() => setOpen(null)} onReuse={reuse} view={view} setView={setView} onStep={step} />
       <WorkspaceMenu open={menu} onClose={() => setMenu(false)} onSwitch={onClose} />
+      <Shortcuts open={keys} onClose={() => setKeys(false)} />
     </div>
+  );
+}
+
+function Shortcuts({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (open && !dialog.current?.open) dialog.current?.showModal();
+    if (!open && dialog.current?.open) dialog.current.close();
+  }, [open]);
+  return (
+    <dialog ref={dialog} onClose={onClose} className="m-auto w-[min(24rem,calc(100vw-2rem))] border border-line bg-bg p-0 text-ink">
+      <div className="flex h-12 items-center border-b border-line px-4">
+        <span className="label flex-1">Keyboard</span>
+        <Btn onClick={() => dialog.current?.close()}>Done</Btn>
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 p-4 text-xs">
+        {KEYS.map(([k, what]) => (
+          <div key={k} className="contents">
+            <dt className="font-mono text-ink">{k.replace("⌘", MOD)}</dt>
+            <dd className="text-muted">{what}</dd>
+          </div>
+        ))}
+      </dl>
+    </dialog>
   );
 }

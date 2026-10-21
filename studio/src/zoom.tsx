@@ -166,7 +166,7 @@ export function ZoomBar({ view, setView }: { view: View; setView: (v: View) => v
         key={label}
         onClick={() => setView({ ...v, cx: view.cx, cy: view.cy })}
         aria-pressed={on}
-        className={`h-8 px-2 font-mono text-[10.5px] uppercase ${on ? "text-ink" : "text-faint hover:text-ink"}`}
+        className={`h-11 px-2 font-mono text-[10.5px] fine:h-8 uppercase ${on ? "text-ink" : "text-faint hover:text-ink"}`}
       >
         {label}
       </button>

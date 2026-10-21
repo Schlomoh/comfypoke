@@ -10,10 +10,13 @@ const VARIANTS = {
 };
 
 export function Btn({ variant = "ghost", className = "", ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof VARIANTS }) {
+  // A caller's own height replaces the default whole, touch and mouse sizes both: two
+  // classes for the same media query and property would leave the winner to CSS order.
+  const size = /(^|\s)h-/.test(className) ? "" : "h-11 fine:h-8";
   return (
     <button
       {...p}
-      className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 px-3 font-medium whitespace-nowrap select-none disabled:pointer-events-none disabled:opacity-35 lg:h-8 ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex ${size} shrink-0 items-center justify-center gap-2 px-3 font-medium whitespace-nowrap select-none disabled:pointer-events-none disabled:opacity-35 ${VARIANTS[variant]} ${className}`}
     />
   );
 }
@@ -31,7 +34,7 @@ export function Seg<T extends string | number>({ value, options, onChange, class
           key={String(o.value)}
           onClick={() => onChange(o.value)}
           aria-pressed={value === o.value}
-          className={`h-10 flex-1 px-2 font-mono text-xs tabular-nums lg:h-8 ${i ? "border-l border-line" : ""} ${
+          className={`h-11 flex-1 px-2 font-mono text-xs tabular-nums fine:h-8 ${i ? "border-l border-line" : ""} ${
             value === o.value ? "bg-ink text-bg" : "bg-panel text-muted hover:text-ink"
           }`}
         >
@@ -65,9 +68,9 @@ export function Check({ on, onChange, title }: { on: boolean; onChange: (v: bool
       onClick={() => onChange(!on)}
       aria-pressed={on}
       title={title}
-      className="grid size-10 shrink-0 place-items-center lg:size-6"
+      className="grid size-11 shrink-0 place-items-center fine:size-6"
     >
-      <span className={`block size-3.5 border ${on ? "border-ink bg-ink" : "border-edge"}`} />
+      <span className={`block size-3.5 border ${on ? "border-ink bg-ink" : "border-control"}`} />
     </button>
   );
 }
