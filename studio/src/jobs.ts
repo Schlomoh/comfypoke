@@ -27,6 +27,7 @@ export type Job = {
   preview?: string;
   error?: string;
   image?: Blob; // set only when storing it on this device failed: the user can still download it
+  saved?: boolean; // stored as a render under the same id; dropped once the library shows it (App)
 };
 
 export function useJobs(onSaved: (id: string) => void) {
@@ -42,12 +43,12 @@ export function useJobs(onSaved: (id: string) => void) {
     setJobs((js) => js.map((j) => (j.id === id ? { ...j, ...patch } : j)));
   }, []);
 
-  const finish = useCallback((id: string, error?: string) => {
+  const finish = useCallback((id: string, error?: string, saved?: boolean) => {
     sources.current.get(id)?.close();
     sources.current.delete(id);
     dropPending(id);
     api.forget(id).catch(() => {});
-    if (error) update(id, { error });
+    if (error || saved) update(id, { error, saved });
     else setJobs((js) => js.filter((j) => j.id !== id));
   }, [update]);
 
@@ -95,7 +96,7 @@ export function useJobs(onSaved: (id: string) => void) {
         sources.current.delete(id);
         return update(id, { error: `Could not store the image on this device: ${e}`, image: blob });
       }
-      finish(id);
+      finish(id, undefined, true);
       saved.current(id);
       then?.().catch((e) => notify(`Could not start the upscale: ${errorText(e)}`, { bad: true })); // the render's card is gone by now
     });

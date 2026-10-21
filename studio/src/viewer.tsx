@@ -1,18 +1,22 @@
 // One image full screen, with its info beside it (or below, on a phone). Opening it adds a browser
 // history entry, so Back (and the edge swipe on iOS) closes it the way leaving a page would; a
-// swipe down at fit closes it too.
-import { useEffect, useRef } from "react";
+// swipe down at fit closes it too. A render still in progress shows its live preview, so swiping
+// passes through the queue as if it were part of the library.
+import { useEffect, useRef, type ReactNode } from "react";
 import { useImage, useSpace, type Render } from "./db";
 import { Inspector } from "./inspector";
 import { BestBtn, saveImage } from "./library";
-import { describe, useObjectUrl } from "./stage";
+import type { Job } from "./jobs";
+import { describe, status, useObjectUrl } from "./stage";
 import { Btn } from "./ui";
 import { ZoomBar, ZoomView, type View } from "./zoom";
 
 const MARK = "studioViewer"; // our entry in history.state
 
-export function Viewer({ render, all, info, setInfo, onClose, onOpen, onReuse, onUpscale, onDelete, view, setView, onStep }: {
+export function Viewer({ render, job, activity, all, info, setInfo, onClose, onOpen, onReuse, onUpscale, onDelete, onCancel, onDismiss, view, setView, onStep }: {
   render: Render | null;
+  job: Job | null;
+  activity: ReactNode;
   all: Render[];
   info: boolean;
   setInfo: (on: boolean) => void;
@@ -21,6 +25,8 @@ export function Viewer({ render, all, info, setInfo, onClose, onOpen, onReuse, o
   onReuse: (r: Render) => void;
   onUpscale: (r: Render) => void;
   onDelete: (r: Render) => void;
+  onCancel: (id: string) => void;
+  onDismiss: (id: string) => void;
   view: View;
   setView: (v: View) => void;
   onStep: (dir: 1 | -1) => void;
@@ -28,8 +34,9 @@ export function Viewer({ render, all, info, setInfo, onClose, onOpen, onReuse, o
   const space = useSpace();
   const dialog = useRef<HTMLDialogElement>(null);
   const url = useObjectUrl(useImage(render?.id));
-  const open = !!render;
+  const open = !!render || !!job;
   const pushed = useRef(false);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const d = dialog.current;
@@ -72,6 +79,7 @@ export function Viewer({ render, all, info, setInfo, onClose, onOpen, onReuse, o
             <div className="hidden sm:block">
               <ZoomBar view={view} setView={setView} />
             </div>
+            {activity}
             <Btn onClick={() => setInfo(!info)} aria-pressed={info} title="Info and notes (I)" className={info ? "text-ink" : "text-muted"}>
               Info
             </Btn>
@@ -95,6 +103,48 @@ export function Viewer({ render, all, info, setInfo, onClose, onOpen, onReuse, o
             <Btn onClick={() => onUpscale(render)} title="Upscale with the settings in the Model tab (U)">Upscale</Btn>
             <Btn onClick={() => saveImage(space, render)}>Save</Btn>
             <Btn variant="danger" onClick={() => onDelete(render)}>Delete</Btn>
+          </div>
+        </div>
+      )}
+      {!render && job && (
+        <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-faint">{job.params && describe(job.params)}</span>
+            {activity}
+            <Btn onClick={onClose}>Close</Btn>
+          </div>
+          <div className="min-h-0 flex-1">
+            {job.preview ? (
+              <ZoomView src={job.preview} alt="" view={view} setView={setView} onSwipe={onStep} onDismiss={onClose} />
+            ) : (
+              // no image to zoom, but the same swipes as ZoomView: sideways for the next one, down to close
+              <div
+                className="grid h-full touch-none place-items-center font-mono text-xs text-faint"
+                onPointerDown={(e) => (swipe.current = { x: e.clientX, y: e.clientY })}
+                onPointerUp={(e) => {
+                  if (!swipe.current) return;
+                  const [dx, dy] = [e.clientX - swipe.current.x, e.clientY - swipe.current.y];
+                  swipe.current = null;
+                  if (dy > 90 && dy > Math.abs(dx)) onClose();
+                  else if (Math.abs(dx) > 50) onStep(dx < 0 ? 1 : -1);
+                }}
+              >
+                {job.error ? "No image" : "No preview yet"}
+              </div>
+            )}
+          </div>
+          <div className="flex min-h-16 shrink-0 items-center gap-3 border-t border-line p-3 font-mono text-xs">
+            {job.error ? (
+              <>
+                <span className="min-w-0 flex-1 break-words text-bad" role="alert">Failed: {job.error}</span>
+                <Btn onClick={() => onDismiss(job.id)}>Dismiss</Btn>
+              </>
+            ) : (
+              <>
+                <span className="min-w-0 flex-1 text-ink" aria-live="polite">{status(job)}</span>
+                <Btn onClick={() => onCancel(job.id)}>Cancel</Btn>
+              </>
+            )}
           </div>
         </div>
       )}

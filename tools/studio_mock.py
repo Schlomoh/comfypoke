@@ -69,7 +69,7 @@ async def run(payload):
     yield msg("execution_success")
 
 
-async def noop(*_):
+async def noop(*_, **__):
     return None
 
 

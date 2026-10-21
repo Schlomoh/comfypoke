@@ -115,6 +115,7 @@ function Pending({ job, active, onFocus }: { job: Job; active: boolean; onFocus:
   return (
     <button
       onClick={() => onFocus(job.id)}
+      data-render={job.id}
       aria-label={job.error ? "failed render" : "render in progress"}
       className={`relative aspect-square overflow-hidden bg-panel outline-offset-[-2px] ${active ? "outline-2 outline-ink" : ""}`}
     >
