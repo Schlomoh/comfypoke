@@ -33,7 +33,12 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 body {
-  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font:
+    13px/1.4 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
 }
 
 /* Section and field labels: the one typographic device the interface leans on. */
@@ -89,14 +94,14 @@ html.veil img {
   visibility: hidden;
 }
 
-/* the page under the full-screen viewer stays put (viewer.tsx) */
-html.locked,
-html.locked body {
+/* the page under an open layer stays put (lockPage in ui/layers.ts). html only: overflow on body
+   would make body a scroll container of its own, and the sticky bars in it would jump. */
+html.locked {
   overflow: hidden;
   overscroll-behavior: none;
 }
 
-/* a phrase's card in its row sheet, briefly marked when its chip was the way in (prompt.tsx) */
+/* a phrase's card in its row sheet, briefly marked when its chip was the way in (features/prompt) */
 .flash-card {
   animation: flash-card 1s;
 }

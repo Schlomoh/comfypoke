@@ -50,11 +50,20 @@ explains where things are and how to change them without breaking the deployment
   running server with `GET /api/object_info/<NodeType>`. A wrong order does not error: the GUI shows
   the values under the wrong widgets and the API prompt sends them to the wrong inputs.
 - Studio: its graphs are `comfy_modal/graphs.py`. A model family (encoder, VAE, sampling) is one
-  entry in `FAMILIES`; a file tested with the studio goes in `VERIFIED` with its settings. The prompt
-  rows and their built-in presets are `PERSON_ROWS`, `SCENE_ROWS` and `PRESETS` in `studio/src/recipe.ts`, which also composes the prompt; `batch.tsx` turns versions and seeds into one job each. The phone keeps everything in
-  IndexedDB (`studio/src/db.ts`); a schema change there is a new `db.version(n)`, never an edit of
+  entry in `FAMILIES`; a file tested with the studio goes in `VERIFIED` with its settings.
+- Studio app layers, each importing only from the ones below it (lint enforces it): `src/ui` (the
+  primitives: Button, Chip, Segmented, Checkbox, fields, Modal and Sheet, Note; the only place a raw
+  `<button>`, `<input>` or `<dialog>` may appear), `src/domain` (plain TypeScript: the recipe, its
+  rows and presets in `rows.ts`, `compose.ts`, versions, `batch.ts` that turns versions and seeds into
+  one job each, parsing of stored data), `src/data` (the API client, TanStack Query in `queries.ts`,
+  IndexedDB in `db/`), `src/state` (Jotai atoms, one store per open workspace; the jobs runner;
+  actions such as reuse, upscale, delete, step), then `src/features/*` (one folder per screen part)
+  and `src/app` (the shell and layout). Style comes from the primitives' variants; a new look is a new
+  variant, not classes restated at the call site. `npm --prefix studio run check` is type-check,
+  type-aware oxlint and oxfmt; `run fix` applies what can be fixed. The phone keeps everything in
+  IndexedDB (`studio/src/data/db/schema.ts`); a schema change there is a new `db.version(n)`, never an edit of
   an old one, or existing phones lose their library. A workspace's records are sealed with its key
-  (`studio/src/crypto.ts`): new per-workspace data goes through `sealJson`/`sealBlob` and carries
+  (`studio/src/data/crypto.ts`): new per-workspace data goes through `sealJson`/`sealBlob` and carries
   `ws`, never in the clear or in localStorage. WebCrypto cannot run inside a Dexie upgrade, so
   moving data between tables is a function like `migrate()`, run before the start screen.
   Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
@@ -65,7 +74,7 @@ explains where things are and how to change them without breaking the deployment
   shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,
   `app.extensionManager.registerSidebarTab`). No build step. The studio app is the exception:
-  `npm --prefix studio run build`, which the console's Deploy runs, and CI type-checks it.
+  `npm --prefix studio run build`, which the console's Deploy runs, and CI runs its `check` too.
 
 ## Verifying
 
