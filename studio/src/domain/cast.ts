@@ -1,8 +1,11 @@
 // The people in the picture and its scene: finding a row, changing it, and comparing a tab with the
 // saved character (or scene) it is linked to. Every change takes the recipe as it is now and returns a
 // new one, so it can run inside a state update and never works from a stale copy.
-import type { Person, Phrase, Recipe, Scene } from "@/domain/recipe";
-import { PERSON_ROWS, PRESETS, ROWS, SCENE_ROWS, type RowId } from "@/domain/rows";
+import { onto } from "@/domain/compose";
+import type { Gender } from "@/domain/presets/gender";
+import { regender } from "@/domain/presets/index";
+import type { Interaction, Person, Phrase, Recipe, Scene } from "@/domain/recipe";
+import { PERSON_ROWS, ROWS, SCENE_ROWS, type PersonRow, type RowId } from "@/domain/rows";
 import type { Saved } from "@/domain/saved";
 
 export type Key = string; // a person's id, or "scene"
@@ -56,19 +59,55 @@ export function editRow(r: Recipe, { key, row }: RowRef, change: (ps: Phrase[]) 
 export const editPhrase = (r: Recipe, at: RowRef & { id: string }, change: (p: Phrase) => Phrase) =>
   editRow(r, at, (ps) => ps.map((p) => (p.id === at.id ? change(p) : p)));
 
+/** One list of phrases in the recipe, to read and change: a row, or what people do together. */
+export type Lens<T extends Phrase = Phrase> = {
+  get: (r: Recipe) => T[];
+  edit: (r: Recipe, change: (xs: T[]) => T[]) => Recipe;
+};
+export const rowLens = (at: RowRef): Lens => ({
+  get: (r) => phrasesOf(r, at),
+  edit: (r, c) => editRow(r, at, c),
+});
+
 export const insertAt = <T>(xs: readonly T[], at: number, x: T) => [...xs.slice(0, at), x, ...xs.slice(at)];
 
-// ---- presets
+/** A person as another gender: phrases taken from presets written for any gender follow ("her hair" becomes "his hair"). */
+export const setGender = (r: Recipe, id: string, g: Gender) =>
+  withPerson(r, id, (p) => {
+    const fix = (row: PersonRow) => {
+      const re = (t: string) => regender(row, t, p.gender, g);
+      return p[row].map((x) => ({ ...x, t: re(x.t), versions: x.versions.map(re) }));
+    };
+    return { ...p, gender: g, who: fix("who"), look: fix("look"), wear: fix("wear"), doing: fix("doing") };
+  });
 
-/** The subcategories offered in a row: your own first, as Yours, then the built-in ones. */
-export function presetGroups(row: RowId, mine: string[]): [string, string[]][] {
-  return [...(mine.length ? [["Yours", mine] as [string, string[]]] : []), ...Object.entries(PRESETS[row])];
+/** The person whose face photo a render swaps in: the first one in the picture with a photo. The head swap takes one. */
+export const faceFor = (r: Recipe) =>
+  r.cast.find(
+    (c) =>
+      c.face &&
+      (PERSON_ROWS.some((row) => c[row.id].some((p) => p.on && p.t.trim())) ||
+        r.together.some((i) => i.on && i.t.trim() && involves(i, c.id))),
+  );
+
+// ---- what people do with each other
+
+/** An interaction as the editor shows it: "Ava has an arm around Lena". */
+export const sayTogether = (r: Recipe, i: Interaction, t = i.t) =>
+  `${nameOf(r, i.from)} ${onto(t, nameOf(r, i.to))}`;
+
+export const involves = (i: Interaction, id: string) => i.from === id || i.to === id;
+
+export const togetherLens: Lens<Interaction> = {
+  get: (r) => r.together,
+  edit: (r, change) => ({ ...r, together: change(r.together) }),
+};
+
+/** The second person an interaction from `from` most likely means: the one after them, round. */
+export function partnerOf(r: Recipe, from: string) {
+  const at = r.cast.findIndex((c) => c.id === from);
+  return r.cast[(at + 1) % r.cast.length].id;
 }
-export const isBuiltIn = (row: RowId, text: string) =>
-  Object.values(PRESETS[row]).some((xs) => xs.includes(text));
-/** The built-in subcategory a phrase came from, if it came from one. */
-export const homeGroup = (row: RowId, text: string) =>
-  Object.entries(PRESETS[row]).find(([, xs]) => xs.includes(text))?.[0];
 
 // ---- the link to a saved character or scene
 
@@ -84,6 +123,7 @@ export const toEntry = (kind: Kind, o: Owner, s?: Saved): Saved => ({
   id: s?.id ?? crypto.randomUUID(),
   name: o.name,
   kind,
+  ...(isPerson(o) ? { gender: o.gender, ...(o.face ? { face: o.face } : {}) } : {}),
   rows: rowsToSave(kind, o),
   updatedAt: Date.now(),
 });
@@ -99,7 +139,8 @@ export const freshRows = (kind: Kind, s: Saved) =>
 
 /** A person or scene made into a saved entry: name and rows, nothing of where it stands in this picture. */
 export function adoptSaved<T extends Owner>(o: T, kind: Kind, s: Saved): T {
-  return { ...o, ...freshRows(kind, s), name: s.name, savedId: s.id };
+  const person = isPerson(o) ? { ...(s.gender ? { gender: s.gender } : {}), face: s.face ?? null } : {};
+  return { ...o, ...freshRows(kind, s), ...person, name: s.name, savedId: s.id };
 }
 
 /** The saved entry a tab is linked to, and what differs from it. */
@@ -107,7 +148,14 @@ export function linkState(kind: Kind, o: Owner, saved: Saved[]) {
   const s = saved.find((x) => x.kind === kind && x.id === o.savedId);
   if (!s) return { s, diff: [], changed: false };
   const rows = defsOf(kind).filter((d) => snap(rowsOf(o)[d.id]) !== snap(s.rows[d.id]));
-  const diff = [...(s.name === o.name ? [] : ["name"]), ...rows.map((d) => d.label.toLowerCase())];
+  const gender = isPerson(o) && s.gender && s.gender !== o.gender ? ["gender"] : [];
+  const face = isPerson(o) && (s.face ?? null) !== o.face ? ["face"] : [];
+  const diff = [
+    ...(s.name === o.name ? [] : ["name"]),
+    ...gender,
+    ...face,
+    ...rows.map((d) => d.label.toLowerCase()),
+  ];
   return { s, diff, changed: diff.length > 0 };
 }
 

@@ -5,7 +5,7 @@ import { putSaved } from "@/data/db/saved";
 import { db, STARTERS, type LoraNote, type Preset } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
 import { isRecord, isText, LEGACY_ROW } from "@/domain/parse";
-import { ROWS, type RowId } from "@/domain/rows";
+import { PRESET_ROWS, type PresetRow } from "@/domain/rows";
 import { toSaved, type Saved } from "@/domain/saved";
 
 const savedOf = async (space: Space) => {
@@ -14,10 +14,12 @@ const savedOf = async (space: Space) => {
   return raw.map(toSaved).filter((x): x is Saved => x !== null);
 };
 
+const faceless = (s: Saved): Saved => ({ ...s, face: undefined });
+
 export async function exportLibrary(space: Space) {
   const data = {
     version: 2,
-    saved: await savedOf(space),
+    saved: (await savedOf(space)).map(faceless), // face photos stay on the device they were added on
     loraNotes: await db.loraNotes.toArray(),
     presets: await db.presets.toArray(),
   };
@@ -25,8 +27,8 @@ export async function exportLibrary(space: Space) {
 }
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const rowIds = new Set<string>(ROWS.map((r) => r.id));
-const isRow = (v: string): v is RowId => rowIds.has(v);
+const rowIds = new Set<string>(PRESET_ROWS.map((r) => r.id));
+const isRow = (v: string): v is PresetRow => rowIds.has(v);
 
 function presetsIn(raw: unknown): Preset[] {
   const out: Preset[] = [];
@@ -73,7 +75,9 @@ export async function importLibrary(space: Space, file: File) {
     const local = mine.get(c.id);
     if (local && local.updatedAt >= c.updatedAt) continue;
     // the same backup imported into a second workspace makes copies there, not moves
-    await putSaved(space, taken.has(c.id) ? { ...c, id: crypto.randomUUID() } : c);
+    // a face id from another device or workspace points at nothing here; the one this entry has here stays
+    const entry = { ...faceless(c), face: local?.face };
+    await putSaved(space, taken.has(c.id) ? { ...entry, id: crypto.randomUUID() } : entry);
     added++;
   }
   await db.loraNotes.bulkPut(notesIn(data.loraNotes));

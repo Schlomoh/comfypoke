@@ -49,7 +49,7 @@ export function BackupSection() {
       </div>
       <Note>
         {note ||
-          "This workspace's characters, plus section presets and LoRA trigger words. The file is not encrypted."}
+          "This workspace's characters, plus section presets and LoRA trigger words. The file is not encrypted; face photos are left out of it."}
       </Note>
     </Section>
   );

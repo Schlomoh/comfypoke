@@ -3,7 +3,7 @@
 // swipe down at fit closes it too. A render still in progress shows its live preview, so swiping
 // passes through the queue as if it were part of the library.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
@@ -11,6 +11,7 @@ import { describe } from "@/domain/format";
 import { status, type Job } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import { ActivityButton } from "@/features/activity/activity-button";
+import { InpaintSheet } from "@/features/inpaint/inpaint-sheet";
 import { BestButton } from "@/features/library/best-button";
 import { saveImage } from "@/features/library/files";
 import { ZoomBar } from "@/features/stage/zoom-bar";
@@ -32,6 +33,7 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
   const [view, setView] = useAtom(viewAtom);
   const { reuse, upscaleMany, remove, step } = useImageActions();
   const url = useObjectUrl(useImage(render.id));
+  const [editing, setEditing] = useState(false);
   return (
     <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
@@ -66,17 +68,19 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
             />
           )}
         </div>
-        {info ? (
+        {info && (
           <aside className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-line lg:w-96 lg:flex-none lg:border-t-0 lg:border-l">
             <Inspector key={render.id} render={render} />
           </aside>
-        ) : (
-          <p className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 font-mono text-xs text-muted">
-            {render.prompt}
-          </p>
         )}
       </div>
-      <div className="grid shrink-0 grid-cols-[auto_1fr_1fr_1fr_1fr] gap-2 border-t border-line p-3 lg:border-t-0">
+      {/* below the row, not in it: beside the image on a wide screen it took the width and left the image none */}
+      {!info && (
+        <p className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 font-mono text-xs text-muted">
+          {render.prompt}
+        </p>
+      )}
+      <div className="grid shrink-0 grid-cols-[auto_1fr_1fr_1fr_1fr_1fr] gap-2 border-t border-line p-3 lg:border-t-0">
         <BestButton render={render} className="w-12" />
         <Button onClick={() => reuse(render)}>Reuse</Button>
         <Button
@@ -85,11 +89,15 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
         >
           Upscale
         </Button>
+        <Button onClick={() => setEditing(true)} title="Repaint part of the image">
+          Edit
+        </Button>
         <Button onClick={() => void saveImage(space, render)}>Save</Button>
         <Button variant="danger" onClick={() => void remove(render)}>
           Delete
         </Button>
       </div>
+      <InpaintSheet render={render} open={editing} onClose={() => setEditing(false)} />
     </div>
   );
 }

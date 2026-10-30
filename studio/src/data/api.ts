@@ -2,12 +2,13 @@
 import type { Catalog } from "@/domain/catalog";
 import type { Lora, Params } from "@/domain/render";
 
-export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg"> & {
+export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg" | "reference"> & {
   family: string | null;
   seed: number | null;
   steps: number | null;
   cfg: number | null;
   stop_after?: boolean; // stop the GPU once the queue is empty; the latest request decides, absent leaves it as it is
+  reference?: string; // base64 face photo the head swap puts on the person
 };
 /** An upscale: SeedVR2 to `megapixels`, with an optional prompt retouch at the image's own size first. */
 export type UpscaleRequest = {
@@ -25,6 +26,17 @@ export type UpscaleRequest = {
   stop_after?: boolean;
 };
 export const UPSCALE_MEGAPIXELS = [2, 4, 8] as const; // as graphs.UPSCALE_MEGAPIXELS on the server
+export const FACE_FAMILIES: readonly string[] = ["krea2"]; // as graphs.HEADSWAP_FAMILIES: the head swap is a Krea 2 LoRA
+/** Repaint the masked part of an image with the settings it was made with (graphs.inpaint). */
+export type InpaintRequest = Pick<Params, "unet" | "prompt" | "negative" | "loras" | "steps" | "cfg"> & {
+  family: string | null;
+  seed: number | null;
+  image: string; // base64 PNG
+  mask: string; // base64 PNG of the image's size, white where to repaint
+  target: string; // also masked: what SAM finds by this name, "" for the painted mask alone
+  reference?: string; // base64 face photo
+  stop_after?: boolean;
+};
 
 export type GpuState = "cold" | "starting" | "warm" | "busy";
 export type Gpu = {
@@ -76,6 +88,7 @@ export const api = {
   models: () => call<Catalog>("/api/models"),
   generate: (p: Request) => post<Started>("/api/generate", p),
   upscale: (u: UpscaleRequest) => post<Started>("/api/upscale", u),
+  inpaint: (i: InpaintRequest) => post<Started>("/api/inpaint", i),
   cancel: (id: string) => post<unknown>(`/api/jobs/${id}/cancel`),
   // also cancels; keepalive so it survives a reload right after
   forget: (id: string) => call<unknown>(`/api/jobs/${id}`, { method: "DELETE", keepalive: true }),

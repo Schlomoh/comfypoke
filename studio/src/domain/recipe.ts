@@ -1,5 +1,6 @@
 // What is being built: the people in the picture and its scene as rows of phrases, the model settings
 // and the LoRAs. A phrase is one idea; its versions are alternatives, each rendered separately.
+import type { Gender } from "@/domain/presets/gender";
 import type { PersonRow, SceneRow } from "@/domain/rows";
 
 export type Phrase = { id: string; t: string; on: boolean; versions: string[] };
@@ -7,15 +8,20 @@ export type Side = "left" | "center" | "right";
 export type Depth = "auto" | "front" | "back";
 export const SIDES: Side[] = ["left", "center", "right"];
 export const MAX_PEOPLE = 5;
-// savedId links a person to a saved character (a scene to a saved scene); null is a new one
+// savedId links a person to a saved character (a scene to a saved scene); null is a new one. face is a
+// photo stored on this device (data/db/faces.ts) whose identity the render keeps; null is none.
 export type Person = {
   id: string;
   name: string;
   savedId: string | null;
   side: Side[];
   depth: Depth;
+  gender: Gender;
+  face: string | null;
 } & Record<PersonRow, Phrase[]>;
 export type Scene = { name: string; savedId: string | null } & Record<SceneRow, Phrase[]>;
+/** Something one person does with another: the phrase is said of `from`, its them and their are `to`. */
+export type Interaction = Phrase & { from: string; to: string };
 export type StackLora = { name: string; strength: number; on: boolean };
 
 export const phrase = (t: string, versions: string[] = []): Phrase => ({
@@ -30,6 +36,8 @@ export const newPerson = (name: string): Person => ({
   savedId: null,
   side: [],
   depth: "auto",
+  gender: "woman",
+  face: null,
   who: [],
   look: [],
   wear: [],
@@ -70,6 +78,7 @@ export function fromSize(width: number, height: number) {
 export type Recipe = {
   cast: Person[];
   scene: Scene;
+  together: Interaction[];
   unet: string;
   family: string | null; // null: the family the model list suggests for unet
   negative: string;
@@ -90,6 +99,7 @@ export type UpscaleSettings = { auto: boolean; megapixels: number; prompt: strin
 export const EMPTY: Recipe = {
   cast: [{ ...newPerson("Person 1"), id: "p1" }],
   scene: emptyScene(),
+  together: [],
   unet: "krea2_turbo_bf16.safetensors",
   family: null,
   negative: "blurry, washed out, plastic skin",

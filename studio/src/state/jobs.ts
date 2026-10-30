@@ -12,13 +12,13 @@ import { useSpace, type Space } from "@/data/db/space";
 import { errorText } from "@/domain/format";
 import type { Job } from "@/domain/job";
 import { legacyUnet } from "@/domain/recipe";
-import type { JobMeta, Params, Render, Upscale } from "@/domain/render";
+import type { Edit, JobMeta, Params, Render, Upscale } from "@/domain/render";
 import { focusAtom, jobsAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
 
-const base64 = async (blob: Blob) => {
+export const base64 = async (blob: Blob) => {
   let bin = "";
   const bytes = new Uint8Array(await blob.arrayBuffer());
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -31,20 +31,23 @@ async function pngSize(blob: Blob) {
   return { width: head.getUint32(0), height: head.getUint32(4) };
 }
 
-/** An upscale is a new image with its source's record, its own size, and a link back. */
+/** An upscale or an edit is a new image with its source's record, its own size, and a link back. */
 type Finished = { id: string; params: Params; seconds: number; size: { width: number; height: number } };
 
 function recordOf({ id, params, seconds, size }: Finished, meta: JobMeta): Render {
   const createdAt = Date.now();
-  if (meta.upscaleOf)
+  const from = meta.upscaleOf ?? meta.editOf;
+  if (from)
     return {
-      ...meta.upscaleOf,
+      ...from,
       id,
       createdAt,
       seconds,
       ...size,
-      source: meta.upscaleOf.id,
+      source: from.id,
       upscale: meta.upscale,
+      edit: meta.edit,
+      ...(meta.editOf ? { reference: params.reference, seed: params.seed } : {}), // the edit's own, not its source's
       best: false,
       title: undefined,
       notes: undefined,
@@ -172,9 +175,36 @@ function createRunner(store: Store, space: Space) {
     return res;
   };
 
+  /** Repaints the masked part of a render with its own model and settings; the result links back to it. */
+  const inpaint = async (
+    r: Render,
+    e: Edit,
+    { mask, face, stopAfter }: { mask: Blob; face?: Blob; stopAfter?: boolean },
+  ): Promise<Started> => {
+    const res = await api.inpaint({
+      image: await base64(await loadImage(space, r.id)),
+      mask: await base64(mask),
+      target: e.target,
+      prompt: e.prompt,
+      unet: r.unet ?? legacyUnet(r.model),
+      family: r.family ?? null,
+      negative: r.negative ?? "",
+      loras: r.loras ?? [],
+      steps: r.steps,
+      cfg: r.cfg,
+      seed: null, // a new one each time: Repaint again is how to get another take
+      reference: face && (await base64(face)),
+      stop_after: stopAfter,
+    });
+    await addPending(space, res.id, { editOf: r, edit: e });
+    attach(res.id);
+    return res;
+  };
+
   return {
     generate,
     upscale,
+    inpaint,
     cancel: (id: string) => api.cancel(id).catch(() => finish(id)),
     dismiss: (id: string) => setJobs((js) => js.filter((j) => j.id !== id)),
     resume: () => pendingIds(space).then((ids) => ids.forEach((id) => attach(id))),
@@ -224,6 +254,7 @@ export function useJobs() {
   return {
     generate: runner?.generate ?? notRunning,
     upscale: runner?.upscale ?? notRunning,
+    inpaint: runner?.inpaint ?? notRunning,
     cancel: (id: string) => void runner?.cancel(id),
     dismiss: (id: string) => runner?.dismiss(id),
   };

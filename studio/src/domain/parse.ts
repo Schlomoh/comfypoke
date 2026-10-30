@@ -1,5 +1,6 @@
 // Reading what storage or a file holds: never trusted, and older shapes made whole. Every reader takes
 // `unknown` and keeps only what has the right type.
+import { GENDERS, type Gender } from "@/domain/presets/gender";
 import {
   ASPECTS,
   EMPTY,
@@ -8,6 +9,7 @@ import {
   MEGAPIXELS,
   phrase,
   SIDES,
+  type Interaction,
   type Person,
   type Phrase,
   type Recipe,
@@ -69,8 +71,15 @@ export function fromBlocks(blocks: unknown) {
   return out;
 }
 
+const MALE = /\b(man|men|guy|boy|male)\b/i;
+
+/** A stored gender; before there were genders, a person is a man if their Who said so, else a woman. */
+export const cleanGender = (v: unknown, who: Phrase[] = []): Gender =>
+  GENDERS.find((g) => g === v) ?? (who.some((p) => MALE.test(p.t)) ? "man" : "woman");
+
 function cleanPerson(raw: unknown, i: number): Person {
   const p = record(raw);
+  const rows = cleanRows(p, PERSON_ROWS);
   const side = list(p.side);
   return {
     id: isText(p.id) ? p.id : crypto.randomUUID(),
@@ -78,8 +87,24 @@ function cleanPerson(raw: unknown, i: number): Person {
     savedId: isText(p.savedId) ? p.savedId : null,
     side: SIDES.filter((s) => side.includes(s)),
     depth: p.depth === "front" || p.depth === "back" ? p.depth : "auto",
-    ...cleanRows(p, PERSON_ROWS),
+    ...rows,
+    gender: cleanGender(p.gender, rows.who),
+    face: isText(p.face) ? p.face : null,
   };
+}
+
+/** The interactions between people who are in the picture, each from one person to another. */
+function cleanTogether(v: unknown, cast: Person[]): Interaction[] {
+  const ids = new Set(cast.map((c) => c.id));
+  return list(v)
+    .filter(isRecord)
+    .flatMap((x) => {
+      const [p] = cleanPhrases([x]);
+      const { from, to } = x;
+      return p && isText(from) && isText(to) && from !== to && ids.has(from) && ids.has(to)
+        ? [{ ...p, from, to }]
+        : [];
+    });
 }
 
 /** A stored or imported recipe made whole: old fields renamed, the old blocks turned into a person and a scene. */
@@ -92,14 +117,16 @@ export function parseRecipe(raw: unknown): Recipe {
   const up = record(r.upscale);
   let unet = isText(r.model) ? legacyUnet(r.model) : EMPTY.unet;
   if (isText(r.unet)) unet = r.unet;
+  const cast = castRaw.length ? castRaw.slice(0, MAX_PEOPLE).map(cleanPerson) : EMPTY.cast;
   return {
     ...EMPTY,
-    cast: castRaw.length ? castRaw.slice(0, MAX_PEOPLE).map(cleanPerson) : EMPTY.cast,
+    cast,
     scene: {
       name: isText(scene.name) ? scene.name : "",
       savedId: isText(scene.savedId) ? scene.savedId : null,
       ...cleanRows(sceneRaw, SCENE_ROWS),
     },
+    together: cleanTogether(r.together, cast),
     unet,
     family: isText(r.family) ? r.family : null,
     negative: isText(r.negative) ? r.negative : EMPTY.negative,

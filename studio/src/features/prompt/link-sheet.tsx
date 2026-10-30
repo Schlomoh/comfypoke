@@ -5,7 +5,16 @@ import { useState } from "react";
 
 import { putSaved, useSaved } from "@/data/db/saved";
 import { useSpace } from "@/data/db/space";
-import { isPlaceholder, kindOf, linkState, ownerOf, renameOwner, toEntry, type Key } from "@/domain/cast";
+import {
+  involves,
+  isPlaceholder,
+  kindOf,
+  linkState,
+  ownerOf,
+  renameOwner,
+  toEntry,
+  type Key,
+} from "@/domain/cast";
 import { LinkActions } from "@/features/prompt/link-actions";
 import { SavedList } from "@/features/prompt/saved-list";
 import { castTabAtom, openAtom } from "@/features/prompt/state";
@@ -63,18 +72,33 @@ function Link({ tab, onClose }: { tab: Key; onClose: () => void }) {
   const removePerson = () => {
     const at = recipe.cast.findIndex((c) => c.id === tab);
     const person = recipe.cast[at];
-    setRecipe((r) => ({ ...r, cast: r.cast.filter((c) => c.id !== tab) }));
+    const gone = new Set(recipe.together.filter((i) => involves(i, tab)));
+    const before = new Set(recipe.together);
+    setRecipe((r) => ({
+      ...r,
+      cast: r.cast.filter((c) => c.id !== tab),
+      together: r.together.filter((i) => !involves(i, tab)),
+    }));
     setTab(recipe.cast[at === 0 ? 1 : at - 1].id);
     onClose();
     notify(`Removed ${person.name} from this picture`, {
       action: {
         label: "Undo",
         run: () =>
-          setRecipe((r) =>
-            r.cast.some((c) => c.id === tab)
+          setRecipe((r) => {
+            const now = new Set(r.together);
+            return r.cast.some((c) => c.id === tab)
               ? r
-              : { ...r, cast: [...r.cast.slice(0, at), person, ...r.cast.slice(at)] },
-          ),
+              : {
+                  ...r,
+                  cast: [...r.cast.slice(0, at), person, ...r.cast.slice(at)],
+                  // back in their places, around any added since
+                  together: [
+                    ...recipe.together.filter((i) => gone.has(i) || now.has(i)),
+                    ...r.together.filter((i) => !before.has(i)),
+                  ],
+                };
+          }),
       },
     });
   };

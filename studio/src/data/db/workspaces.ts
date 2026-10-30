@@ -45,7 +45,7 @@ export const renameWorkspace = (id: string, name: string) => db.workspaces.updat
 export async function deleteWorkspace(id: string) {
   await db.transaction(
     "rw",
-    [db.workspaces, db.shots, db.thumbs, db.images, db.chars, db.drafts, db.pending],
+    [db.workspaces, db.shots, db.thumbs, db.images, db.chars, db.drafts, db.pending, db.faces],
     async () => {
       const shots = await db.shots.where("ws").equals(id).primaryKeys();
       await Promise.all([
@@ -56,6 +56,7 @@ export async function deleteWorkspace(id: string) {
       await Promise.all([
         db.chars.where("ws").equals(id).delete(),
         db.pending.where("ws").equals(id).delete(),
+        db.faces.where("ws").equals(id).delete(),
       ]);
       await Promise.all([db.drafts.delete(id), db.workspaces.delete(id)]);
     },

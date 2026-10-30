@@ -3,14 +3,14 @@
 import { useLiveQuery } from "dexie-react-hooks";
 
 import { db, type LoraNote, type Preset } from "@/data/db/schema";
-import type { RowId } from "@/domain/rows";
+import type { PresetRow } from "@/domain/rows";
 
 const NO_NOTES: LoraNote[] = [];
 
 /** With the row each is offered in, oldest first; undefined until read, so a picker can wait instead of jumping. */
 export const usePresets = () => useLiveQuery(() => db.presets.orderBy("at").toArray(), []);
 
-export const addPreset = (row: RowId, text: string) =>
+export const addPreset = (row: PresetRow, text: string) =>
   db.presets.put({ id: crypto.randomUUID(), block: row, text, at: Date.now() });
 export const deletePreset = (id: string) => db.presets.delete(id);
 export const restorePreset = (p: Preset) => db.presets.put(p);

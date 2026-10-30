@@ -88,6 +88,13 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
     ],
     ["File", bytes ? `PNG · ${(bytes / 1024 / 1024).toFixed(2)} MB` : "PNG"],
   ];
+  if (render.reference) rows.push(["Face", "swapped in from a face photo"]);
+  const e = render.edit;
+  if (e)
+    rows.push([
+      "Edit",
+      `repainted "${e.prompt}"${e.target ? ` where "${e.target}" was found` : ""}${e.face ? ` · ${e.face}'s face` : ""}`,
+    ]);
   const u = render.upscale;
   if (u)
     rows.push([
@@ -120,7 +127,7 @@ function Linked({ render }: { render: Render }) {
           className="justify-start px-0"
           onClick={() => open(u.id)}
         >
-          → upscale, {u.width} × {u.height}
+          → {u.edit ? "edit" : "upscale"}, {u.width} × {u.height}
         </Button>
       ))}
     </section>

@@ -1,10 +1,13 @@
-// A tab's body: where a person stands (with more than one), and each row's phrases as chips. A chip or
-// "+ add" opens the row's sheet; the chip's card is brought into view there.
+// A tab's body: a person's gender, where they stand (with more than one), and each row's phrases as
+// chips; the scene's tab also holds what the people do together. A chip or "+ add" opens the row's
+// sheet; the chip's card is brought into view there.
 import { useAtomValue, useSetAtom } from "jotai";
 
-import { withPerson, type Key } from "@/domain/cast";
+import { sayTogether, setGender, withPerson, type Key } from "@/domain/cast";
+import { GENDERS } from "@/domain/presets/gender";
 import { SIDES, type Depth, type Person, type Phrase } from "@/domain/recipe";
-import { PERSON_ROWS, SCENE_ROWS, type RowId } from "@/domain/rows";
+import { PERSON_ROWS, SCENE_ROWS, TOGETHER, type RowId } from "@/domain/rows";
+import { FaceRow } from "@/features/prompt/face-row";
 import { recipeAtom } from "@/state/studio";
 import { Chip, ChipRow } from "@/ui/chip";
 import { Segmented, Toggles } from "@/ui/segmented";
@@ -32,6 +35,19 @@ function Placement({ person }: { person: Person }) {
   );
 }
 
+function GenderPicker({ person }: { person: Person }) {
+  const setRecipe = useSetAtom(recipeAtom);
+  return (
+    <Segmented
+      value={person.gender}
+      options={GENDERS.map((g) => ({ value: g, label: g }))}
+      onChange={(g) => setRecipe((r) => setGender(r, person.id, g))}
+    />
+  );
+}
+
+const text = (p: Phrase) => p.t;
+
 function tone(p: Phrase) {
   if (!p.on) return "off";
   return p.versions.length ? "varied" : "plain";
@@ -42,8 +58,11 @@ function Row({
   label,
   hint,
   onOpen,
+  say = text,
 }: {
   phrases: Phrase[];
+  /** A chip's text, when it reads otherwise than the phrase. */
+  say?: (p: Phrase) => string;
   label: string;
   hint: string;
   onOpen: (shown?: string) => void;
@@ -56,7 +75,7 @@ function Row({
           .filter((p) => p.t.trim())
           .map((p) => (
             <Chip key={p.id} tone={tone(p)} text="body" onClick={() => onOpen(p.id)}>
-              <span className="min-w-0 break-words">{p.t}</span>
+              <span className="min-w-0 break-words">{say(p)}</span>
               {p.on && p.versions.length > 0 && (
                 <span
                   className="bg-warn/15 px-1.5 font-mono text-[10.5px] text-warn no-underline"
@@ -75,11 +94,22 @@ function Row({
   );
 }
 
-export function Rows({ tab, onOpen }: { tab: Key; onOpen: (row: RowId, shown?: string) => void }) {
+type RowsProps = {
+  tab: Key;
+  onOpen: (row: RowId, shown?: string) => void;
+  onTogether: (shown?: string) => void;
+};
+
+export function Rows({ tab, onOpen, onTogether }: RowsProps) {
   const recipe = useAtomValue(recipeAtom);
   const person = recipe.cast.find((c) => c.id === tab);
+  const ids = new Set(recipe.cast.map((c) => c.id));
+  const together = recipe.together.filter((i) => ids.has(i.from) && ids.has(i.to));
+  const said = new Map(together.map((i) => [i.id, sayTogether(recipe, i)]));
   return (
     <section className="flex flex-col gap-3 border-b border-line px-4 py-3">
+      {person && <GenderPicker person={person} />}
+      {person && <FaceRow key={person.id} person={person} />}
       {person && recipe.cast.length > 1 && <Placement person={person} />}
       {person
         ? PERSON_ROWS.map((row) => (
@@ -100,6 +130,15 @@ export function Rows({ tab, onOpen }: { tab: Key; onOpen: (row: RowId, shown?: s
               onOpen={(shown) => onOpen(row.id, shown)}
             />
           ))}
+      {!person && recipe.cast.length > 1 && (
+        <Row
+          phrases={together}
+          say={(p) => said.get(p.id) ?? p.t}
+          label={TOGETHER.label}
+          hint={TOGETHER.hint}
+          onOpen={onTogether}
+        />
+      )}
     </section>
   );
 }

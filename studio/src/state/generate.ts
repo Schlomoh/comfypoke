@@ -2,15 +2,18 @@
 import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { useState } from "react";
 
-import { Locked } from "@/data/api";
+import { FACE_FAMILIES, Locked } from "@/data/api";
+import { loadFace } from "@/data/db/faces";
+import { useSpace } from "@/data/db/space";
 import { lockApp, useCatalog, useGpu } from "@/data/queries";
 import { plan, runCount, summary } from "@/domain/batch";
+import { faceFor } from "@/domain/cast";
 import { resolve } from "@/domain/catalog";
 import { compose } from "@/domain/compose";
 import { errorText, median, shortName } from "@/domain/format";
 import { legacyUnet, size, type Recipe } from "@/domain/recipe";
 import type { Upscale } from "@/domain/render";
-import { useJobs } from "@/state/jobs";
+import { base64, useJobs } from "@/state/jobs";
 import { useTriggers } from "@/state/recipe";
 import { focusAtom, recipeAtom, rendersAtom } from "@/state/studio";
 
@@ -43,6 +46,7 @@ export type Generate = ReturnType<typeof useGenerate>;
 
 export function useGenerate() {
   const store = useStore();
+  const space = useSpace();
   const recipe = useAtomValue(recipeAtom);
   const setFocus = useSetAtom(focusAtom);
   const catalog = useCatalog();
@@ -72,7 +76,9 @@ export function useGenerate() {
         .map((c) => c.name)
         .join(" & ") || undefined; // the library filters by it
     const { width, height } = size(r.aspect, r.mp);
+    const face = FACE_FAMILIES.includes(sent.family.id) ? faceFor(r)?.face : null;
     try {
+      const reference = face ? await base64(await loadFace(space, face)) : undefined;
       // one job per version and seed; stop_after rides on each, so the last one sent decides
       for (const [i, run] of plan(r, triggers).entries()) {
         const started = await generate(
@@ -88,6 +94,7 @@ export function useGenerate() {
             cfg: r.cfg,
             loras: active,
             stop_after: r.stopAfter,
+            reference,
           },
           // oxlint-disable-next-line unicorn/no-thenable -- the field's name in jobs already stored on phones
           { recipe: run.recipe, characterName, then: r.upscale.auto ? upscaleOf(r) : undefined },

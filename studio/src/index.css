@@ -21,6 +21,7 @@
   --color-ok: #5fd08a;
   --color-warn: #e8b84a;
   --color-bad: #f0716a;
+  --color-mask: #ff3ea5; /* painted inpaint masks: magenta is rare in photos, so it shows on most of them */
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 

@@ -12,6 +12,7 @@ import { PromptPreview } from "@/features/prompt/prompt-preview";
 import { RowSheet } from "@/features/prompt/row-sheet";
 import { Rows } from "@/features/prompt/rows";
 import { castTabAtom, openAtom } from "@/features/prompt/state";
+import { TogetherSheet } from "@/features/prompt/together-sheet";
 import { recipeAtom } from "@/state/studio";
 
 export function PromptPanel() {
@@ -46,10 +47,15 @@ export function PromptPanel() {
           setOpen({ kind: "row", key, row, target: null });
           if (shown) setTimeout(() => flash(shown)); // a click's update has committed by then
         }}
+        onTogether={(shown) => {
+          setOpen({ kind: "together", target: null });
+          if (shown) setTimeout(() => flash(shown));
+        }}
       />
       <PromptPreview />
       <RowSheet />
       <LinkSheet />
+      <TogetherSheet />
     </div>
   );
 }

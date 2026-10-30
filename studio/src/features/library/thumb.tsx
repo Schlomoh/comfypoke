@@ -51,6 +51,14 @@ export function Thumb({
           ↑{render.upscale.megapixels}MP
         </span>
       )}
+      {render.edit && (
+        <span
+          className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
+          aria-hidden
+        >
+          edit
+        </span>
+      )}
       {picking && (
         <span
           className={cn(

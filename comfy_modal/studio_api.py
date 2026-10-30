@@ -144,7 +144,7 @@ def _handle(job: Job, msg) -> bool:
         d = data.get("data") or {}
         if data["type"] == "executing" and d.get("node") in graphs.STAGES:
             job.emit("stage", graphs.STAGES[d["node"]])
-        elif data["type"] == "progress" and d.get("node") == graphs.SAMPLER:  # SeedVR2's one step needs no counter
+        elif data["type"] == "progress" and d.get("node") in (graphs.SAMPLER, graphs.SWAPPER):  # SeedVR2's one step needs no counter
             job.emit("progress", {"value": d["value"], "max": d["max"]})
         elif data["type"] == "execution_success":
             job.end("done", {"seconds": round(time.time() - job.started, 1)})
@@ -260,17 +260,34 @@ def _params(body: dict) -> dict:
             "loras": [{"name": n, "strength": w} for n, w in loras]}
 
 
+MAX_REFERENCE = 4 * 2**20  # base64 characters; the phone sends the photo at most 768 px a side
+
+
+def _reference(body: dict, family: str) -> str | None:
+    """The face photo a render or inpaint puts on its person (graphs._headswap), base64, or None."""
+    ref = body.get("reference")
+    if not ref:
+        return None
+    if not isinstance(ref, str) or len(ref) > MAX_REFERENCE:
+        raise HTTPException(400, "the face photo must be an image under 3 MB")
+    if family not in graphs.HEADSWAP_FAMILIES:
+        raise HTTPException(400, f"face photos work with {', '.join(graphs.FAMILIES[f]['label'] for f in graphs.HEADSWAP_FAMILIES)} only")
+    return ref
+
+
 @api.post("/api/generate")
 async def generate(request: Request):
     body = await request.json()
     p = _params(body)
+    reference = _reference(body, p["family"])
+    p["reference"] = bool(reference)
     _note_stop_after(body)
     _purge()
     job = Job(p)
     jobs[job.id] = job
     job.emit("queued", {**job.params, "started": job.started})  # replayed on every reconnect
     prompt = graphs.graph(p["family"], p["unet"], p["prompt"], p["negative"], p["width"], p["height"], p["seed"], p["steps"], p["cfg"],
-                          [(x["name"], x["strength"]) for x in p["loras"]])
+                          [(x["name"], x["strength"]) for x in p["loras"]], reference)
     job.task = asyncio.create_task(_run(job, prompt))
     return {"id": job.id, **job.params}
 
@@ -331,6 +348,38 @@ async def upscale(request: Request):
     job.emit("queued", {**params, "started": job.started})
     _note_stop_after(body)
     job.task = asyncio.create_task(_run(job, graphs.upscale(b64, mp, seed, retouch)))
+    return {"id": job.id, **params}
+
+
+@api.post("/api/inpaint")
+async def inpaint(request: Request):
+    """Repaint part of an image (graphs.inpaint). The phone sends the image, a mask it painted at the
+    image's size, optionally `target` for SAM to find, the prompt for what goes inside, the settings the
+    image was made with, and optionally a face photo for the head swap."""
+    body = await request.json()
+    b64, mask = str(body.get("image", "")), str(body.get("mask", ""))
+    if not b64 or not mask or len(b64) > MAX_IMAGE or len(mask) > MAX_IMAGE:
+        raise HTTPException(400, "missing image or mask, or larger than 40 MB")
+    try:
+        w, h = _png_size(base64.b64decode(b64[:64]))
+        mw, mh = _png_size(base64.b64decode(mask[:64]))
+        seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, f"malformed image, mask or number: {e}")
+    if (mw, mh) != (w, h):
+        raise HTTPException(400, f"the mask is {mw}×{mh} and the image {w}×{h}; they must match")
+    target = str(body.get("target", "")).strip()[:200]
+    p = _params({**body, "width": 1024, "height": 1024, "seed": seed})  # same checks as a render; the size is the image's
+    reference = _reference(body, p["family"])
+    r = {"family": p["family"], "unet": p["unet"], "text": p["prompt"], "negative": p["negative"], "steps": p["steps"],
+         "cfg": p["cfg"], "loras": [(x["name"], x["strength"]) for x in p["loras"]]}
+    params = {**p, "kind": "inpaint", "width": w, "height": h, "target": target, "reference": bool(reference)}
+    _purge()
+    job = Job(params)
+    jobs[job.id] = job
+    job.emit("queued", {**params, "started": job.started})
+    _note_stop_after(body)
+    job.task = asyncio.create_task(_run(job, graphs.inpaint(b64, mask, target, r, seed, reference)))
     return {"id": job.id, **params}
 
 

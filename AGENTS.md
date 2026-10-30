@@ -67,7 +67,11 @@ explains where things are and how to change them without breaking the deployment
   `ws`, never in the clear or in localStorage. WebCrypto cannot run inside a Dexie upgrade, so
   moving data between tables is a function like `migrate()`, run before the start screen.
   Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
-  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Try UI changes with
+  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Edits are `graphs.inpaint`
+  (workflow 09's chain: a mask painted on the phone plus SAM by name, crop and stitch, LanPaint), the
+  mask arriving the same way. A person's face photo (`data/db/faces.ts`, sealed) rides along as
+  `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
+  through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with
   `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it
   keys off the graphs' node ids, so a renumbered node needs the mock updated too.
 - Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that

@@ -1,5 +1,5 @@
 // A render as the device keeps it: the settings it was sent with, how long it took, and what the person
-// added to it later. An upscale is a render of its own that links back to its source.
+// added to it later. An upscale or an edit is a render of its own that links back to its source.
 import type { Recipe } from "@/domain/recipe";
 
 export type Lora = { name: string; strength: number };
@@ -14,9 +14,12 @@ export type Params = {
   cfg: number;
   seed: number;
   loras: Lora[];
+  reference?: boolean; // made with a face reference photo
 };
 
 export type Upscale = { megapixels: number; prompt: string; denoise: number }; // prompt "" means no retouch
+/** A repaint of part of an image: what was masked by name (besides what was painted), what it became, and with whose face. */
+export type Edit = { target: string; prompt: string; face?: string };
 
 export type Render = Params & {
   id: string;
@@ -30,8 +33,9 @@ export type Render = Params & {
   title?: string;
   notes?: string;
   tags?: string[];
-  source?: string; // an upscale: the render it was made from
+  source?: string; // an upscale or an edit: the render it was made from
   upscale?: Upscale;
+  edit?: Edit;
 };
 
 // What the server does not know about a job: the recipe behind a render, the render behind an upscale,
@@ -41,6 +45,8 @@ export type JobMeta = {
   characterName?: string;
   upscaleOf?: Render;
   upscale?: Upscale;
+  editOf?: Render;
+  edit?: Edit;
   then?: Upscale;
 };
 
