@@ -1,5 +1,5 @@
-// What can be done to the selected images at once: best, upscale, save or zip, delete.
-import { useAtomValue } from "jotai";
+// What can be done to the selected images at once: best, pick among them, upscale, save or zip, delete.
+import { useAtomValue, useSetAtom } from "jotai";
 
 import { updateRender } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
@@ -7,7 +7,7 @@ import type { Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import type { Export } from "@/features/library/use-export";
 import { useImageActions } from "@/state/actions";
-import { recipeAtom } from "@/state/studio";
+import { pickAtom, recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { notify } from "@/ui/notify";
 import { Note } from "@/ui/text";
@@ -30,6 +30,7 @@ export function SelectionBar({
   const { upscaleMany, removeMany } = useImageActions();
   const label = upscaleLabel(useAtomValue(recipeAtom));
   const none = !chosen.length;
+  const setPick = useSetAtom(pickAtom);
 
   const bulkBest = async () => {
     const on = chosen.some((r) => !r.best); // mixed or none: mark all; all marked: unmark all
@@ -48,9 +49,19 @@ export function SelectionBar({
           none
         </Button>
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <Button onClick={() => void bulkBest()} disabled={none} title="Mark or unmark as best">
           ★
+        </Button>
+        <Button
+          onClick={() => {
+            setPick(chosen.map((r) => r.id));
+            setPicked(null);
+          }}
+          disabled={chosen.length < 2}
+          title="Pick the best of these, two at a time"
+        >
+          Pick
         </Button>
         <Button
           onClick={() => {

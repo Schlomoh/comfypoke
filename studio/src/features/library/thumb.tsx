@@ -1,6 +1,7 @@
 // The library's tiles: a finished render, or a job still running (or failed) ahead of them.
 import { useThumb } from "@/data/db/renders";
 import { isUpscale, progress, type Job } from "@/domain/job";
+import { kindOf } from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
@@ -13,11 +14,13 @@ export function Thumb({
   active,
   selected,
   onSelect,
+  made = 0,
 }: {
   render: Render;
   active: boolean;
   selected?: boolean; // undefined: not selecting
   onSelect: (r: Render) => void;
+  made?: number; // images made from this one
 }) {
   const url = useThumb(render.id);
   const picking = selected !== undefined;
@@ -28,7 +31,11 @@ export function Thumb({
       role={picking ? "checkbox" : undefined}
       aria-checked={picking ? selected : undefined}
       aria-label={render.title ?? render.prompt}
-      className={cn(tile, ((active && !picking) || selected) && "outline-2 outline-ink")}
+      className={cn(
+        tile,
+        ((active && !picking) || selected) && "outline-2 outline-ink",
+        render.passed && !active && "opacity-40",
+      )}
     >
       {url && (
         <img
@@ -51,20 +58,20 @@ export function Thumb({
           ↑{render.upscale.megapixels}MP
         </span>
       )}
-      {render.uploaded && (
+      {made > 0 && (
         <span
-          className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
-          aria-hidden
+          className="absolute top-0 right-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
+          title={`${made} made from it`}
         >
-          photo
+          +{made}
         </span>
       )}
-      {render.edit && (
+      {kindOf(render) && (
         <span
           className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
           aria-hidden
         >
-          {render.edit.dress ? "outfit" : "edit"}
+          {kindOf(render)}
         </span>
       )}
       {picking && (

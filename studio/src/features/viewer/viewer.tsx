@@ -12,10 +12,12 @@ import { status, type Job } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import { ActivityButton } from "@/features/activity/activity-button";
 import { BestButton } from "@/features/library/best-button";
+import { DraftButtons } from "@/features/library/draft-buttons";
 import { saveImage } from "@/features/library/files";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { Inspector } from "@/features/viewer/inspector";
+import { LineageStrip } from "@/features/viewer/lineage-strip";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
 import { infoAtom, viewAtom, viewerAtom, viewerItemAtom } from "@/state/studio";
@@ -72,13 +74,14 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
           </aside>
         )}
       </div>
+      <LineageStrip render={render} />
       {/* below the row, not in it: beside the image on a wide screen it took the width and left the image none */}
       {!info && (
         <p className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 font-mono text-xs text-muted">
           {render.prompt}
         </p>
       )}
-      <div className="grid shrink-0 grid-cols-[auto_1fr_1fr_1fr_1fr_1fr] gap-2 border-t border-line p-3 lg:border-t-0">
+      <div className="flex shrink-0 gap-2 border-t border-line p-3 lg:border-t-0 [&>*:not(:first-child)]:min-w-0 [&>*:not(:first-child)]:flex-1">
         <BestButton render={render} className="w-12" />
         <Button
           onClick={() => reuse(render)}
@@ -87,12 +90,16 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
         >
           Reuse
         </Button>
-        <Button
-          onClick={() => void upscaleMany([render])}
-          title="Upscale with the settings in the Model tab (U)"
-        >
-          Upscale
-        </Button>
+        {render.draft ? (
+          <DraftButtons render={render} />
+        ) : (
+          <Button
+            onClick={() => void upscaleMany([render])}
+            title="Upscale with the settings in the Model tab (U)"
+          >
+            Upscale
+          </Button>
+        )}
         <Button onClick={() => edit(render)} title="Edit it on the stage: find, paint, dress or repaint (E)">
           Edit
         </Button>

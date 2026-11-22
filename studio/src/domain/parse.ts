@@ -140,6 +140,7 @@ export function parseRecipe(raw: unknown): Recipe {
     count: finite(r.count) ? Math.min(4, Math.max(1, Math.round(r.count))) : EMPTY.count,
     sameSeed: r.sameSeed !== false,
     stopAfter: r.stopAfter === true,
+    draft: r.draft === true,
     upscale: {
       auto: up.auto === true,
       megapixels: [2, 4, 8].find((m) => m === up.megapixels) ?? EMPTY.upscale.megapixels,

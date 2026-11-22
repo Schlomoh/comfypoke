@@ -10,14 +10,16 @@ export function Segmented<T extends string | number>({
   options,
   onChange,
   className,
+  title,
 }: {
   value: T;
   options: readonly Option<T>[];
   onChange: (v: T) => void;
   className?: string;
+  title?: string;
 }) {
   return (
-    <div className={cn("flex border border-line", className)}>
+    <div className={cn("flex border border-line", className)} title={title}>
       {options.map((o, i) => (
         <button
           type="button"

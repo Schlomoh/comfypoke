@@ -3,11 +3,12 @@
 // what is shown (into a folder, or as a zip), and the library backup (characters, presets and
 // LoRA notes as one JSON file).
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { addPhoto } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
 import { errorText } from "@/domain/format";
+import { childCounts } from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 import { BackupSection } from "@/features/library/backup-section";
 import { DownloadSection } from "@/features/library/download-section";
@@ -18,6 +19,8 @@ import { useImageActions } from "@/state/actions";
 import {
   bestCountAtom,
   bestOnlyAtom,
+  familyAtom,
+  rendersAtom,
   characterFilterAtom,
   characterNamesAtom,
   focusAtom,
@@ -40,6 +43,9 @@ export function Library({ column = false }: { column?: boolean }) {
   const filter = useAtomValue(libraryFilterAtom);
   const setFilter = useSetAtom(characterFilterAtom);
   const [best, setBest] = useAtom(bestOnlyAtom);
+  const [kin, setKin] = useAtom(familyAtom);
+  const all = useAtomValue(rendersAtom);
+  const counts = useMemo(() => childCounts(all ?? []), [all]);
   const bestCount = useAtomValue(bestCountAtom);
   const live = useAtomValue(liveJobsAtom);
   const stage = useAtomValue(stageAtom);
@@ -126,6 +132,14 @@ export function Library({ column = false }: { column?: boolean }) {
           {picked ? "Done" : "Select"}
         </Button>
       </div>
+      {kin && (
+        <div className="flex items-center gap-2 border-b border-line px-4 py-2 font-mono text-xs text-muted">
+          <span className="flex-1">One image's family: what it was made from and into.</span>
+          <Button variant="text" size="inline" onClick={() => setKin(null)}>
+            show all ×
+          </Button>
+        </div>
+      )}
       {picked ? (
         <SelectionBar shown={shown} chosen={chosen} setPicked={setPicked} out={out} />
       ) : (
@@ -148,6 +162,7 @@ export function Library({ column = false }: { column?: boolean }) {
               render={r}
               active={r.id === focus}
               selected={picked ? picked.has(r.id) : undefined}
+              made={counts.get(r.id) ?? 0}
               onSelect={picked ? toggle : (x) => showImage(x.id)}
             />
           ))}

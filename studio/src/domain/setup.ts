@@ -67,7 +67,7 @@ export const toPass = ({ unet, family, steps, cfg, loras }: Pass): Pass => ({
 /** What a render was made with, as a pass: edits run with the image's own model unless another is picked. With a
  * finish, that is the finish's model, which gave the image its look. */
 export const passOf = (r: Render): Pass =>
-  r.finish && !r.edit
+  r.finish?.family && Array.isArray(r.finish.loras) && !r.edit // a stored finish is whole, or not used
     ? toPass(r.finish)
     : {
         unet: r.unet ?? legacyUnet(r.model),

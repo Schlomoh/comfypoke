@@ -14,6 +14,7 @@ import { EditCanvas } from "@/features/edit/edit-canvas";
 import { MaskTools } from "@/features/edit/mask-tools";
 import { masksAtom } from "@/features/edit/state";
 import { BestButton } from "@/features/library/best-button";
+import { DraftButtons } from "@/features/library/draft-buttons";
 import { download, saveImage } from "@/features/library/files";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
@@ -127,13 +128,17 @@ function RenderBar({ render }: { render: Render }) {
       <Button onClick={() => void saveImage(space, render)} className="max-sm:flex-1">
         Save
       </Button>
-      <Button
-        onClick={() => void upscaleMany([render])}
-        title="Upscale with the settings in the Model tab (U)"
-        className="max-sm:hidden"
-      >
-        Upscale
-      </Button>
+      {render.draft ? (
+        <DraftButtons render={render} className="max-sm:flex-1" />
+      ) : (
+        <Button
+          onClick={() => void upscaleMany([render])}
+          title="Upscale with the settings in the Model tab (U)"
+          className="max-sm:hidden"
+        >
+          Upscale
+        </Button>
+      )}
       <Button variant="danger" onClick={() => void remove(render)}>
         Delete
       </Button>

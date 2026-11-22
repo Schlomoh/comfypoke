@@ -6,10 +6,11 @@ import { MOD } from "@/app/platform";
 import { duration } from "@/domain/format";
 import type { EditAction } from "@/features/edit/use-edit";
 import type { Generate } from "@/state/generate";
-import { layerAtom } from "@/state/studio";
+import { layerAtom, recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
+import { Segmented } from "@/ui/segmented";
 import { Note } from "@/ui/text";
 
 type Action = Pick<Generate, "blocked" | "seconds" | "cost" | "booting" | "stopAfter">;
@@ -27,7 +28,8 @@ function Estimate({ g }: { g: Action }) {
 
 function label(g: Generate) {
   if (g.sending) return "Sending…";
-  return g.runs > 1 ? `Generate ${g.runs}` : "Generate";
+  const word = g.draft ? "Draft" : "Generate";
+  return g.runs > 1 ? `${word} ${g.runs}` : word;
 }
 
 function buttonLabel(g: Generate, edit?: EditAction) {
@@ -37,6 +39,7 @@ function buttonLabel(g: Generate, edit?: EditAction) {
 
 export function GenerateBar({ g: generate, edit }: { g: Generate; edit?: EditAction }) {
   const setLayer = useSetAtom(layerAtom);
+  const setRecipe = useSetAtom(recipeAtom);
   const g = edit ?? generate;
   return (
     <div className="fixed inset-x-0 bottom-0 z-20 order-3 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:py-3">
@@ -59,6 +62,18 @@ export function GenerateBar({ g: generate, edit }: { g: Generate; edit?: EditAct
             <Estimate g={g} />
           </div>
         </Pressable>
+        {!edit && (
+          <Segmented
+            className="w-28 shrink-0"
+            value={generate.draft ? "draft" : "full"}
+            options={[
+              { value: "draft", label: "draft" },
+              { value: "full", label: "full" },
+            ]}
+            onChange={(v) => setRecipe((x) => ({ ...x, draft: v === "draft" }))}
+            title="Draft: small and quick, to find a direction; make the good ones big from the stage"
+          />
+        )}
         <Button
           variant="primary"
           size="lg"

@@ -12,8 +12,8 @@ import { faceFor } from "@/domain/cast";
 import { resolve } from "@/domain/catalog";
 import { compose } from "@/domain/compose";
 import { errorText, median, shortName } from "@/domain/format";
-import { legacyUnet, size, type Recipe } from "@/domain/recipe";
-import type { Upscale } from "@/domain/render";
+import { DRAFT_MP, legacyUnet, size, type Recipe } from "@/domain/recipe";
+import type { Render, Upscale } from "@/domain/render";
 import { toPass } from "@/domain/setup";
 import { useJobs } from "@/state/jobs";
 import { useTriggers } from "@/state/recipe";
@@ -64,13 +64,13 @@ export function useGenerate() {
   const prompt = compose(recipe, triggers);
   const runs = runCount(recipe);
   const seconds = each == null ? null : each * runs;
-  const aspect = size(recipe.aspect, recipe.mp);
+  const aspect = size(recipe.aspect, recipe.draft ? Math.min(recipe.mp, DRAFT_MP) : recipe.mp);
   const blocked = blockedBy(recipe, catalog, prompt);
 
-  const submit = async () => {
-    const r = store.get(recipeAtom); // as it is now, not as it was when this rendered
+  /** One job per version and seed of `r`, sharing a batch; a draft renders small, `from` is the draft made big. */
+  const send = async (r: Recipe, { draft, from }: { draft: boolean; from?: Render }) => {
     const sent = resolve(r, catalog.catalog);
-    if (blocked || sending || !sent.family) return;
+    if (sending || !sent.family) return;
     setError("");
     setSending(true);
     const active = r.loras.filter((l) => l.on).map(({ name, strength }) => ({ name, strength }));
@@ -79,7 +79,8 @@ export function useGenerate() {
         .filter((c) => c.savedId)
         .map((c) => c.name)
         .join(" & ") || undefined; // the library filters by it
-    const { width, height } = size(r.aspect, r.mp);
+    const { width, height } = size(r.aspect, draft ? Math.min(r.mp, DRAFT_MP) : r.mp);
+    const batch = crypto.randomUUID();
     const fin = r.finish && setups.find((s) => s.id === r.finish?.setup);
     const finish = fin && r.finish ? { ...toPass(fin), denoise: r.finish.strength } : null;
     const last = finish?.family ?? sent.family.id; // the head swap runs on the last pass's model
@@ -103,8 +104,15 @@ export function useGenerate() {
             stop_after: r.stopAfter,
             finish,
           },
-          // oxlint-disable-next-line unicorn/no-thenable -- the field's name in jobs already stored on phones
-          { recipe: run.recipe, characterName, then: r.upscale.auto ? upscaleOf(r) : undefined },
+          {
+            recipe: run.recipe,
+            characterName,
+            // oxlint-disable-next-line unicorn/no-thenable -- the field's name in jobs already stored on phones
+            then: r.upscale.auto && !draft ? upscaleOf(r) : undefined,
+            batch,
+            draft,
+            from,
+          },
           photo,
         );
         if (i === 0) setFocus(started.id);
@@ -118,8 +126,18 @@ export function useGenerate() {
     }
   };
 
+  const submit = async () => {
+    const r = store.get(recipeAtom); // as it is now, not as it was when this rendered
+    if (!blocked) await send(r, { draft: r.draft });
+  };
+  /** A draft again at the size its recipe asks for, same seed: sharper, though the composition may shift. */
+  const rerender = async (d: Render) => {
+    if (d.recipe) await send({ ...d.recipe, draft: false, seed: d.seed, count: 1 }, { draft: false, from: d });
+  };
+
   return {
     submit,
+    rerender,
     sending,
     error: error || (catalog.error ? errorText(catalog.error) : ""),
     blocked,
@@ -128,7 +146,9 @@ export function useGenerate() {
     cost: seconds != null && gpu ? (seconds * gpu.rate_per_hour) / 3600 : null,
     booting: gpu ? !gpu.booted : false,
     stopAfter: recipe.stopAfter,
+    draft: recipe.draft,
     label:
+      (recipe.draft ? "draft · " : "") +
       (summary(recipe) ?? `${shortName(recipe.unet)} · ${aspect.width}×${aspect.height}`) +
       (finishing ? ` → ${finishing.name}` : ""),
   };

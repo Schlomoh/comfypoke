@@ -1993,6 +1993,21 @@
    "MODEL"
   ]
  },
+ "UnetLoaderGGUF": {
+  "input": {
+   "required": {
+    "unet_name": [
+     []
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ]
+ },
  "VAEDecode": {
   "input": {
    "required": {

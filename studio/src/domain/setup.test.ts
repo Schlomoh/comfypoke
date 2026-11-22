@@ -78,3 +78,27 @@ describe("passOf and retouchOf", () => {
   it("has no retouch without words", () =>
     expect(retouchOf(render, { megapixels: 4, prompt: " ", denoise: 0.3 })).toBeNull());
 });
+
+describe("passOf with stored data", () => {
+  it("ignores a finish recorded without its model's settings", () => {
+    const old = {
+      id: "r",
+      createdAt: 0,
+      seconds: 1,
+      prompt: "",
+      negative: "",
+      unet: "a.safetensors",
+      family: "krea2",
+      width: 8,
+      height: 8,
+      steps: 8,
+      cfg: 1,
+      seed: 1,
+      loras: [],
+    };
+    const r = { ...old, finish: { unet: "b.safetensors", denoise: 0.3 } } as unknown as Parameters<
+      typeof passOf
+    >[0];
+    expect(passOf(r).unet).toBe("a.safetensors");
+  });
+});

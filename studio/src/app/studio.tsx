@@ -13,6 +13,7 @@ import { EditPanel } from "@/features/edit/edit-panel";
 import { useEdit } from "@/features/edit/use-edit";
 import { Library } from "@/features/library/library";
 import { ModelPanel } from "@/features/model/model-panel";
+import { PickSheet } from "@/features/pick/pick-sheet";
 import { LinkSheet } from "@/features/prompt/link-sheet";
 import { PromptPanel } from "@/features/prompt/prompt-panel";
 import { RowSheet } from "@/features/prompt/row-sheet";
@@ -93,6 +94,7 @@ export function Studio({ onClose }: { onClose: () => void }) {
       <ActivitySheet />
       <RenderSheet />
       <WorkspaceMenu onSwitch={onClose} />
+      <PickSheet />
       {/* the prompt's sheets: the Edit tab opens the Wearing row's too */}
       <RowSheet />
       <LinkSheet />

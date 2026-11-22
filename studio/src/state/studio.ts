@@ -5,6 +5,7 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 import type { Job } from "@/domain/job";
+import { family } from "@/domain/lineage";
 import { EMPTY, type Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { FIT, type View } from "@/domain/view";
@@ -25,6 +26,10 @@ export const infoAtom = atom(false); // the viewer's info panel
 export const viewAtom = atom<View>(FIT);
 export const characterFilterAtom = atom("");
 export const bestOnlyAtom = atom(false);
+/** The library shows only this image's family (domain/lineage.ts): what it was made from and into. null: all. */
+export const familyAtom = atom<string | null>(null);
+/** The renders being picked among (features/pick); null when not picking. */
+export const pickAtom = atom<string[] | null>(null);
 /** Every image blanked to a plain tile, for working where others can see the screen. Kept across reloads. */
 export const veilAtom = atomWithStorage("studio.veil", false, undefined, { getOnInit: true });
 
@@ -58,7 +63,9 @@ const ofCharacterAtom = atom((get) => {
 /** What the library shows, in its order. */
 export const shownAtom = atom((get) => {
   const best = get(bestOnlyAtom);
-  return get(ofCharacterAtom).filter((r) => !best || r.best);
+  const of = get(familyAtom);
+  const kin = of ? family(get(allRendersAtom), of) : null;
+  return get(ofCharacterAtom).filter((r) => (!best || r.best) && (!kin || kin.has(r.id)));
 });
 export const bestCountAtom = atom((get) => get(ofCharacterAtom).filter((r) => r.best).length);
 export const libraryFilterAtom = atom((get) => ({

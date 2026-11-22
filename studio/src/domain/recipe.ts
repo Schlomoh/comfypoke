@@ -93,7 +93,9 @@ export type Recipe = {
   stopAfter: boolean; // the GPU stops once the queue this sends is done
   upscale: UpscaleSettings;
   finish: FinishSettings | null; // a second, light pass over each render with a saved setup
+  draft: boolean; // render small and quick (DRAFT_MP), to find a direction; a draft is made big from the library
 };
+export const DRAFT_MP = 0.5;
 /** setup: a saved setup's id (domain/setup.ts); strength: how much of the render it may repaint. */
 export type FinishSettings = { setup: string; strength: number };
 // auto: every new render is upscaled once it is stored; prompt "" upscales without a retouch
@@ -117,6 +119,7 @@ export const EMPTY: Recipe = {
   stopAfter: false,
   upscale: { auto: false, megapixels: 4, prompt: "", denoise: 0.3 },
   finish: null,
+  draft: false,
 };
 
 /** Renders and recipes from before the model list knew only "turbo" and "raw". */

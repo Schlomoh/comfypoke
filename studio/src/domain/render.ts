@@ -41,10 +41,13 @@ export type Render = Params & {
   title?: string;
   notes?: string;
   tags?: string[];
-  source?: string; // an upscale or an edit: the render it was made from
+  source?: string; // an upscale, an edit or a draft made big: the render it was made from
   uploaded?: string; // a photo brought in from the device, by its file name: its settings are the model edits run with
   upscale?: Upscale;
   edit?: Edit;
+  draft?: boolean; // small and quick, made to be made big (state/generate.ts rerender, or an upscale)
+  batch?: string; // the renders one Generate sent: compared and picked among (features/pick)
+  passed?: boolean; // passed over when picking: dimmed in the library
 };
 
 /** The model an uploaded photo is repainted and dressed with: there is no render behind it to take one from. */
@@ -77,15 +80,19 @@ export type JobMeta = {
   editOf?: Render;
   edit?: Edit;
   then?: Upscale;
+  batch?: string;
+  draft?: boolean;
+  from?: Render; // the draft a render was made big from
 };
 
-/** Every upscale made from these renders, and from those upscales, with the renders themselves. */
+/** Every upscale and edit made from these renders, and from those, with the renders themselves. A render made big
+ * from a draft is its own image and stays when the draft goes. */
 export function withUpscales(ids: Iterable<string>, all: readonly Render[]) {
   const out = new Set(ids);
   for (let grew = true; grew;) {
     grew = false;
     for (const r of all)
-      if (r.source && out.has(r.source) && !out.has(r.id)) {
+      if (r.source && (r.upscale || r.edit) && out.has(r.source) && !out.has(r.id)) {
         out.add(r.id);
         grew = true;
       }

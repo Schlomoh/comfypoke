@@ -56,8 +56,14 @@ function recordOf({ id, params, seconds, size }: Finished, meta: JobMeta): Rende
           }))(params)
         : {}),
       best: false,
+      passed: undefined,
       title: undefined,
       notes: undefined,
+      // a new image: not its source's draft, batch or finish
+      ...(meta.editOf ? { finish: undefined } : {}),
+      draft: undefined,
+      batch: undefined,
+      recipe: from.recipe && { ...from.recipe, draft: false }, // Reuse on it must not turn draft mode on
     };
   return {
     ...params,
@@ -67,6 +73,9 @@ function recordOf({ id, params, seconds, size }: Finished, meta: JobMeta): Rende
     ...size,
     recipe: meta.recipe,
     characterName: meta.characterName,
+    batch: meta.batch,
+    draft: meta.draft || undefined,
+    source: meta.from?.id,
   };
 }
 
