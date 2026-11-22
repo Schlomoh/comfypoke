@@ -1,5 +1,5 @@
-// The stage in the Edit tab: the shown image with its mask over it, one finger painting and two zooming; or the
-// body fitted to it, when that is asked for in the tab.
+// The stage in the Edit tab: the shown image with its mask over it, one finger painting and two zooming. The body
+// fitted to it, when asked for, lies at half strength between the image and the mask: every tool keeps working.
 import { useAtom, useAtomValue } from "jotai";
 
 import type { Render } from "@/domain/render";
@@ -26,16 +26,23 @@ export function EditCanvas({ render, url }: { render: Render; url: string }) {
   const taps = useAtomValue(tapsAtom)[render.id]?.points;
   return (
     <ZoomView
-      src={showBody && body.url ? body.url : url}
-      alt={showBody ? "The body fitted to the image" : render.prompt}
+      src={url}
+      alt={render.prompt}
       view={view}
       setView={setView}
       onSwipe={step}
-      paint={showBody ? undefined : paint}
+      paint={paint}
       overlay={
-        !showBody && (
+        <>
+          {showBody && body.url && (
+            <img
+              src={body.url}
+              alt=""
+              className="pointer-events-none absolute inset-0 size-full opacity-50"
+            />
+          )}
           <MaskLayer ops={ops} taps={taps} width={render.width} height={render.height} bind={bind} />
-        )
+        </>
       }
     />
   );

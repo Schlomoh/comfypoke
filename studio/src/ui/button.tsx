@@ -11,6 +11,9 @@ const button = cva(
       variant: {
         primary: "bg-ink font-medium text-bg hover:bg-white",
         ghost: "border border-line bg-panel font-medium hover:border-edge",
+        // on and off, like ghost: on shows in the mask's color
+        toggle:
+          "border border-line bg-panel font-medium hover:border-edge aria-pressed:border-mask aria-pressed:text-mask",
         quiet: "font-medium text-muted hover:text-ink",
         danger: "border border-line bg-panel font-medium text-bad hover:border-bad",
         // the small uppercase actions beside a heading: copy, reset, remove

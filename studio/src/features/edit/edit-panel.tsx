@@ -1,44 +1,35 @@
-// The Edit tab: edit the image on the stage. The mask first (find-section.tsx, and painting on the stage), then
-// what goes in: a person's Wearing row from the Prompt tab, each outfit one render, or a few words for a repaint.
-// Each pass says which model runs it: the Model tab, the image's own, or a saved setup. The bar at the bottom sends it.
+// The Edit tab: edit the image on the stage. The mask (made from the bar under the image, listed here), then what
+// goes in: with the body's shape kept, a person's Wearing row from the Prompt tab, one render per outfit; without,
+// a few words repainted into the mask. Then the passes and what they run with. The bar at the bottom sends it.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useState } from "react";
 
-import { FACE_FAMILIES } from "@/data/api";
-import type { Hold } from "@/domain/render";
-import { useFaceChoices } from "@/features/edit/face-choices";
-import { FindSection } from "@/features/edit/find-section";
-import { editAtom, type EditChoice } from "@/features/edit/state";
-import { usePasses } from "@/features/edit/use-passes";
-import { SaveSetup } from "@/features/model/setups";
+import { outfitPieces } from "@/domain/outfits";
+import { MaskSummary } from "@/features/edit/mask-summary";
+import { Passes } from "@/features/edit/passes";
+import { editAtom } from "@/features/edit/state";
 import { flash } from "@/features/prompt/flash";
 import { Row } from "@/features/prompt/rows";
 import { openAtom } from "@/features/prompt/state";
 import { recipeAtom, stageAtom } from "@/state/studio";
-import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Chip, ChipRow } from "@/ui/chip";
-import { Labeled, Select, Textarea } from "@/ui/field";
+import { Textarea } from "@/ui/field";
 import { Section } from "@/ui/section";
 import { Segmented } from "@/ui/segmented";
-import { SliderRow } from "@/ui/slider";
-import { Note } from "@/ui/text";
+import { Tip } from "@/ui/tip";
 
 const HOLDS = [
   { value: "tight", label: "tight" },
   { value: "loose", label: "loose" },
-  { value: "off", label: "off" },
+  { value: "off", label: "free" },
 ] as const;
-const HOLD_NOTE: Record<Hold, string> = {
-  tight: "The body's mesh pins the silhouette, the arms and the hands: fitted clothes.",
-  loose: "The body stays, the outline may change: a dress can flare, a hoodie hang.",
-  off: "No mesh, only the picture around the mask: freest, and the body may change with it.",
-};
 
 function Wearing() {
   const recipe = useAtomValue(recipeAtom);
   const [c, setC] = useAtom(editAtom);
   const setOpen = useSetAtom(openAtom);
   const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
+  const renders = outfitPieces(person);
   return (
     <>
       {recipe.cast.length > 1 && (
@@ -63,145 +54,58 @@ function Wearing() {
           if (shown) setTimeout(() => flash(shown));
         }}
       />
-      <Note>
-        The Wearing row of the Prompt tab, presets and saved characters included: each version is one render.
-      </Note>
-    </>
-  );
-}
-
-function PassSelect({
-  label,
-  value,
-  options,
-  onChange,
-  off,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-  off?: string; // the choice that skips the pass, when it can be skipped
-}) {
-  return (
-    <Labeled label={label}>
-      <Select value={value} onChange={(e) => onChange(e.target.value)}>
-        {off && <option value="off">{off}</option>}
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+      {/* each render spelled out: switched-on pieces are worn together, a piece's versions make more renders */}
+      <ol className="flex flex-col gap-0.5 font-mono text-[11px] text-muted">
+        {renders.length === 0 && (
+          <li className="text-faint">Add what goes on: a piece of clothing per chip.</li>
+        )}
+        {renders.map((pieces, i) => (
+          // oxlint-disable-next-line react/no-array-index-key -- the renders are numbered by place
+          <li key={i} className="break-words">
+            <span className="text-faint">Render {i + 1}:</span> {pieces.join(" + ")}
+          </li>
         ))}
-      </Select>
-    </Labeled>
-  );
-}
-
-function Passes() {
-  const { render } = useAtomValue(stageAtom);
-  const [c, setC] = useAtom(editAtom);
-  const [saving, setSaving] = useState(false);
-  const { choose } = usePasses(render);
-  const faces = useFaceChoices(render);
-  const set = (patch: Partial<EditChoice>) => setC((x) => ({ ...x, ...patch }));
-  const dresser = choose(c.dresser, "zimage");
-  const finish = choose(c.finish);
-  const repaint = choose(c.repaintWith);
-  const finishing = c.finish !== "off" && !!finish.picked;
-  const dressLast = finishing ? finish.picked : null; // the head swap runs on the last pass's model
-  const last = c.mode === "dress" ? dressLast : repaint.picked;
-  const canFace = !!last && FACE_FAMILIES.includes(last.pass.family) && faces.length > 0;
-
-  return (
-    <Section
-      title="Models"
-      right={
-        <Button variant="link" size="inline" onClick={() => setSaving(!saving)}>
-          {saving ? "done" : "save as a look"}
-        </Button>
-      }
-    >
-      {saving && <SaveSetup placeholder="name Look as it is" />}
-      {c.mode === "dress" ? (
-        <>
-          <PassSelect
-            label="1 · Dress with (Z-Image: its controlnet holds the body)"
-            value={dresser.value}
-            options={dresser.opts}
-            onChange={(v) => set({ dresser: v })}
-          />
-          {!dresser.opts.length && <Note tone="warn">Save a Z-Image look to dress with.</Note>}
-          <Segmented value={c.hold} options={HOLDS} onChange={(hold) => set({ hold })} />
-          <Note>{HOLD_NOTE[c.hold]}</Note>
-          <PassSelect
-            label="2 · Finish with"
-            value={c.finish === "off" ? "off" : finish.value}
-            options={finish.opts}
-            off="no finish: as Z-Image drew it"
-            onChange={(v) => set({ finish: v })}
-          />
-          {finishing && (
-            <SliderRow
-              label="Strength"
-              min={0.1}
-              max={0.8}
-              step={0.05}
-              value={c.strength}
-              onValue={(strength) => set({ strength })}
-            />
-          )}
-          <Note>
-            {finishing
-              ? "Repaints only the new clothes, lightly: this model's fabric, skin and light on Z-Image's shape. 0.35 held the body in tests."
-              : "The quickest: about 7 s on a warm GPU."}
-          </Note>
-        </>
-      ) : (
-        <PassSelect
-          label="Repaint with"
-          value={repaint.value}
-          options={repaint.opts}
-          onChange={(v) => set({ repaintWith: v })}
+      </ol>
+      <div className="flex items-center gap-2">
+        <Segmented
+          className="flex-1"
+          value={c.hold}
+          options={HOLDS}
+          onChange={(hold) => setC((x) => ({ ...x, hold }))}
         />
-      )}
-      {canFace && (
-        <Labeled label="Keep a face">
-          <Select value={c.face} onChange={(e) => set({ face: e.target.value })}>
-            <option value="">none</option>
-            {faces.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </Select>
-        </Labeled>
-      )}
-    </Section>
+        <Tip label="About the hold">
+          Tight: the body&apos;s mesh pins the silhouette, the arms and the hands, for fitted clothes. Loose:
+          the body stays, the outline may change, so a dress can flare and a hoodie hang. Free: no mesh, only
+          the picture around the mask; the body may change with it.
+        </Tip>
+      </div>
+    </>
   );
 }
 
 export function EditPanel() {
   const { render, job } = useAtomValue(stageAtom);
   const [c, setC] = useAtom(editAtom);
+  const dress = c.mode === "dress";
   return (
     <div>
       {render ? (
-        <FindSection key={render.id} render={render} />
+        <MaskSummary key={render.id} render={render} />
       ) : (
-        <Note className="border-b border-line px-4 py-4">
+        <p className="border-b border-line px-4 py-4 text-xs text-muted">
           {job ? "The stage shows a render on its way: edit it when it lands." : "No image to edit yet."}
-        </Note>
+        </p>
       )}
-      <Section title="What goes in">
-        <Segmented
-          value={c.mode}
-          options={[
-            { value: "dress", label: "dress" },
-            { value: "repaint", label: "repaint" },
-          ]}
-          onChange={(mode) => setC((x) => ({ ...x, mode }))}
+      <Section
+        title="What goes in"
+        tip="With the body's shape kept, the mask is dressed in a person's Wearing row from the Prompt tab, presets and saved characters included: the chips switched on are worn together, and each version of a chip makes another render. Without it, what you write is painted into the mask with any look."
+      >
+        <Checkbox
+          on={dress}
+          onChange={(on) => setC((x) => ({ ...x, mode: on ? "dress" : "repaint" }))}
+          label={<span className="text-[13px]">Keep the body&apos;s shape</span>}
         />
-        {c.mode === "dress" ? (
+        {dress ? (
           <Wearing />
         ) : (
           <Textarea

@@ -126,7 +126,7 @@ function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: bo
   const steps = useAtomValue(masksAtom)[render?.id ?? ""]?.length ?? 0;
   if (job?.error) return <FailedBar job={job} />;
   if (job) return <RunningBar job={job} />;
-  if (render && editing) return <MaskTools id={render.id} steps={steps} />;
+  if (render && editing) return <MaskTools render={render} steps={steps} />;
   if (render) return <RenderBar render={render} />;
   return <span className="text-faint">{loading ? "" : "Ready"}</span>;
 }

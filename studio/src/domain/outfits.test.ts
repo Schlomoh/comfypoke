@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { outfits } from "@/domain/outfits";
+import { outfitPieces, outfits } from "@/domain/outfits";
 import { newPerson, phrase } from "@/domain/recipe";
 
 const wearing = (...ps: ReturnType<typeof phrase>[]) => ({ ...newPerson("Ana"), wear: ps });
@@ -19,5 +19,13 @@ describe("outfits", () => {
   it("leaves out switched-off and empty phrases", () =>
     expect(outfits(wearing({ ...phrase("hat"), on: false }, phrase("  "), phrase("boots")))).toEqual([
       "boots",
+    ]));
+});
+
+describe("outfitPieces", () => {
+  it("lists each render's pieces, worn together", () =>
+    expect(outfitPieces(wearing(phrase("coat", ["parka"]), phrase("jeans")))).toEqual([
+      ["coat", "jeans"],
+      ["parka", "jeans"],
     ]));
 });
