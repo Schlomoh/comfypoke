@@ -23,7 +23,7 @@ export function usePasses(render: Render | undefined) {
   const own = render && !render.uploaded ? passOf(render) : null;
 
   const pick = (choice: PassChoice): Picked | null => {
-    if (choice === "tab") return tab && { pass: tab, name: "the Model tab" };
+    if (choice === "tab") return tab && { pass: tab, name: "Look as it is" };
     if (choice === "own") return own && { pass: own, name: "the image's model" };
     const s = setups.find((x) => x.id === choice);
     return s ? { pass: toPass(s), name: s.name } : null;
@@ -35,7 +35,7 @@ export function usePasses(render: Render | undefined) {
       ? [{ value: "own", label: `this image's · ${shortName(own.unet)}${loras(own)}` }]
       : []),
     ...(tab && (!only || tab.family === only)
-      ? [{ value: "tab", label: `Model tab · ${shortName(tab.unet)}${loras(tab)}` }]
+      ? [{ value: "tab", label: `Look as it is · ${shortName(tab.unet)}${loras(tab)}` }]
       : []),
     ...setups
       .filter((s) => !only || s.family === only)

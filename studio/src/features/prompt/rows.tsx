@@ -7,6 +7,7 @@ import { sayTogether, setGender, withPerson, type Key } from "@/domain/cast";
 import { GENDERS } from "@/domain/presets/gender";
 import { SIDES, type Depth, type Person, type Phrase } from "@/domain/recipe";
 import { PERSON_ROWS, SCENE_ROWS, TOGETHER, type RowId } from "@/domain/rows";
+import { CharacterLoras } from "@/features/prompt/character-loras";
 import { FaceRow } from "@/features/prompt/face-row";
 import { recipeAtom } from "@/state/studio";
 import { Chip, ChipRow } from "@/ui/chip";
@@ -111,6 +112,7 @@ export function Rows({ tab, onOpen, onTogether }: RowsProps) {
     <section className="flex flex-col gap-3 border-b border-line px-4 py-3">
       {person && <GenderPicker person={person} />}
       {person && <FaceRow key={person.id} person={person} />}
+      {person?.savedId && <CharacterLoras person={person} />}
       {person && recipe.cast.length > 1 && <Placement person={person} />}
       {person
         ? PERSON_ROWS.map((row) => (

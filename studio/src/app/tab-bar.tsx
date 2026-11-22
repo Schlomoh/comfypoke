@@ -1,4 +1,4 @@
-// The top bar on a phone, the left column's head on a desktop: Prompt, Model, Edit and Library (a phone's
+// The top bar on a phone, the left column's head on a desktop: Prompt, Look, Edit and Library (a phone's
 // third tab; a desktop shows the library in its own column), and the activity button.
 import { useAtom, useAtomValue } from "jotai";
 import type { ReactNode } from "react";
@@ -13,7 +13,7 @@ export function TabBar() {
   const count = useAtomValue(rendersAtom)?.length ?? 0;
   const tabs: { id: Tab; label: ReactNode }[] = [
     { id: "prompt", label: "Prompt" },
-    { id: "model", label: "Model" },
+    { id: "look", label: "Look" },
     { id: "edit", label: "Edit" },
     // four tabs and the GPU button leave no room for the count on a phone; the library shows it
     {

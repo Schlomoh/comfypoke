@@ -10,7 +10,9 @@ import type { Render } from "@/domain/render";
 import type { PresetRow } from "@/domain/rows";
 import type { Setup } from "@/domain/setup";
 
-export type LoraNote = { name: string; trigger: string };
+/** What is known about a LoRA file, shared by all workspaces: its trigger words, and the model family it was trained
+ * for, when said (a LoRA for another family is skipped when sent). */
+export type LoraNote = { name: string; trigger: string; family?: string };
 export type Preset = { id: string; block: PresetRow; text: string; label?: string; at: number }; // block: the row it is offered in
 // Names are in the clear so the start screen can list them; `key` is the raw data key of a workspace without a password.
 export type Workspace = {

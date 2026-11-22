@@ -33,7 +33,7 @@ export const BUILT_IN: readonly Setup[] = [
   },
 ];
 
-/** The Model tab as it is, under a name; only the LoRAs switched on come along. */
+/** Look as it is, under a name; only the stack's own LoRAs switched on come along, not a character's. */
 export const setupOf = (r: Recipe, family: string, name: string): Setup => ({
   id: crypto.randomUUID(),
   name,
@@ -41,18 +41,19 @@ export const setupOf = (r: Recipe, family: string, name: string): Setup => ({
   family,
   steps: r.steps,
   cfg: r.cfg,
-  loras: r.loras.filter((l) => l.on).map(({ name: n, strength }) => ({ name: n, strength })),
+  loras: r.loras.filter((l) => l.on && !l.from).map(({ name: n, strength }) => ({ name: n, strength })),
   at: Date.now(),
 });
 
-/** A setup into the Model tab; `suggested` is the family the model list gives its file, left implicit when it matches. */
+/** A setup into Look; `suggested` is the family the model list gives its file, left implicit when it matches. The
+ * cast's character LoRAs stay where they are (domain/loras.ts swaps them when the family changes). */
 export const applySetup = (r: Recipe, s: Setup, suggested?: string): Recipe => ({
   ...r,
   unet: s.unet,
   family: s.family === suggested ? null : s.family,
   steps: s.steps,
   cfg: s.cfg,
-  loras: s.loras.map((l) => ({ ...l, on: true })),
+  loras: [...r.loras.filter((l) => l.from), ...s.loras.map((l) => ({ ...l, on: true }))],
 });
 
 /** Only what the server runs a pass with: a setup's name and id stay on the device. */

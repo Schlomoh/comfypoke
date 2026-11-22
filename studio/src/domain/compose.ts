@@ -1,3 +1,4 @@
+import type { Triggers } from "@/domain/loras";
 import { noun, nouns, type Gender } from "@/domain/presets/gender";
 import type { Person, Phrase, Recipe } from "@/domain/recipe";
 import { PERSON_ROWS } from "@/domain/rows";
@@ -47,8 +48,11 @@ export const onto = (text: string, b: string) =>
     ? text.replace(/\btheir\b/gi, `${b}'s`).replace(/\bthem\b/gi, b)
     : `${text} ${b}`;
 
-/** The prompt sent. pick gives the text for a phrase: its own, or one of its versions. */
-export function compose(r: Recipe, triggers: string[], pick: (p: Phrase) => string = (p) => p.t) {
+const verbatim = (t: string) => t.trim().replace(/[\s.,;]+$/, ""); // case can matter to a LoRA
+
+/** The prompt sent. pick gives the text for a phrase: its own, or one of its versions. The stack's own trigger words
+ * lead it; a character's start that person's description. */
+export function compose(r: Recipe, triggers: Triggers, pick: (p: Phrase) => string = (p) => p.t) {
   const on = (ps: Phrase[]) =>
     ps
       .filter((p) => p.on && p.t.trim())
@@ -66,7 +70,8 @@ export function compose(r: Recipe, triggers: string[], pick: (p: Phrase) => stri
   );
   const many = described.length > 1;
   const people = described.map((c) => {
-    const parts = [on(c.who), on(c.look), on(c.wear), on(c.doing)];
+    const own = c.savedId ? (triggers.of[c.savedId] ?? []).map(verbatim) : [];
+    const parts = [[...own, ...on(c.who)], on(c.look), on(c.wear), on(c.doing)];
     // the gender is said once, unless a phrase already says it ("woman in her thirties")
     const who = parts[0].some((t) => GENDER_WORD.test(t)) ? parts[0] : [noun(c.gender), ...parts[0]];
     const look = parts[1].length ? ` with ${and(parts[1])}` : "";
@@ -93,7 +98,7 @@ export function compose(r: Recipe, triggers: string[], pick: (p: Phrase) => stri
       .map((s) => cap(s) + "."),
   ];
   const extra = on(r.scene.extra).map((s) => cap(s) + ".");
-  const lead = triggers.filter(Boolean).map((t) => t.trim().replace(/[\s.]+$/, "") + "."); // verbatim: case can matter to a LoRA
+  const lead = triggers.lead.map((t) => verbatim(t) + ".");
   return [...lead, many ? headcount(described) : "", ...people, ...together, ...scene, ...extra]
     .filter(Boolean)
     .join(" ");

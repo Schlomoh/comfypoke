@@ -95,7 +95,7 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
         ) : (
           <Button
             onClick={() => void upscaleMany([render])}
-            title="Upscale with the settings in the Model tab (U)"
+            title="Upscale with the dock's upscale settings (U)"
           >
             Upscale
           </Button>

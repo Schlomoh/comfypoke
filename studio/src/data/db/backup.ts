@@ -47,8 +47,10 @@ function presetsIn(raw: unknown): Preset[] {
 const notesIn = (raw: unknown): LoraNote[] =>
   list(raw)
     .filter(isRecord)
-    .filter((n): n is { name: string; trigger: string } => isText(n.name) && isText(n.trigger))
-    .map((n) => ({ name: n.name, trigger: n.trigger }));
+    .filter(
+      (n): n is { name: string; trigger: string; family?: unknown } => isText(n.name) && isText(n.trigger),
+    )
+    .map((n) => ({ name: n.name, trigger: n.trigger, ...(isText(n.family) ? { family: n.family } : {}) }));
 
 const presetKey = (p: Preset) => `${p.block}\u0000${p.text.toLowerCase()}`;
 
@@ -82,7 +84,14 @@ export async function importLibrary(space: Space, file: File) {
     await putSaved(space, taken.has(c.id) ? { ...entry, id: crypto.randomUUID() } : entry);
     added++;
   }
-  await db.loraNotes.bulkPut(notesIn(data.loraNotes));
+  // a note merges into what is here: an older backup, or one without a family, never erases one set on this device
+  const here = await db.loraNotes.toArray();
+  await db.loraNotes.bulkPut(
+    notesIn(data.loraNotes).map((n) => {
+      const old = here.find((h) => h.name === n.name);
+      return { ...old, ...n, trigger: n.trigger || old?.trigger || "", family: n.family ?? old?.family };
+    }),
+  );
   await addPresets(presetsIn(data.presets));
   // a setup already here by that name stays as it is
   const names = new Set([...BUILT_IN, ...(await db.setups.toArray())].map((s) => s.name));

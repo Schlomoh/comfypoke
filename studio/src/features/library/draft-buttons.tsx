@@ -13,7 +13,7 @@ export function DraftButtons({ render, className }: { render: Render; className?
       <Button
         className={className}
         onClick={() => void upscaleMany([render])}
-        title="Keep this picture exactly: upscale it with the Model tab's settings"
+        title="Keep this picture exactly: upscale it with the dock's upscale settings"
       >
         Keep it
       </Button>
@@ -21,7 +21,7 @@ export function DraftButtons({ render, className }: { render: Render; className?
         className={className}
         disabled={sending || !render.recipe}
         onClick={() => void rerender(render)}
-        title="Render it again at the Model tab's size, same seed: sharper, the composition may shift"
+        title="Render it again at the dock's size, same seed: sharper, the composition may shift"
       >
         Make big
       </Button>

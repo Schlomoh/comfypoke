@@ -7,15 +7,18 @@ import { recipeAtom } from "@/state/studio";
 import { Select } from "@/ui/field";
 import { Section } from "@/ui/section";
 import { SliderRow } from "@/ui/slider";
-import { Note } from "@/ui/text";
 
-export function FinishSection() {
+export function FinishSection({ className }: { className?: string }) {
   const [recipe, setRecipe] = useAtom(recipeAtom);
   const setups = useSetups();
   const f = recipe.finish;
   const shown = f && setups.some((s) => s.id === f.setup) ? f.setup : "off"; // a removed setup reads as none
   return (
-    <Section title="Finish">
+    <Section
+      title="Finish"
+      className={className}
+      tip="Goes over each new render once more with another setup, lightly: the picture stays, its look takes on that model's. A face photo is then put on with the finish's model, so it needs Krea 2 there."
+    >
       <Select
         aria-label="Finish every render with"
         value={shown}
@@ -45,10 +48,6 @@ export function FinishSection() {
           onValue={(strength) => setRecipe((r) => ({ ...r, finish: r.finish && { ...r.finish, strength } }))}
         />
       )}
-      <Note>
-        Goes over each new render once more with another setup, lightly: the picture stays, its look takes on
-        that model's. A face photo is then put on with the finish's model, so it needs Krea 2 there.
-      </Note>
     </Section>
   );
 }

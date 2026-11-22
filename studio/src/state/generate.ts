@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { FACE_FAMILIES, Locked } from "@/data/api";
 import { loadFace } from "@/data/db/faces";
+import { useLoraNotes } from "@/data/db/presets";
 import { useSetups } from "@/data/db/setups";
 import { useSpace } from "@/data/db/space";
 import { lockApp, useCatalog, useGpu } from "@/data/queries";
@@ -12,6 +13,7 @@ import { faceFor } from "@/domain/cast";
 import { resolve } from "@/domain/catalog";
 import { compose } from "@/domain/compose";
 import { errorText, median, shortName } from "@/domain/format";
+import { runnable, triggersOf } from "@/domain/loras";
 import { DRAFT_MP, legacyUnet, size, type Recipe } from "@/domain/recipe";
 import type { Render, Upscale } from "@/domain/render";
 import { toPass } from "@/domain/setup";
@@ -57,6 +59,7 @@ export function useGenerate() {
   const { generate } = useJobs();
   const each = useRenderTime();
   const setups = useSetups();
+  const notes = useLoraNotes();
   const finishing = recipe.finish && setups.find((s) => s.id === recipe.finish?.setup);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -73,7 +76,8 @@ export function useGenerate() {
     if (sending || !sent.family) return;
     setError("");
     setSending(true);
-    const active = r.loras.filter((l) => l.on).map(({ name, strength }) => ({ name, strength }));
+    const active = runnable(r.loras, notes, sent.family.id);
+    const words = triggersOf(r.loras, notes, sent.family.id); // this recipe's, which a draft made big need not share
     const characterName =
       r.cast
         .filter((c) => c.savedId)
@@ -88,7 +92,7 @@ export function useGenerate() {
     try {
       const photo = face ? await loadFace(space, face) : undefined;
       // one job per version and seed; stop_after rides on each, so the last one sent decides
-      for (const [i, run] of plan(r, triggers).entries()) {
+      for (const [i, run] of plan(r, words).entries()) {
         const started = await generate(
           {
             unet: r.unet,
@@ -132,7 +136,8 @@ export function useGenerate() {
   };
   /** A draft again at the size its recipe asks for, same seed: sharper, though the composition may shift. */
   const rerender = async (d: Render) => {
-    if (d.recipe) await send({ ...d.recipe, draft: false, seed: d.seed, count: 1 }, { draft: false, from: d });
+    if (d.recipe)
+      await send({ ...d.recipe, draft: false, seed: d.seed, count: 1 }, { draft: false, from: d });
   };
 
   return {

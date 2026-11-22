@@ -10,7 +10,7 @@ import { EMPTY, type Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { FIT, type View } from "@/domain/view";
 
-export type Tab = "prompt" | "model" | "edit" | "library";
+export type Tab = "prompt" | "look" | "edit" | "library";
 /** The layers over the studio; at most one at a time. */
 export type Layer = "activity" | "renders" | "workspace" | "keys" | null;
 

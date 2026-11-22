@@ -169,7 +169,7 @@ function Link({ tab, onClose }: { tab: Key; onClose: () => void }) {
       {error && <Note tone="bad">{error}</Note>}
       <Note>
         {kind === "person"
-          ? "A saved character keeps Who, Look, Wearing and Doing, with versions and switched-off phrases. Side and depth stay with this picture; LoRAs stay in the Model tab."
+          ? "A saved character keeps Who, Look, Wearing and Doing, with versions and switched-off phrases. Side and depth stay with this picture. Once saved, a character can bring its own LoRAs, set on its card."
           : "A saved scene keeps Where, Shot, Style and Extra, with versions and switched-off phrases. People are saved on their own."}{" "}
         Names never go into the prompt.
       </Note>

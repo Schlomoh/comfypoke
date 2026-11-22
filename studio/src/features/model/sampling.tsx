@@ -7,7 +7,6 @@ import { recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { Input, Labeled } from "@/ui/field";
 import { Section } from "@/ui/section";
-import { Note } from "@/ui/text";
 
 // Empty, zero or nonsense means "the default", the same rule the server applies to a missing value.
 const num = (v: string, whole = false) => {
@@ -22,6 +21,7 @@ export function SamplingSection() {
   return (
     <Section
       title="Sampling"
+      tip="Steps and CFG for this model. Empty uses the model's default."
       right={
         (recipe.steps != null || recipe.cfg != null) && (
           <Button variant="text" onClick={() => setRecipe((r) => ({ ...r, steps: null, cfg: null }))}>
@@ -56,7 +56,6 @@ export function SamplingSection() {
           />
         </Labeled>
       </div>
-      <Note>Empty uses the model's default.</Note>
     </Section>
   );
 }

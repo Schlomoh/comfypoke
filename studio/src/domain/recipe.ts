@@ -22,7 +22,8 @@ export type Person = {
 export type Scene = { name: string; savedId: string | null } & Record<SceneRow, Phrase[]>;
 /** Something one person does with another: the phrase is said of `from`, its them and their are `to`. */
 export type Interaction = Phrase & { from: string; to: string };
-export type StackLora = { name: string; strength: number; on: boolean };
+/** `from`: the saved character it came with (domain/loras.ts); none for the stack's own. */
+export type StackLora = { name: string; strength: number; on: boolean; from?: string };
 
 export const phrase = (t: string, versions: string[] = []): Phrase => ({
   id: crypto.randomUUID(),

@@ -117,11 +117,11 @@ function Passes() {
       title="Models"
       right={
         <Button variant="link" size="inline" onClick={() => setSaving(!saving)}>
-          {saving ? "done" : "save the Model tab"}
+          {saving ? "done" : "save Look as a setup"}
         </Button>
       }
     >
-      {saving && <SaveSetup placeholder="name the Model tab as it is" />}
+      {saving && <SaveSetup placeholder="name Look as it is" />}
       {c.mode === "dress" ? (
         <>
           <PassSelect

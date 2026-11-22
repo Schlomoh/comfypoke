@@ -57,7 +57,13 @@ export function PromptPreview() {
             )
           : "Add a phrase to a row to build the prompt."}
       </p>
-      {triggers.length > 0 && <Note>Starts with the trigger words of the active LoRAs.</Note>}
+      {(triggers.lead.length > 0 || Object.keys(triggers.of).length > 0) && (
+        <Note>
+          {triggers.lead.length > 0 && "Starts with the trigger words of the active LoRAs. "}
+          {Object.keys(triggers.of).length > 0 &&
+            "A character's LoRA trigger opens that person's description."}
+        </Note>
+      )}
     </section>
   );
 }

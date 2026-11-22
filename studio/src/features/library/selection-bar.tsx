@@ -13,7 +13,7 @@ import { notify } from "@/ui/notify";
 import { Note } from "@/ui/text";
 
 const upscaleLabel = ({ upscale: { megapixels, prompt } }: Recipe) =>
-  `Upscale to ${megapixels} MP${prompt.trim() ? `, touch-up "${prompt.trim()}"` : ""}, set in the Model tab`;
+  `Upscale to ${megapixels} MP${prompt.trim() ? `, touch-up "${prompt.trim()}"` : ""}, set in the dock`;
 
 export function SelectionBar({
   shown,

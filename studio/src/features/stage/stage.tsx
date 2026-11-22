@@ -133,7 +133,7 @@ function RenderBar({ render }: { render: Render }) {
       ) : (
         <Button
           onClick={() => void upscaleMany([render])}
-          title="Upscale with the settings in the Model tab (U)"
+          title="Upscale with the dock's upscale settings (U)"
           className="max-sm:hidden"
         >
           Upscale
@@ -164,7 +164,7 @@ export function Stage() {
       <div className="flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
         <Canvas job={job} render={render} loading={loading} />
       </div>
-      <div className="flex min-h-12 items-center gap-2 border-t border-line bg-panel px-3 py-1 font-mono text-xs">
+      <div className="flex min-h-12 items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs [scrollbar-width:none]">
         <Bar job={job} render={render} loading={loading} />
       </div>
     </div>
