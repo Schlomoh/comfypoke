@@ -9,7 +9,7 @@ import { wide } from "@/app/platform";
 import { toggleBest } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
 import { FIT } from "@/domain/view";
-import { BRUSH, brushAtom, eraseAtom, masksAtom } from "@/features/edit/state";
+import { BRUSH, brushAtom, masksAtom, toolAtom } from "@/features/edit/state";
 import { saveImage } from "@/features/library/files";
 import { useImageActions } from "@/state/actions";
 import {
@@ -72,7 +72,8 @@ export function useShortcuts(submit: () => void) {
       const view = store.get(viewAtom);
       const size = (f: number) =>
         store.set(brushAtom, Math.round(Math.min(BRUSH.max, Math.max(BRUSH.min, store.get(brushAtom) * f))));
-      if (editing && k === "x") return store.set(eraseAtom, !store.get(eraseAtom));
+      if (editing && k === "x")
+        return store.set(toolAtom, store.get(toolAtom) === "eraser" ? "brush" : "eraser");
       if (editing && k === "[") return size(1 / 1.25);
       if (editing && k === "]") return size(1.25);
       switch (k) {

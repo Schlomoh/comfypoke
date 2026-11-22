@@ -4,7 +4,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 
 import { drawOps, drawStroke, type Op } from "@/features/edit/mask";
-import { brushAtom } from "@/features/edit/state";
+import { brushAtom, toolAtom, type Tap } from "@/features/edit/state";
 import type { LayerHandle } from "@/features/edit/use-painter";
 
 const ALPHA = 0.55;
@@ -18,17 +18,20 @@ const canvas2d = (w: number, h: number) => {
 
 export function MaskLayer({
   ops,
+  taps,
   width,
   height,
   bind,
 }: {
   ops: Op[];
+  taps?: Tap[]; // points tapped for SAM, shown as dots until their area is kept
   width: number;
   height: number;
   bind: (h: LayerHandle | null) => void; // how the painter draws onto this layer
 }) {
   const shown = useRef<HTMLCanvasElement>(null);
   const brush = useAtomValue(brushAtom);
+  const tapping = useAtomValue(toolAtom) === "tap"; // no brush ring: a tap marks a point
   const size = useRef(brush); // read while drawing: a new size must not rebuild the mask
   useEffect(() => {
     size.current = brush;
@@ -56,8 +59,17 @@ export function MaskLayer({
       ctx.globalAlpha = ALPHA;
       ctx.drawImage(work.c, 0, 0);
       ctx.globalAlpha = 1;
-      if (!hover) return;
       const px = width / el.clientWidth; // canvas pixels per screen pixel
+      for (const t of taps ?? []) {
+        ctx.beginPath();
+        ctx.arc(t.at[0] * width, t.at[1] * height, 7 * px, 0, 2 * Math.PI);
+        ctx.fillStyle = t.not ? "rgba(0,0,0,0.6)" : "#fff";
+        ctx.fill();
+        ctx.lineWidth = 2 * px;
+        ctx.strokeStyle = t.not ? "#f87171" : "rgba(0,0,0,0.6)";
+        ctx.stroke();
+      }
+      if (!hover || tapping) return;
       ctx.beginPath();
       ctx.arc(hover[0] * width, hover[1] * height, (size.current / 2) * px, 0, 2 * Math.PI);
       ctx.lineWidth = 3 * px;
@@ -70,7 +82,7 @@ export function MaskLayer({
     bind({ redraw });
     redraw(null, null);
     return () => bind(null);
-  }, [ops, width, height, bind]);
+  }, [ops, taps, tapping, width, height, bind]);
 
   return (
     <canvas

@@ -5,8 +5,9 @@ import { useAtom, useAtomValue } from "jotai";
 import type { Render } from "@/domain/render";
 import type { Op } from "@/features/edit/mask";
 import { MaskLayer } from "@/features/edit/mask-layer";
-import { masksAtom, showBodyAtom } from "@/features/edit/state";
+import { masksAtom, showBodyAtom, tapsAtom } from "@/features/edit/state";
 import { usePainter } from "@/features/edit/use-painter";
+import { useTaps } from "@/features/edit/use-taps";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { useImageActions } from "@/state/actions";
 import { usePreview } from "@/state/preview";
@@ -21,6 +22,8 @@ export function EditCanvas({ render, url }: { render: Render; url: string }) {
   const body = usePreview(`body:${render.id}`);
   const showBody = useAtomValue(showBodyAtom) === render.id && !!body.url;
   const { paint, bind } = usePainter(render.id);
+  useTaps(render);
+  const taps = useAtomValue(tapsAtom)[render.id]?.points;
   return (
     <ZoomView
       src={showBody && body.url ? body.url : url}
@@ -29,7 +32,11 @@ export function EditCanvas({ render, url }: { render: Render; url: string }) {
       setView={setView}
       onSwipe={step}
       paint={showBody ? undefined : paint}
-      overlay={!showBody && <MaskLayer ops={ops} width={render.width} height={render.height} bind={bind} />}
+      overlay={
+        !showBody && (
+          <MaskLayer ops={ops} taps={taps} width={render.width} height={render.height} bind={bind} />
+        )
+      }
     />
   );
 }

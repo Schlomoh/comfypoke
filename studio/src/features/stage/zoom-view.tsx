@@ -27,7 +27,7 @@ const local = (e: PointerEvent<HTMLDivElement>): Point => {
 /** A point of the image as fractions of its width and height. */
 export type At = [number, number];
 export type Paint = {
-  start: (at: At, width: number) => void; // width: the image's on screen, in CSS pixels, for the brush's size
+  start: (at: At, width: number, alt: boolean) => void; // width: the image's on screen, in CSS pixels, for the brush's size; alt: Alt held
   move: (at: At) => void;
   end: () => void;
   cancel: () => void; // a second finger came down: that is a pinch, not a stroke
@@ -148,7 +148,7 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss, p
         pointers.current.set(e.pointerId, local(e));
         if (paint && nat.w && pointers.current.size === 1 && !space.current && e.button === 0) {
           painting.current = true;
-          paint.start(atImage(local(e)), w);
+          paint.start(atImage(local(e)), w, e.altKey);
           return;
         }
         if (painting.current) {

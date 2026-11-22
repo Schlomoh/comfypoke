@@ -102,6 +102,9 @@ export type ImageRef = { ref: string };
 const post = <T>(path: string, data?: unknown) =>
   call<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) });
 
+/** A point on an image in whole pixels, as SAM takes taps. */
+export type Pt = { x: number; y: number };
+
 export const api = {
   login: (key: string) => post<{ ok: true }>("/api/login", { key }),
   models: () => call<Catalog>("/api/models"),
@@ -109,7 +112,9 @@ export const api = {
   upscale: (u: UpscaleRequest) => post<Started>("/api/upscale", u),
   inpaint: (i: InpaintRequest) => post<Started>("/api/inpaint", i),
   body: (image: ImageRef) => post<Started>("/api/body", { image }), // the fitted body drawn over the picture
-  mask: (image: ImageRef, text: string) => post<Started>("/api/mask", { image, text }), // what SAM finds by text, white on black
+  /** What SAM finds by text, by tapped points (pixels) or both, white on black. */
+  mask: (image: ImageRef, text: string, points?: { positive: Pt[]; negative: Pt[] }) =>
+    post<Started>("/api/mask", { image, text, points }),
   putImage: (png: Blob) => call<ImageRef>("/api/images", { method: "POST", body: png }), // once per image, see data/images.ts
   cancel: (id: string) => post<unknown>(`/api/jobs/${id}/cancel`),
   // also cancels; keepalive so it survives a reload right after
