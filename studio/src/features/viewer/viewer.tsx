@@ -21,6 +21,7 @@ import { infoAtom, viewAtom, viewerAtom, viewerItemAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Modal } from "@/ui/modal";
+import { Pressable } from "@/ui/pressable";
 
 const MARK = "studioViewer"; // our entry in history.state
 const ours = () => !!(history.state as Record<string, unknown> | null)?.[MARK];
@@ -73,9 +74,15 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
       <LineageStrip render={render} />
       {/* below the row, not in it: beside the image on a wide screen it took the width and left the image none */}
       {!info && (
-        <p className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 font-mono text-xs text-muted">
+        // the prompt opens the info, as Info does: everything the image was made with
+        <Pressable
+          onClick={() => setInfo(true)}
+          title="Show everything it was made with"
+          className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 text-left font-mono text-xs text-muted hover:text-ink"
+        >
+          {render.draft && <span className="mr-1.5 bg-warn px-1 text-bg">draft</span>}
           {render.prompt}
-        </p>
+        </Pressable>
       )}
       <div className="flex shrink-0 gap-2 border-t border-line p-3 lg:border-t-0">
         <ImageActions render={render} fill />

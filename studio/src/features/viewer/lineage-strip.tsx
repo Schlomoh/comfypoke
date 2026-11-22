@@ -1,5 +1,6 @@
 // Under the image in the viewer: where it came from and what was made from it, as small tiles. A tap goes there;
-// Family shows the whole family in the library. Edit, Reuse and the rest then work from any step.
+// A ⑂ marks where the lineage splits: more than one image was made from that one. Edit, Reuse and the rest then work
+// from any step.
 import { useAtomValue, useSetAtom } from "jotai";
 
 import { useThumb } from "@/data/db/renders";
@@ -11,19 +12,35 @@ import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
 
-function Step({ r, current, onOpen }: { r: Render; current: boolean; onOpen: () => void }) {
+/** `branches`: how many images were made from this one; more than one is where the lineage splits. */
+function Step({
+  r,
+  current,
+  branches = 0,
+  onOpen,
+}: {
+  r: Render;
+  current: boolean;
+  branches?: number;
+  onOpen: () => void;
+}) {
   const url = useThumb(r.id);
   return (
     <Pressable
       onClick={onOpen}
       aria-current={current}
-      title={kindOf(r) ?? "render"}
+      title={`${kindOf(r) ?? "render"}${branches > 1 ? `, ${branches} made from it` : ""}`}
       className={cn(
         "relative size-12 shrink-0 border bg-panel",
         current ? "border-ink" : "border-line opacity-80",
       )}
     >
       {url && <img src={url} alt="" className="size-full object-cover" />}
+      {branches > 1 && (
+        <span className="absolute top-0 right-0 bg-warn px-0.5 font-mono text-[9px] leading-3 text-bg">
+          ⑂{branches}
+        </span>
+      )}
       <span className="absolute inset-x-0 bottom-0 truncate bg-bg/80 px-0.5 font-mono text-[9px] leading-3 text-ink">
         {kindOf(r) ?? "render"}
       </span>
@@ -48,7 +65,12 @@ export function LineageStrip({ render }: { render: Render }) {
               →
             </span>
           )}
-          <Step r={r} current={r.id === render.id} onOpen={() => open(r.id)} />
+          <Step
+            r={r}
+            current={r.id === render.id}
+            branches={all.filter((x) => x.source === r.id).length}
+            onOpen={() => open(r.id)}
+          />
         </div>
       ))}
       {children.length > 0 && (

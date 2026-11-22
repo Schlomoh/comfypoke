@@ -109,9 +109,6 @@ function RunningBar({ job }: { job: Job }) {
 function RenderBar({ render }: { render: Render }) {
   return (
     <>
-      <div className="hidden sm:block">
-        <ZoomBar />
-      </div>
       {/* on a phone the settings are in More; the bar keeps room for the buttons */}
       <span className="min-w-0 flex-1 truncate text-faint max-sm:hidden" title={describe(render)}>
         {render.characterName && <span className="text-muted">{render.characterName} · </span>}
@@ -139,8 +136,14 @@ export function Stage() {
   const loading = useAtomValue(rendersAtom) === undefined; // the workspace's renders are still being decrypted
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
         <Canvas job={job} render={render} loading={loading} />
+        {/* the framing sits on the canvas, out of the bar's way */}
+        {render && !job && (
+          <div className="absolute top-1 right-1 z-10 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]">
+            <ZoomBar />
+          </div>
+        )}
       </div>
       <div className="flex min-h-12 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs">
         <Bar job={job} render={render} loading={loading} />

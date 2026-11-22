@@ -1,19 +1,18 @@
 // What can be done with one image, the same under the stage and in the viewer: the two or three things its kind is for,
-// labeled, and the rest under "More" with the settings it was made with. Upscale is always the first: the same
+// labeled, and the rest in a menu under "⋯"; the settings it was made with are in the viewer's info. Upscale is always the first: the same
 // picture, bigger. A draft's second is Re-render (full size, same seed), anything else's is Edit.
-import { useState } from "react";
+import { useAtomValue } from "jotai";
 
 import { useSpace } from "@/data/db/space";
-import { describe } from "@/domain/format";
 import type { Render } from "@/domain/render";
 import { BestButton } from "@/features/library/best-button";
 import { saveImage } from "@/features/library/files";
 import { useImageActions } from "@/state/actions";
 import { useGenerate } from "@/state/generate";
+import { recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
-import { Sheet } from "@/ui/modal";
-import { Note } from "@/ui/text";
+import { MenuItem, Popover } from "@/ui/popover";
 
 /** Render a draft again at the dock's size with the same seed: sharper than an upscale, though the composition may
  * shift. An upscale keeps the picture exactly. */
@@ -31,64 +30,66 @@ function Rerender({ render, className }: { render: Render; className?: string })
   );
 }
 
-function More({ render, open, onClose }: { render: Render; open: boolean; onClose: () => void }) {
+/** Upscale asks first: it is a GPU job of its own, and the size and touch-up come from the dock, out of sight here. */
+function UpscaleConfirm({ render, className }: { render: Render; className?: string }) {
+  const { upscaleMany } = useImageActions();
+  const { megapixels, prompt } = useAtomValue(recipeAtom).upscale;
+  return (
+    <Popover
+      trigger="Upscale"
+      align="start"
+      className={className}
+      title="Upscale: this picture exactly, bigger (U)"
+    >
+      <p className="px-3 py-2 text-xs text-muted">
+        This picture at {megapixels} MP
+        {prompt.trim() ? `, touched up: “${prompt.trim()}”` : ", as it is"}. Set in the dock under + then.
+      </p>
+      <MenuItem onClick={() => void upscaleMany([render])} className="text-ink">
+        Upscale
+      </MenuItem>
+      <MenuItem>Cancel</MenuItem>
+    </Popover>
+  );
+}
+
+function More({ render }: { render: Render }) {
   const space = useSpace();
   const { reuse, edit, remove } = useImageActions();
-  const run = (f: () => unknown) => () => {
-    onClose();
-    void f();
-  };
   return (
-    <Sheet open={open} onClose={onClose} title="This image">
-      <Note mono>
-        {render.characterName && `${render.characterName} · `}
-        {describe(render)} · {render.seconds}s
-      </Note>
-      <div className="grid grid-cols-2 gap-2">
-        <Button onClick={run(() => reuse(render))} disabled={!!render.uploaded}>
-          Reuse settings
-        </Button>
-        <Button onClick={run(() => saveImage(space, render))}>Save to device</Button>
-        {render.draft && <Button onClick={run(() => edit(render))}>Edit</Button>}
-        <Button variant="danger" onClick={run(() => remove(render))} className="col-span-2">
-          Delete
-        </Button>
-      </div>
-      {render.uploaded && <Note>A photo has no recipe to reuse.</Note>}
-    </Sheet>
+    <Popover trigger="⋯" aria-label="More: reuse, save, delete" className="w-12 shrink-0">
+      <MenuItem onClick={() => reuse(render)} disabled={!!render.uploaded}>
+        Reuse settings
+      </MenuItem>
+      <MenuItem onClick={() => void saveImage(space, render)}>Save to device</MenuItem>
+      {render.draft && <MenuItem onClick={() => edit(render)}>Edit</MenuItem>}
+      <MenuItem onClick={() => void remove(render)} className="text-bad">
+        Delete
+      </MenuItem>
+    </Popover>
   );
 }
 
 /** `fill`: the buttons share the row's width (a phone, the viewer). */
 export function ImageActions({ render, fill }: { render: Render; fill?: boolean }) {
-  const { edit, upscaleMany } = useImageActions();
-  const [more, setMore] = useState(false);
-  const grow = cn(fill && "min-w-0 flex-1");
+  const { edit } = useImageActions();
+  const wide = cn(fill && "min-w-0 flex-1");
   return (
     <>
       <BestButton render={render} className="w-12 shrink-0" />
-      <Button
-        className={grow}
-        onClick={() => void upscaleMany([render])}
-        title="Upscale: this picture exactly, bigger, with the dock's upscale settings (U)"
-      >
-        Upscale
-      </Button>
+      <UpscaleConfirm render={render} className={wide} />
       {render.draft ? (
-        <Rerender render={render} className={grow} />
+        <Rerender render={render} className={wide} />
       ) : (
         <Button
-          className={grow}
+          className={wide}
           onClick={() => edit(render)}
           title="Edit it on the stage: find, paint, dress or repaint (E)"
         >
           Edit
         </Button>
       )}
-      <Button onClick={() => setMore(true)} aria-label="More: reuse, save, delete" className="w-12 shrink-0">
-        ⋯
-      </Button>
-      <More render={render} open={more} onClose={() => setMore(false)} />
+      <More render={render} />
     </>
   );
 }

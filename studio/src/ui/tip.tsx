@@ -4,9 +4,9 @@
 import { useId, useRef, type ReactNode } from "react";
 
 import { cn } from "@/ui/cn";
+import { placeBelow } from "@/ui/place";
 
 const WIDTH = 288; // px, 18rem
-const GAP = 6;
 
 export function Tip({
   children,
@@ -20,15 +20,7 @@ export function Tip({
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
-  const place = () => {
-    const t = trigger.current?.getBoundingClientRect();
-    const p = pop.current;
-    if (!t || !p) return;
-    const left = Math.min(Math.max(8, t.left + t.width / 2 - WIDTH / 2), window.innerWidth - WIDTH - 8);
-    const below = t.bottom + GAP + p.offsetHeight < window.innerHeight;
-    p.style.left = `${left}px`;
-    p.style.top = below ? `${t.bottom + GAP}px` : `${Math.max(8, t.top - GAP - p.offsetHeight)}px`;
-  };
+  const place = () => placeBelow(trigger.current, pop.current);
   const isOpen = () => !!pop.current?.matches(":popover-open");
   const hovered = useRef(false); // opened by the mouse resting on it: the click that follows keeps it open
   const wasOpen = useRef(false); // open when pressed: the press itself closed it (a tap outside, to the popover)

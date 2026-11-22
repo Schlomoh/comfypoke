@@ -1,6 +1,6 @@
 // The one clickable control. Sizes follow the pointer: 44px for a finger, compact for a mouse.
 import { cva, type VariantProps } from "class-variance-authority";
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 import { cn } from "@/ui/cn";
 
@@ -34,7 +34,8 @@ const button = cva(
   },
 );
 
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof button>;
+export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  VariantProps<typeof button> & { ref?: Ref<HTMLButtonElement> };
 
 export function Button({ variant, size, className, type = "button", ...props }: ButtonProps) {
   return <button type={type} {...props} className={cn(button({ variant, size }), className)} />;
