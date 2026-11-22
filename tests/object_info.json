@@ -1,0 +1,2220 @@
+{
+ "CLIPLoader": {
+  "input": {
+   "optional": {
+    "device": [
+     [
+      "default",
+      "cpu"
+     ],
+     {
+      "advanced": true
+     }
+    ]
+   },
+   "required": {
+    "clip_name": [
+     [
+      "qwen3vl_4b_bf16.safetensors",
+      "qwen_3_4b.safetensors",
+      "qwen_3_8b.safetensors"
+     ]
+    ],
+    "type": [
+     [
+      "stable_diffusion",
+      "stable_cascade",
+      "sd3",
+      "stable_audio",
+      "mochi",
+      "ltxv",
+      "pixart",
+      "cosmos",
+      "lumina2",
+      "wan",
+      "hidream",
+      "chroma",
+      "ace",
+      "omnigen2",
+      "qwen_image",
+      "hunyuan_image",
+      "flux2",
+      "ovis",
+      "longcat_image",
+      "cogvideox",
+      "lens",
+      "pixeldit",
+      "ideogram4",
+      "boogu",
+      "krea2",
+      "joyimage",
+      "mage",
+      "minimax",
+      "yue2"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "CLIP"
+  ],
+  "output_name": [
+   "CLIP"
+  ]
+ },
+ "CLIPTextEncode": {
+  "input": {
+   "required": {
+    "clip": [
+     "CLIP",
+     {
+      "tooltip": "The CLIP model used for encoding the text."
+     }
+    ],
+    "text": [
+     "STRING",
+     {
+      "dynamicPrompts": true,
+      "multiline": true,
+      "tooltip": "The text to be encoded."
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ]
+ },
+ "CheckpointLoaderSimple": {
+  "input": {
+   "required": {
+    "ckpt_name": [
+     [
+      "sam3.1_multiplex_fp16.safetensors"
+     ],
+     {
+      "tooltip": "The name of the checkpoint (model) to load."
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL",
+   "CLIP",
+   "VAE"
+  ],
+  "output_name": [
+   "MODEL",
+   "CLIP",
+   "VAE"
+  ]
+ },
+ "ConditioningZeroOut": {
+  "input": {
+   "required": {
+    "conditioning": [
+     "CONDITIONING"
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ]
+ },
+ "EmptyLatentImage": {
+  "input": {
+   "required": {
+    "batch_size": [
+     "INT",
+     {
+      "default": 1,
+      "max": 4096,
+      "min": 1,
+      "tooltip": "The number of latent images in the batch."
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 1024,
+      "max": 16384,
+      "min": 16,
+      "step": 8,
+      "tooltip": "The height of the latent images in pixels."
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 1024,
+      "max": 16384,
+      "min": 16,
+      "step": 8,
+      "tooltip": "The width of the latent images in pixels."
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "EmptySD3LatentImage": {
+  "input": {
+   "required": {
+    "batch_size": [
+     "INT",
+     {
+      "default": 1,
+      "max": 4096,
+      "min": 1
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 1024,
+      "max": 16384,
+      "min": 16,
+      "step": 16
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 1024,
+      "max": 16384,
+      "min": 16,
+      "step": 16
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "GrowMask": {
+  "input": {
+   "required": {
+    "expand": [
+     "INT",
+     {
+      "default": 0,
+      "max": 16384,
+      "min": -16384,
+      "step": 1
+     }
+    ],
+    "mask": [
+     "MASK",
+     {}
+    ],
+    "tapered_corners": [
+     "BOOLEAN",
+     {
+      "advanced": true,
+      "default": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "MASK"
+  ],
+  "output_name": [
+   "MASK"
+  ]
+ },
+ "ImageScaleToTotalPixels": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE",
+     {}
+    ],
+    "megapixels": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 16.0,
+      "min": 0.01,
+      "step": 0.01
+     }
+    ],
+    "resolution_steps": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 1,
+      "max": 256,
+      "min": 1
+     }
+    ],
+    "upscale_method": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "nearest-exact",
+       "bilinear",
+       "area",
+       "bicubic",
+       "lanczos"
+      ]
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
+ "ImageToMask": {
+  "input": {
+   "required": {
+    "channel": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "red",
+       "green",
+       "blue",
+       "alpha"
+      ]
+     }
+    ],
+    "image": [
+     "IMAGE",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "MASK"
+  ],
+  "output_name": [
+   "MASK"
+  ]
+ },
+ "InpaintCropImproved": {
+  "input": {
+   "optional": {
+    "mask": [
+     "MASK"
+    ],
+    "optional_context_mask": [
+     "MASK"
+    ]
+   },
+   "required": {
+    "context_from_mask_extend_factor": [
+     "FLOAT",
+     {
+      "default": 1.2,
+      "max": 100.0,
+      "min": 1.0,
+      "step": 0.01,
+      "tooltip": "Grow the context area from the mask by a certain factor in every direction. For example, 1.5 grabs extra 50% up, down, left, and right as context."
+     }
+    ],
+    "device_mode": [
+     [
+      "cpu (compatible)",
+      "gpu (much faster)"
+     ],
+     {
+      "default": "cpu (compatible)"
+     }
+    ],
+    "downscale_algorithm": [
+     [
+      "nearest",
+      "bilinear",
+      "bicubic",
+      "lanczos",
+      "box",
+      "hamming"
+     ],
+     {
+      "default": "bilinear"
+     }
+    ],
+    "extend_down_factor": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 100.0,
+      "min": 0.01,
+      "step": 0.01
+     }
+    ],
+    "extend_for_outpainting": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "tooltip": "Extend the image for outpainting."
+     }
+    ],
+    "extend_left_factor": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 100.0,
+      "min": 0.01,
+      "step": 0.01
+     }
+    ],
+    "extend_right_factor": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 100.0,
+      "min": 0.01,
+      "step": 0.01
+     }
+    ],
+    "extend_up_factor": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 100.0,
+      "min": 0.01,
+      "step": 0.01
+     }
+    ],
+    "image": [
+     "IMAGE"
+    ],
+    "mask_blend_pixels": [
+     "INT",
+     {
+      "default": 32,
+      "max": 256,
+      "min": 0,
+      "step": 1,
+      "tooltip": "How many pixels to blend into the original image."
+     }
+    ],
+    "mask_expand_pixels": [
+     "INT",
+     {
+      "default": 0,
+      "max": 16384,
+      "min": 0,
+      "step": 1,
+      "tooltip": "Expand the mask by a certain amount of pixels before processing."
+     }
+    ],
+    "mask_fill_holes": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "tooltip": "Mark as masked any areas fully enclosed by mask."
+     }
+    ],
+    "mask_hipass_filter": [
+     "FLOAT",
+     {
+      "default": 0.1,
+      "max": 1,
+      "min": 0,
+      "step": 0.01,
+      "tooltip": "Ignore mask values lower than this value."
+     }
+    ],
+    "mask_invert": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "tooltip": "Invert mask so that anything masked will be kept."
+     }
+    ],
+    "output_padding": [
+     [
+      "0",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128",
+      "256",
+      "512"
+     ],
+     {
+      "default": "32"
+     }
+    ],
+    "output_resize_to_target_size": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "tooltip": "Force a specific resolution for sampling."
+     }
+    ],
+    "output_target_height": [
+     "INT",
+     {
+      "default": 512,
+      "max": 16384,
+      "min": 64,
+      "step": 1
+     }
+    ],
+    "output_target_width": [
+     "INT",
+     {
+      "default": 512,
+      "max": 16384,
+      "min": 64,
+      "step": 1
+     }
+    ],
+    "preresize": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "tooltip": "Resize the original image before processing."
+     }
+    ],
+    "preresize_max_height": [
+     "INT",
+     {
+      "default": 16384,
+      "max": 16384,
+      "min": 0,
+      "step": 1
+     }
+    ],
+    "preresize_max_width": [
+     "INT",
+     {
+      "default": 16384,
+      "max": 16384,
+      "min": 0,
+      "step": 1
+     }
+    ],
+    "preresize_min_height": [
+     "INT",
+     {
+      "default": 1024,
+      "max": 16384,
+      "min": 0,
+      "step": 1
+     }
+    ],
+    "preresize_min_width": [
+     "INT",
+     {
+      "default": 1024,
+      "max": 16384,
+      "min": 0,
+      "step": 1
+     }
+    ],
+    "preresize_mode": [
+     [
+      "ensure minimum resolution",
+      "ensure maximum resolution",
+      "ensure minimum and maximum resolution"
+     ],
+     {
+      "default": "ensure minimum resolution"
+     }
+    ],
+    "upscale_algorithm": [
+     [
+      "nearest",
+      "bilinear",
+      "bicubic",
+      "lanczos",
+      "box",
+      "hamming"
+     ],
+     {
+      "default": "bicubic"
+     }
+    ]
+   }
+  },
+  "output": [
+   "STITCHER",
+   "IMAGE",
+   "MASK"
+  ],
+  "output_name": [
+   "stitcher",
+   "cropped_image",
+   "cropped_mask"
+  ]
+ },
+ "InpaintStitchImproved": {
+  "input": {
+   "required": {
+    "inpainted_image": [
+     "IMAGE"
+    ],
+    "stitcher": [
+     "STITCHER"
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "image"
+  ]
+ },
+ "KSampler": {
+  "input": {
+   "required": {
+    "cfg": [
+     "FLOAT",
+     {
+      "default": 8.0,
+      "max": 100.0,
+      "min": 0.0,
+      "round": 0.01,
+      "step": 0.1,
+      "tooltip": "The Classifier-Free Guidance scale balances creativity and adherence to the prompt. Higher values result in images more closely matching the prompt however too high values will negatively impact quality."
+     }
+    ],
+    "denoise": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 1.0,
+      "min": 0.0,
+      "step": 0.01,
+      "tooltip": "The amount of denoising applied, lower values will maintain the structure of the initial image allowing for image to image sampling."
+     }
+    ],
+    "latent_image": [
+     "LATENT",
+     {
+      "tooltip": "The latent image to denoise."
+     }
+    ],
+    "model": [
+     "MODEL",
+     {
+      "tooltip": "The model used for denoising the input latent."
+     }
+    ],
+    "negative": [
+     "CONDITIONING",
+     {
+      "tooltip": "The conditioning describing the attributes you want to exclude from the image."
+     }
+    ],
+    "positive": [
+     "CONDITIONING",
+     {
+      "tooltip": "The conditioning describing the attributes you want to include in the image."
+     }
+    ],
+    "sampler_name": [
+     [
+      "euler",
+      "euler_cfg_pp",
+      "euler_ancestral",
+      "euler_ancestral_cfg_pp",
+      "heun",
+      "heunpp2",
+      "exp_heun_2_x0",
+      "exp_heun_2_x0_sde",
+      "dpm_2",
+      "dpm_2_ancestral",
+      "lms",
+      "dpm_fast",
+      "dpm_adaptive",
+      "dpmpp_2s_ancestral",
+      "dpmpp_2s_ancestral_cfg_pp",
+      "dpmpp_sde",
+      "dpmpp_sde_gpu",
+      "dpmpp_2m",
+      "dpmpp_2m_cfg_pp",
+      "dpmpp_2m_sde",
+      "dpmpp_2m_sde_gpu",
+      "dpmpp_2m_sde_heun",
+      "dpmpp_2m_sde_heun_gpu",
+      "dpmpp_3m_sde",
+      "dpmpp_3m_sde_gpu",
+      "ddpm",
+      "lcm",
+      "ipndm",
+      "ipndm_v",
+      "deis",
+      "cfgpp_ud10_ab",
+      "res_multistep",
+      "res_multistep_cfg_pp",
+      "res_multistep_ancestral",
+      "res_multistep_ancestral_cfg_pp",
+      "gradient_estimation",
+      "gradient_estimation_cfg_pp",
+      "er_sde",
+      "seeds_2",
+      "seeds_3",
+      "sa_solver",
+      "sa_solver_pece",
+      "ddim",
+      "uni_pc",
+      "uni_pc_bh2"
+     ],
+     {
+      "tooltip": "The algorithm used when sampling, this can affect the quality, speed, and style of the generated output."
+     }
+    ],
+    "scheduler": [
+     [
+      "simple",
+      "sgm_uniform",
+      "karras",
+      "exponential",
+      "ddim_uniform",
+      "beta",
+      "normal",
+      "linear_quadratic",
+      "kl_optimal"
+     ],
+     {
+      "tooltip": "The scheduler controls how noise is gradually removed to form the image."
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "control_after_generate": true,
+      "default": 0,
+      "max": 18446744073709551615,
+      "min": 0,
+      "tooltip": "The random seed used for creating the noise."
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 20,
+      "max": 10000,
+      "min": 1,
+      "tooltip": "The number of steps used in the denoising process."
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "Krea2EditGroundedEncode": {
+  "input": {
+   "optional": {
+    "grounding_px": [
+     "INT",
+     {
+      "default": 768,
+      "max": 4096,
+      "min": 0,
+      "step": 64,
+      "tooltip": "cap longest side fed to Qwen3-VL; 0 = native"
+     }
+    ],
+    "image": [
+     "IMAGE"
+    ],
+    "image_b": [
+     "IMAGE",
+     {
+      "tooltip": "2nd reference (subject) for multi-ref LoRAs; vision blocks in training order: scene, subject"
+     }
+    ],
+    "system_prompt": [
+     "STRING",
+     {
+      "default": "",
+      "multiline": true,
+      "tooltip": "advanced (optional): override the grounding system prompt (empty = training default). Steers what the vision encoder attends to, e.g. facial identity detail."
+     }
+    ]
+   },
+   "required": {
+    "clip": [
+     "CLIP"
+    ],
+    "prompt": [
+     "STRING",
+     {
+      "default": "",
+      "multiline": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ]
+ },
+ "Krea2EditModelPatch": {
+  "input": {
+   "optional": {
+    "fit_mode": [
+     [
+      "fit",
+      "crop (legacy)"
+     ],
+     {
+      "default": "fit",
+      "tooltip": "how an image source fits a mismatched output aspect ratio (needs vae + source_image connected): fit = resample the source to the target grid at a centered offset \u2014 matches how this model was trained (default, use this); crop (legacy) = center-crop to the target AR then resize (v1/v1.1 geometry, only for older weights)"
+     }
+    ],
+    "ref_boost": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 1000.0,
+      "min": 0.0,
+      "round": 0.001,
+      "step": 0.01,
+      "tooltip": "reference-fidelity dial: multiplies target->reference attention. Applies to the LAST ref (= the subject in two-ref workflows, the only ref in single-ref). 1.0 = off, >1 pulls harder toward the reference's appearance, <1 loosens. Optimal value is model-specific"
+     }
+    ],
+    "ref_boost_a": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 1000.0,
+      "min": 0.0,
+      "round": 0.001,
+      "step": 0.01,
+      "tooltip": "same dial for the FIRST ref (= the scene in two-ref workflows). No effect in single-ref workflows. 1.0 = off"
+     }
+    ],
+    "ref_boost_mask": [
+     "MASK",
+     {
+      "tooltip": "optional region on the (last) reference to boost, e.g. the face; empty = whole reference"
+     }
+    ],
+    "source_image": [
+     "IMAGE",
+     {
+      "tooltip": "source as IMAGE (with vae connected): overrides source_latent with exact pixel-space fitting \u2014 fixes blurry results from mismatched resolutions"
+     }
+    ],
+    "source_image_b": [
+     "IMAGE",
+     {
+      "tooltip": "2nd reference as IMAGE (with vae)"
+     }
+    ],
+    "source_latent_b": [
+     "LATENT",
+     {
+      "tooltip": "2nd reference (subject photo) for multi-ref LoRAs -> RoPE frame=2, training-matched order: scene first, subject second"
+     }
+    ],
+    "vae": [
+     "VAE",
+     {
+      "tooltip": "RECOMMENDED with source_image: enables the blur-proof pixel-space path (crop+resize in pixels, encode internally) \u2014 immune to input/output resolution mismatches"
+     }
+    ]
+   },
+   "required": {
+    "model": [
+     "MODEL"
+    ],
+    "source_latent": [
+     "LATENT"
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ]
+ },
+ "LanPaint_KSampler": {
+  "input": {
+   "hidden": {
+    "LanPaint_MinStepFrac": "DEFAULT"
+   },
+   "required": {
+    "Inpainting_mode": [
+     [
+      "\ud83d\uddbc\ufe0f Image Inpainting",
+      "\ud83c\udfac Video Inpainting"
+     ],
+     {
+      "default": "\ud83d\uddbc\ufe0f Image Inpainting",
+      "tooltip": "Choose Image mode for photos or Video mode for video frames with temporal consistency"
+     }
+    ],
+    "LanPaint_Info": [
+     "STRING",
+     {
+      "default": "LanPaint KSampler.",
+      "tooltip": "For more info, visit https://github.com/scraed/LanPaint. If you find it useful, please give a star \u2b50\ufe0f!"
+     }
+    ],
+    "LanPaint_NumSteps": [
+     "INT",
+     {
+      "default": 5,
+      "max": 100,
+      "min": 0,
+      "tooltip": "The number of steps for the Langevin dynamics, representing the turns of thinking per step."
+     }
+    ],
+    "LanPaint_PromptMode": [
+     [
+      "Image First",
+      "Prompt First"
+     ],
+     {
+      "tooltip": "Image First: emphasis image quality, Prompt First: emphasis prompt following"
+     }
+    ],
+    "cfg": [
+     "FLOAT",
+     {
+      "default": 5.0,
+      "max": 100.0,
+      "min": 0.0,
+      "round": 0.01,
+      "step": 0.1,
+      "tooltip": "The Classifier-Free Guidance scale balances creativity and adherence to the prompt. Higher values result in images more closely matching the prompt however too high values will negatively impact quality."
+     }
+    ],
+    "denoise": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 1.0,
+      "min": 0.0,
+      "step": 0.01,
+      "tooltip": "The amount of denoising applied, lower values will maintain the structure of the initial image allowing for image to image sampling."
+     }
+    ],
+    "latent_image": [
+     "LATENT",
+     {
+      "tooltip": "The latent image to denoise."
+     }
+    ],
+    "model": [
+     "MODEL",
+     {
+      "tooltip": "The model used for denoising the input latent."
+     }
+    ],
+    "negative": [
+     "CONDITIONING",
+     {
+      "tooltip": "The conditioning describing the attributes you want to exclude from the image."
+     }
+    ],
+    "positive": [
+     "CONDITIONING",
+     {
+      "tooltip": "The conditioning describing the attributes you want to include in the image."
+     }
+    ],
+    "sampler_name": [
+     [
+      "euler",
+      "euler_ancestral",
+      "heun",
+      "heunpp2",
+      "dpm_2",
+      "dpm_2_ancestral",
+      "dpm_fast",
+      "dpmpp_sde",
+      "dpmpp_sde_gpu",
+      "dpmpp_2m",
+      "dpmpp_2m_sde",
+      "dpmpp_2m_sde_gpu",
+      "dpmpp_3m_sde",
+      "dpmpp_3m_sde_gpu",
+      "ddpm",
+      "deis",
+      "res_multistep",
+      "res_multistep_ancestral",
+      "gradient_estimation",
+      "er_sde",
+      "seeds_2",
+      "seeds_3"
+     ],
+     {
+      "tooltip": "Recommended: euler."
+     }
+    ],
+    "scheduler": [
+     [
+      "simple",
+      "sgm_uniform",
+      "karras",
+      "exponential",
+      "ddim_uniform",
+      "beta",
+      "normal",
+      "linear_quadratic",
+      "kl_optimal"
+     ],
+     {
+      "default": "karras",
+      "tooltip": "The scheduler controls how noise is gradually removed to form the image."
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "default": 0,
+      "max": 18446744073709551615,
+      "min": 0,
+      "tooltip": "The random seed used for creating the noise."
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 30,
+      "max": 10000,
+      "min": 1,
+      "tooltip": "The number of steps used in the denoising process."
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "LoraLoaderModelOnly": {
+  "input": {
+   "required": {
+    "lora_name": [
+     [
+      "Emotions V1.safetensors",
+      "Krea2_TextFusion_Refusal_Reduction.safetensors",
+      "Mystic-XXX-ZIT-V7.safetensors",
+      "PornMaster_Age_Slider_Krea2_V1.safetensors",
+      "Z-Breast-Slider.safetensors",
+      "Z-Detail-Slider.safetensors",
+      "ZITnsfwLoRAv3.safetensors",
+      "add-detail-xl.safetensors",
+      "ass_v2_krea2_loraholic.safetensors",
+      "bfs_head_swap_v1.1_krea2.safetensors",
+      "candid_krea2_loraholic.safetensors",
+      "check_dummy_2cd2c410.safetensors",
+      "check_dummy_57f422d3.safetensors",
+      "check_dummy_7ad8a66a.safetensors",
+      "check_dummy_a5e567b3.safetensors",
+      "flaccid_erect_krea2_loraholic.safetensors",
+      "klein_snofs_v1_4.safetensors",
+      "krea2-bloomgirls-realism-step00004000.safetensors",
+      "krea2_style_reference.safetensors",
+      "krea2_turbo_openpose_controlnet.safetensors",
+      "mons_pubis_krea2_loraholic.safetensors",
+      "nicegirls_krea2.safetensors",
+      "realism_engine_krea2_v3.1.safetensors",
+      "small_p4_000003000.safetensors"
+     ]
+    ],
+    "model": [
+     "MODEL"
+    ],
+    "strength_model": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 100.0,
+      "min": -100.0,
+      "step": 0.01
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ]
+ },
+ "MaskToImage": {
+  "input": {
+   "required": {
+    "mask": [
+     "MASK",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
+ "ModelPatchLoader": {
+  "input": {
+   "required": {
+    "name": [
+     [
+      "Z-Image-Turbo-Fun-Controlnet-Union-2.1-2602-8steps.safetensors"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "MODEL_PATCH"
+  ],
+  "output_name": [
+   "MODEL_PATCH"
+  ]
+ },
+ "ModelSamplingAuraFlow": {
+  "input": {
+   "optional": {
+    "sampling": [
+     [
+      "flow",
+      "img_to_img_velocity"
+     ],
+     {
+      "advanced": true,
+      "default": "flow"
+     }
+    ]
+   },
+   "required": {
+    "model": [
+     "MODEL"
+    ],
+    "shift": [
+     "FLOAT",
+     {
+      "default": 1.73,
+      "max": 100.0,
+      "min": 0.0,
+      "step": 0.01
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ]
+ },
+ "RTDETR_detect": {
+  "input": {
+   "required": {
+    "class_name": [
+     "COMBO",
+     {
+      "default": "all",
+      "multiselect": false,
+      "options": [
+       "all",
+       "person",
+       "bicycle",
+       "car",
+       "motorcycle",
+       "airplane",
+       "bus",
+       "train",
+       "truck",
+       "boat",
+       "traffic light",
+       "fire hydrant",
+       "stop sign",
+       "parking meter",
+       "bench",
+       "bird",
+       "cat",
+       "dog",
+       "horse",
+       "sheep",
+       "cow",
+       "elephant",
+       "bear",
+       "zebra",
+       "giraffe",
+       "backpack",
+       "umbrella",
+       "handbag",
+       "tie",
+       "suitcase",
+       "frisbee",
+       "skis",
+       "snowboard",
+       "sports ball",
+       "kite",
+       "baseball bat",
+       "baseball glove",
+       "skateboard",
+       "surfboard",
+       "tennis racket",
+       "bottle",
+       "wine glass",
+       "cup",
+       "fork",
+       "knife",
+       "spoon",
+       "bowl",
+       "banana",
+       "apple",
+       "sandwich",
+       "orange",
+       "broccoli",
+       "carrot",
+       "hot dog",
+       "pizza",
+       "donut",
+       "cake",
+       "chair",
+       "couch",
+       "potted plant",
+       "bed",
+       "dining table",
+       "toilet",
+       "tv",
+       "laptop",
+       "mouse",
+       "remote",
+       "keyboard",
+       "cell phone",
+       "microwave",
+       "oven",
+       "toaster",
+       "sink",
+       "refrigerator",
+       "book",
+       "clock",
+       "vase",
+       "scissors",
+       "teddy bear",
+       "hair drier",
+       "toothbrush"
+      ],
+      "tooltip": "Filter detections by class. Set to 'all' to disable filtering."
+     }
+    ],
+    "image": [
+     "IMAGE",
+     {
+      "display_name": "image"
+     }
+    ],
+    "max_detections": [
+     "INT",
+     {
+      "default": 100,
+      "display_name": "max_detections",
+      "tooltip": "Maximum number of detections to return per image. In order of descending confidence score."
+     }
+    ],
+    "model": [
+     "MODEL",
+     {
+      "display_name": "model"
+     }
+    ],
+    "threshold": [
+     "FLOAT",
+     {
+      "default": 0.5,
+      "display_name": "threshold"
+     }
+    ]
+   }
+  },
+  "output": [
+   "BOUNDING_BOX"
+  ],
+  "output_name": [
+   "bboxes"
+  ]
+ },
+ "SAM3DBody_Loader": {
+  "input": {
+   "required": {
+    "model_file": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "sam_3d_body_dinov3_bf16.safetensors"
+      ]
+     }
+    ]
+   }
+  },
+  "output": [
+   "SAM3D_BODY_MODEL"
+  ],
+  "output_name": [
+   "sam3d_body_model"
+  ]
+ },
+ "SAM3DBody_Predict": {
+  "input": {
+   "optional": {
+    "bboxes": [
+     "BOUNDING_BOX",
+     {
+      "default": {
+       "height": 512,
+       "width": 512,
+       "x": 0,
+       "y": 0
+      },
+      "forceInput": true,
+      "socketless": true,
+      "tooltip": "Per-frame bounding boxes used for better detection. Can be used as an alternative to tracking data. "
+     }
+    ],
+    "track_data": [
+     "SAM3_TRACK_DATA",
+     {
+      "tooltip": "Tracking data from SAM3 Video Track, required for multi-person detection"
+     }
+    ]
+   },
+   "required": {
+    "batch_size": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 64,
+      "max": 512,
+      "min": 1,
+      "step": 1,
+      "tooltip": "Max person crops to process as a batch. Larger values use more VRAM for faster inference."
+     }
+    ],
+    "fov": [
+     "FLOAT",
+     {
+      "advanced": true,
+      "tooltip": "Vertical FoV in degrees. Affects predicted depth and absolute scale. 0 = fall back to ~53\u00b0 (16:9)."
+     }
+    ],
+    "image": [
+     "IMAGE",
+     {}
+    ],
+    "run_hand_refinement": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "tooltip": "Improves hand pose at the cost of extra inference time and memory use"
+     }
+    ],
+    "sam3d_body_model": [
+     "SAM3D_BODY_MODEL",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "MHR_POSE_DATA"
+  ],
+  "output_name": [
+   "mhr_pose_data"
+  ]
+ },
+ "SAM3DBody_Render": {
+  "input": {
+   "optional": {
+    "background": [
+     "IMAGE",
+     {
+      "tooltip": "Per-frame background. Omitted = black canvas."
+     }
+    ],
+    "camera_info": [
+     "LOAD3D_CAMERA",
+     {
+      "tooltip": "Free 6DOF camera override. When wired, the pose is re-projected through this camera (position/target/zoom/rotation/FoV) instead of the predicted one. "
+     }
+    ]
+   },
+   "required": {
+    "height": [
+     "INT",
+     {
+      "default": 0,
+      "max": 16384,
+      "min": 0,
+      "step": 8,
+      "tooltip": "Output height in pixels. 0 = use pose data's native image_size. If only one of width/height is set, the other is derived preserving the original aspect."
+     }
+    ],
+    "pose_data": [
+     "MHR_POSE_DATA,KIMODO_POSE_DATA",
+     {
+      "tooltip": "MHR pose data, or external Y-up rig pose data (KimodoSample). All render styles work for external rigs that carry OpenPose joint maps in their _skeleton_override (KimodoSample does)."
+     }
+    ],
+    "render_style": [
+     "COMFY_DYNAMICCOMBO_V3",
+     {
+      "options": [
+       {
+        "inputs": {
+         "required": {
+          "opacity": [
+           "FLOAT",
+           {
+            "default": 1.0,
+            "max": 1.0,
+            "min": 0.0,
+            "step": 0.01,
+            "tooltip": "Mesh alpha over the background image, or over black when none is connected."
+           }
+          ],
+          "person_palette_falloff": [
+           "FLOAT",
+           {
+            "default": 0.6,
+            "max": 1.0,
+            "min": 0.1,
+            "step": 0.05,
+            "tooltip": "Per-person desaturation toward white: track k gets a (1 - falloff^k) pastel mix (SCAIL 'softer second person'). 1.0 = off."
+           }
+          ],
+          "region": [
+           "COMBO",
+           {
+            "default": "full_body",
+            "multiselect": false,
+            "options": [
+             "full_body",
+             "hands_only"
+            ],
+            "tooltip": "'hands_only' filters faces via the precomputed `hand_vert_mask` (LBS weights against canonical hand KPs) \u2014 isolates the hand mesh for debugging. Falls back to full mesh if the mask is missing."
+           }
+          ],
+          "shader": [
+           "COMFY_DYNAMICCOMBO_V3",
+           {
+            "options": [
+             {
+              "inputs": {
+               "required": {}
+              },
+              "key": "default"
+             },
+             {
+              "inputs": {
+               "required": {}
+              },
+              "key": "normals"
+             },
+             {
+              "inputs": {
+               "required": {
+                "rainbow_tilt_x": [
+                 "FLOAT",
+                 {
+                  "default": 0.0,
+                  "max": 90.0,
+                  "min": -90.0,
+                  "step": 0.5,
+                  "tooltip": "Rotate rainbow jet axis around X (right). Differentiates front/back."
+                 }
+                ],
+                "rainbow_tilt_z": [
+                 "FLOAT",
+                 {
+                  "default": -35.0,
+                  "max": 90.0,
+                  "min": -90.0,
+                  "step": 0.5,
+                  "tooltip": "Rotate rainbow jet axis around Z (forward). Differentiates left/right."
+                 }
+                ]
+               }
+              },
+              "key": "rainbow"
+             },
+             {
+              "inputs": {
+               "required": {
+                "rainbow_tilt_x": [
+                 "FLOAT",
+                 {
+                  "default": 0.0,
+                  "max": 90.0,
+                  "min": -90.0,
+                  "step": 0.5,
+                  "tooltip": "Rotate rainbow jet axis around X (right). Differentiates front/back."
+                 }
+                ],
+                "rainbow_tilt_z": [
+                 "FLOAT",
+                 {
+                  "default": -35.0,
+                  "max": 90.0,
+                  "min": -90.0,
+                  "step": 0.5,
+                  "tooltip": "Rotate rainbow jet axis around Z (forward). Differentiates left/right."
+                 }
+                ]
+               }
+              },
+              "key": "rainbow_face_normal"
+             },
+             {
+              "inputs": {
+               "required": {
+                "rainbow_tilt_x": [
+                 "FLOAT",
+                 {
+                  "default": 0.0,
+                  "max": 90.0,
+                  "min": -90.0,
+                  "step": 0.5,
+                  "tooltip": "Rotate rainbow jet axis around X (right). Differentiates front/back."
+                 }
+                ],
+                "rainbow_tilt_z": [
+                 "FLOAT",
+                 {
+                  "default": -35.0,
+                  "max": 90.0,
+                  "min": -90.0,
+                  "step": 0.5,
+                  "tooltip": "Rotate rainbow jet axis around Z (forward). Differentiates left/right."
+                 }
+                ]
+               }
+              },
+              "key": "rainbow_face_semantic"
+             },
+             {
+              "inputs": {
+               "required": {}
+              },
+              "key": "depth"
+             }
+            ],
+            "tooltip": "Preset shader. 'normals' = current surface normal in camera space (OpenGL Y+ normal-map convention: +X\u2192R, +Y\u2192G, +Z\u2192B). 'rainbow' = RealisDance style body-Y jet; the 'rainbow_face_*' variants override face verts with normal/per-region colors; 'depth' = linear gray."
+           }
+          ]
+         }
+        },
+        "key": "mesh"
+       },
+       {
+        "inputs": {
+         "required": {}
+        },
+        "key": "silhouette"
+       },
+       {
+        "inputs": {
+         "required": {
+          "face_style": [
+           "COMBO",
+           {
+            "default": "disabled",
+            "multiselect": false,
+            "options": [
+             "disabled",
+             "full",
+             "eyes_mouth"
+            ],
+            "tooltip": "'full' = all face landmarks (sapiens-238 if present, else rig-fallback ~30). 'eyes_mouth' = rig-fallback subset (~12 dots: eyes + outer lips only). 'disabled' = no face dots."
+           }
+          ],
+          "hand_style": [
+           "COMBO",
+           {
+            "default": "disabled",
+            "multiselect": false,
+            "options": [
+             "disabled",
+             "dwpose",
+             "openpose"
+            ],
+            "tooltip": "Draw 21+21 hand keypoints + sticks. 'disabled' = no hands. 'dwpose' = solid-blue dots; 'openpose' = rainbow dots."
+           }
+          ],
+          "limb_alpha": [
+           "FLOAT",
+           {
+            "default": 0.6,
+            "max": 1.0,
+            "min": 0.0,
+            "step": 0.05,
+            "tooltip": "Per-limb alpha. DWPose default = 0.6."
+           }
+          ],
+          "marker_radius_px": [
+           "INT",
+           {
+            "default": 4,
+            "max": 32,
+            "min": 1,
+            "step": 1,
+            "tooltip": "Body keypoint dot radius (px)."
+           }
+          ],
+          "person_palette_falloff": [
+           "FLOAT",
+           {
+            "default": 0.6,
+            "max": 1.0,
+            "min": 0.1,
+            "step": 0.05,
+            "tooltip": "Per-person desaturation: track k blends toward white by 1 - falloff^k. Track 0 stays vivid; 1.0 disables falloff."
+           }
+          ],
+          "stick_width_px": [
+           "INT",
+           {
+            "default": 4,
+            "max": 32,
+            "min": 1,
+            "step": 1,
+            "tooltip": "Body limb ellipse half-width (px). DWPose default = 4."
+           }
+          ]
+         }
+        },
+        "key": "openpose_2d"
+       },
+       {
+        "inputs": {
+         "required": {
+          "include_hands": [
+           "BOOLEAN",
+           {
+            "default": true,
+            "tooltip": "Draw 21+21 hand keypoints as 3D capsules."
+           }
+          ],
+          "person_palette_falloff": [
+           "FLOAT",
+           {
+            "default": 0.6,
+            "max": 1.0,
+            "min": 0.1,
+            "step": 0.05,
+            "tooltip": "Per-person desaturation: track k blends toward white by 1 - falloff^k. Track 0 stays vivid; 1.0 disables falloff."
+           }
+          ],
+          "radius_m": [
+           "FLOAT",
+           {
+            "default": 0.015,
+            "max": 0.1,
+            "min": 0.004,
+            "step": 0.001,
+            "tooltip": "Limb capsule radius in meters (thin = stick-like)."
+           }
+          ]
+         }
+        },
+        "key": "openpose_3d"
+       },
+       {
+        "inputs": {
+         "required": {
+          "face_style": [
+           "COMBO",
+           {
+            "default": "disabled",
+            "multiselect": false,
+            "options": [
+             "disabled",
+             "full",
+             "eyes_mouth"
+            ],
+            "tooltip": "'full' = all face landmarks (sapiens-238 if present, else rig-fallback ~30). 'eyes_mouth' = rig-fallback subset (~12 dots: eyes + outer lips only). 'disabled' = no face dots."
+           }
+          ],
+          "hand_style": [
+           "COMBO",
+           {
+            "default": "dwpose",
+            "multiselect": false,
+            "options": [
+             "disabled",
+             "dwpose",
+             "openpose"
+            ],
+            "tooltip": "Composite 2D OpenPose hands on top of the 3D capsule body (matches SCAIL \u2014 no 3D hand capsules). 'disabled' = no hands. 'dwpose' = solid-blue hand dots; 'openpose' = rainbow dots. Sticks stay rainbow per-finger either way."
+           }
+          ],
+          "person_palette_falloff": [
+           "FLOAT",
+           {
+            "default": 0.6,
+            "max": 1.0,
+            "min": 0.1,
+            "step": 0.05,
+            "tooltip": "Per-person desaturation: track k blends toward white by 1 - falloff^k. Track 0 stays vivid; 1.0 disables falloff."
+           }
+          ],
+          "radius_m": [
+           "FLOAT",
+           {
+            "default": 0.022,
+            "max": 0.2,
+            "min": 0.005,
+            "step": 0.001,
+            "tooltip": "Capsule radius in meters (SCAIL reference: ~0.022 m)."
+           }
+          ]
+         }
+        },
+        "key": "scail"
+       }
+      ],
+      "tooltip": "'mesh' = 3D MHR mesh rasterized through the camera. 'silhouette' = binary mask of the mesh. 'openpose_2d' = flat 2D skeleton 'openpose_3d' = openpose skeleton as flat-shaded 3D model 'scail' = SCAIL 3D capsules "
+     }
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 0,
+      "max": 16384,
+      "min": 0,
+      "step": 8,
+      "tooltip": "Output width in pixels. 0 = use pose data's native image_size. If only one of width/height is set, the other is derived preserving the original aspect."
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "image"
+  ]
+ },
+ "SAM3_Detect": {
+  "input": {
+   "optional": {
+    "bboxes": [
+     "BOUNDING_BOX",
+     {
+      "default": {
+       "height": 512,
+       "width": 512,
+       "x": 0,
+       "y": 0
+      },
+      "display_name": "bboxes",
+      "forceInput": true,
+      "socketless": true,
+      "tooltip": "Bounding boxes to segment within"
+     }
+    ],
+    "conditioning": [
+     "CONDITIONING",
+     {
+      "display_name": "conditioning",
+      "tooltip": "Text conditioning from CLIPTextEncode"
+     }
+    ],
+    "negative_coords": [
+     "STRING",
+     {
+      "display_name": "negative_coords",
+      "forceInput": true,
+      "multiline": false,
+      "tooltip": "Negative point prompts as JSON [{\"x\": int, \"y\": int}, ...] (pixel coords)"
+     }
+    ],
+    "positive_coords": [
+     "STRING",
+     {
+      "display_name": "positive_coords",
+      "forceInput": true,
+      "multiline": false,
+      "tooltip": "Positive point prompts as JSON [{\"x\": int, \"y\": int}, ...] (pixel coords)"
+     }
+    ]
+   },
+   "required": {
+    "image": [
+     "IMAGE",
+     {
+      "display_name": "image"
+     }
+    ],
+    "individual_masks": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "display_name": "individual_masks",
+      "tooltip": "Output per-object masks instead of union"
+     }
+    ],
+    "model": [
+     "MODEL",
+     {
+      "display_name": "model"
+     }
+    ],
+    "refine_iterations": [
+     "INT",
+     {
+      "default": 2,
+      "display_name": "refine_iterations",
+      "max": 5,
+      "min": 0,
+      "tooltip": "SAM decoder refinement passes (0=use raw detector masks)"
+     }
+    ],
+    "threshold": [
+     "FLOAT",
+     {
+      "default": 0.5,
+      "display_name": "threshold",
+      "max": 1.0,
+      "min": 0.0,
+      "step": 0.01
+     }
+    ]
+   }
+  },
+  "output": [
+   "MASK",
+   "BOUNDING_BOX"
+  ],
+  "output_name": [
+   "masks",
+   "bboxes"
+  ]
+ },
+ "SaveImageWebsocket": {
+  "input": {
+   "required": {
+    "images": [
+     "IMAGE"
+    ]
+   }
+  },
+  "output": [],
+  "output_name": []
+ },
+ "SeedVR2Conditioning": {
+  "input": {
+   "required": {
+    "model": [
+     "MODEL",
+     {
+      "tooltip": "The SeedVR2 model."
+     }
+    ],
+    "vae_conditioning": [
+     "LATENT",
+     {
+      "display_name": "latent"
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING",
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "positive",
+   "negative"
+  ]
+ },
+ "SeedVR2PostProcessing": {
+  "input": {
+   "required": {
+    "color_correction_method": [
+     "COMBO",
+     {
+      "default": "lab",
+      "multiselect": false,
+      "options": [
+       "lab",
+       "wavelet",
+       "adain",
+       "none"
+      ],
+      "tooltip": "Method to match the generated image colors to the original image. lab: transfer color in CIELAB space, preserving detail (most faithful). wavelet: transfer low-frequency color, keeping upscaled high-frequency detail. adain: match per-channel mean/std (fastest, global tint). none: skip color transfer (geometry alignment only)."
+     }
+    ],
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "The generated image to process."
+     }
+    ],
+    "original_resized_images": [
+     "IMAGE",
+     {
+      "tooltip": "The original resized image before pre-processing, used as reference."
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "images"
+  ]
+ },
+ "SeedVR2Preprocess": {
+  "input": {
+   "required": {
+    "resized_images": [
+     "IMAGE",
+     {
+      "tooltip": "The resized image to process."
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "images"
+  ]
+ },
+ "SetLatentNoiseMask": {
+  "input": {
+   "required": {
+    "mask": [
+     "MASK"
+    ],
+    "samples": [
+     "LATENT"
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "StudioImageBase64": {
+  "input": {
+   "required": {
+    "data": [
+     "STRING",
+     {
+      "multiline": false
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
+ "UNETLoader": {
+  "input": {
+   "required": {
+    "unet_name": [
+     [
+      "finepornV5INT8FP8_v5BF16.safetensors",
+      "finepornV5INT8FP8_v5FP8.safetensors",
+      "flux-2-klein-4b.safetensors",
+      "flux-2-klein-9b.safetensors",
+      "krea2_raw_bf16.safetensors",
+      "krea2_turbo_bf16.safetensors",
+      "museByStableYogi_v35Int8Extended.safetensors",
+      "rt_detr_v4-x-hgnet_fp16.safetensors",
+      "seedvr2_7b_fp16.safetensors",
+      "sickOllie_krea2_full_bf16.safetensors",
+      "z_image_turbo_bf16.safetensors"
+     ]
+    ],
+    "weight_dtype": [
+     [
+      "default",
+      "fp8_e4m3fn",
+      "fp8_e4m3fn_fast",
+      "fp8_e5m2"
+     ],
+     {
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ]
+ },
+ "VAEDecode": {
+  "input": {
+   "required": {
+    "samples": [
+     "LATENT",
+     {
+      "tooltip": "The latent to be decoded."
+     }
+    ],
+    "vae": [
+     "VAE",
+     {
+      "tooltip": "The VAE model used for decoding the latent."
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
+ "VAEDecodeTiled": {
+  "input": {
+   "required": {
+    "overlap": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 64,
+      "max": 4096,
+      "min": 0,
+      "step": 32
+     }
+    ],
+    "samples": [
+     "LATENT"
+    ],
+    "temporal_overlap": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 8,
+      "max": 4096,
+      "min": 4,
+      "step": 4,
+      "tooltip": "Only used for video VAEs: Amount of frames to overlap."
+     }
+    ],
+    "temporal_size": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 64,
+      "max": 4096,
+      "min": 8,
+      "step": 4,
+      "tooltip": "Only used for video VAEs: Amount of frames to decode at a time."
+     }
+    ],
+    "tile_size": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 512,
+      "max": 4096,
+      "min": 64,
+      "step": 32
+     }
+    ],
+    "vae": [
+     "VAE"
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
+ "VAEEncode": {
+  "input": {
+   "required": {
+    "pixels": [
+     "IMAGE"
+    ],
+    "vae": [
+     "VAE"
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "VAEEncodeTiled": {
+  "input": {
+   "required": {
+    "overlap": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 64,
+      "max": 4096,
+      "min": 0,
+      "step": 32
+     }
+    ],
+    "pixels": [
+     "IMAGE"
+    ],
+    "temporal_overlap": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 8,
+      "max": 4096,
+      "min": 4,
+      "step": 4,
+      "tooltip": "Only used for video VAEs: Amount of frames to overlap."
+     }
+    ],
+    "temporal_size": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 64,
+      "max": 4096,
+      "min": 8,
+      "step": 4,
+      "tooltip": "Only used for video VAEs: Amount of frames to encode at a time."
+     }
+    ],
+    "tile_size": [
+     "INT",
+     {
+      "advanced": true,
+      "default": 512,
+      "max": 4096,
+      "min": 64,
+      "step": 64
+     }
+    ],
+    "vae": [
+     "VAE"
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ]
+ },
+ "VAELoader": {
+  "input": {
+   "required": {
+    "vae_name": [
+     [
+      "ae.safetensors",
+      "flux2-vae.safetensors",
+      "qwen_image_vae.safetensors",
+      "seedvr2_ema_vae_fp16.safetensors",
+      "pixel_space"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "VAE"
+  ],
+  "output_name": [
+   "VAE"
+  ]
+ },
+ "ZImageFunControlnet": {
+  "input": {
+   "optional": {
+    "image": [
+     "IMAGE"
+    ],
+    "inpaint_image": [
+     "IMAGE"
+    ],
+    "mask": [
+     "MASK"
+    ]
+   },
+   "required": {
+    "model": [
+     "MODEL"
+    ],
+    "model_patch": [
+     "MODEL_PATCH"
+    ],
+    "strength": [
+     "FLOAT",
+     {
+      "default": 1.0,
+      "max": 10.0,
+      "min": -10.0,
+      "step": 0.01
+     }
+    ],
+    "vae": [
+     "VAE"
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ]
+ }
+}

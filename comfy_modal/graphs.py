@@ -1,15 +1,19 @@
-"""The studio's text-to-image graphs, one per model family, as API prompts. A family fixes the text
-encoder, the VAE and the sampling; the diffusion model file inside it is the user's choice, so any
-file on the volume can be tried with any family, and a mismatch fails in ComfyUI's loader.
+"""The studio's graphs as API prompts: renders (one per model family), upscales, repaints, dressing, and the
+looks ahead of an edit (what SAM finds, the fitted body). A family fixes the text encoder, the VAE and the
+sampling; the diffusion model file inside it is the user's choice, so any file on the volume can be tried
+with any family, and a mismatch fails in ComfyUI's loader.
 
-Krea 2 is workflows 04 and 05 in tools/build_workflows.py, Z-Image is workflow 01. LoRAs chain
-between the model loader and the rest. Every graph ends in SaveImageWebsocket: the PNG goes back
-over the worker's socket instead of onto the io volume, so a studio render leaves no file behind.
-The negative prompt is used only when CFG is above 1; at 1 a distilled model ignores it anyway."""
+Krea 2 is workflows 04 and 05 in tools/build_workflows.py, Z-Image is workflow 01. LoRAs chain between the
+model loader and the rest. Every graph ends in SaveImageWebsocket: the PNG goes back over the worker's socket
+instead of onto the io volume, so a studio render leaves no file behind. The negative prompt is used only when
+CFG is above 1; at 1 a distilled model ignores it anyway. Node ids come from graph.G; what the studio watches
+is marked with a stage or a role there, never by a number."""
 import os
 import re
+from typing import NamedTuple
 
 from .catalog import MODELS as CATALOG
+from .graph import G, Ref
 
 FAMILIES = {
     "krea2": {"label": "Krea 2", "clip": ("qwen3vl_4b_bf16.safetensors", "krea2"), "vae": "qwen_image_vae.safetensors",
@@ -32,20 +36,12 @@ NO_FAMILY = ("rt_detr", "seedvr2", "flux-2")
 # The diffusion model's loader node, by file extension. A new format is one entry here plus its
 # node pack in catalog.NODE_PACKS; the studio's listing and validation read the extensions from here.
 LOADERS = {
-    ".safetensors": lambda unet: {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
-    ".gguf": lambda unet: {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": unet}},  # ComfyUI-GGUF
+    ".safetensors": ("UNETLoader", {"weight_dtype": "default"}),
+    ".gguf": ("UnetLoaderGGUF", {}),  # ComfyUI-GGUF
 }
 MODEL_EXTENSIONS = tuple(LOADERS)
-
-SAMPLER = "7"  # the node whose progress messages are the step counter: the render, the retouch before an upscale, or an inpaint
-UPSCALER = "46"
-STAGES = {"1": "loading", "2": "loading", "3": "loading", "30": "loading", "4": "encoding", "11": "encoding", SAMPLER: "sampling",
-          "8": "decoding", "40": "upscaling", "44": "upscaling", UPSCALER: "upscaling", "47": "decoding", "9": "decoding",
-          "37": "masking", "39": "masking", "33": "masking", "52": "masking", "54": "decoding", "74": "masking", "76": "masking", "78": "masking", "68": "swapping", "72": "swapping", "73": "decoding",
-          "79": "decoding",
-          "80": "fitting", "81": "fitting", "82": "fitting", "83": "fitting", "84": "fitting", "85": "fitting",
-          "86": "dressing", "89": "dressing", "90": "dressing", "96": "dressing", "97": "decoding"}
 UPSCALE_MEGAPIXELS = (2, 4, 8)  # 4 MP is 2048 square; 8 is about 2.8K; SeedVR2 7B fits all three on an L40S with tiled VAE
+
 
 def guess(file: str) -> str:
     name = file.lower()
@@ -64,26 +60,78 @@ def catalog_files() -> list[str]:
             if m.folder == "diffusion_models" and not any(k in m.file for k in NO_FAMILY)]
 
 
-def _base(family: str, unet: str, text: str, negative: str, cfg: float, loras: list[tuple[str, float]]) -> tuple[dict, list]:
-    """Loaders, prompt and LoRA chain shared by a render, a retouch and an inpaint; returns the nodes and the model to sample with."""
+def _unet(g: G, unet: str, stage: str = "loading") -> Ref:
+    class_type, extra = LOADERS[os.path.splitext(unet)[1]]
+    return g.add(class_type, unet_name=unet, **extra, stage=stage)
+
+
+def _loras(g: G, model: Ref, loras: list[tuple[str, float]]) -> Ref:
+    for name, strength in loras:
+        model = g.add("LoraLoaderModelOnly", lora_name=name, strength_model=strength, model=model)
+    return model
+
+
+class Base(NamedTuple):
+    bare: Ref  # the diffusion model as loaded, before LoRAs: what the head swap patches
+    model: Ref  # with the LoRAs and the family's sampling shift: what samples
+    clip: Ref
+    vae: Ref
+    positive: Ref
+    negative: Ref
+
+
+def _base(g: G, family: str, unet: str, text: str, negative: str, cfg: float, loras: list[tuple[str, float]]) -> Base:
+    """Loaders, prompt and LoRA chain shared by a render, a retouch, a repaint and a finish."""
     f = FAMILIES[family]
-    g = {
-        "1": LOADERS[os.path.splitext(unet)[1]](unet),
-        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": f["clip"][0], "type": f["clip"][1], "device": "default"}},
-        "3": {"class_type": "VAELoader", "inputs": {"vae_name": f["vae"]}},
-        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": text, "clip": ["2", 0]}},
-        "5": ({"class_type": "CLIPTextEncode", "inputs": {"text": negative, "clip": ["2", 0]}} if cfg > 1
-              else {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["4", 0]}}),
-    }
-    model = ["1", 0]
-    for i, (name, strength) in enumerate(loras):
-        node = str(20 + i)
-        g[node] = {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": name, "strength_model": strength, "model": model}}
-        model = [node, 0]
+    bare = _unet(g, unet)
+    clip = g.add("CLIPLoader", clip_name=f["clip"][0], type=f["clip"][1], device="default", stage="loading")
+    vae = g.add("VAELoader", vae_name=f["vae"], stage="loading")
+    pos = g.add("CLIPTextEncode", text=text, clip=clip, stage="encoding")
+    neg = (g.add("CLIPTextEncode", text=negative, clip=clip) if cfg > 1
+           else g.add("ConditioningZeroOut", conditioning=pos))
+    model = _loras(g, bare, loras)
     if "shift" in f:
-        g["10"] = {"class_type": "ModelSamplingAuraFlow", "inputs": {"shift": f["shift"], "model": model}}
-        model = ["10", 0]
-    return g, model
+        model = g.add("ModelSamplingAuraFlow", shift=f["shift"], model=model)
+    return Base(bare, model, clip, vae, pos, neg)
+
+
+def _image(g: G, b64: str) -> Ref:
+    return g.add("StudioImageBase64", data=b64, stage="loading")
+
+
+def _save(g: G, image: Ref) -> None:
+    g.add("SaveImageWebsocket", images=image, stage="decoding", role="output")
+
+
+def _sampler(g: G, family: str, b: Base, latent: Ref, seed: int, steps: int, cfg: float, denoise: float) -> Ref:
+    return g.add("KSampler", seed=seed, steps=steps, cfg=cfg, sampler_name=FAMILIES[family]["sampler"], scheduler="simple",
+                 denoise=denoise, model=b.model, positive=b.positive, negative=b.negative, latent_image=latent,
+                 stage="sampling", role="sampler")
+
+
+def _lanpaint(g: G, r: dict, b: Base, latent: Ref, seed: int, denoise: float) -> Ref:
+    return g.add("LanPaint_KSampler", {"Inpainting_mode": "\U0001f5bc️ Image Inpainting"},
+                 seed=seed, steps=r["steps"], cfg=r["cfg"], sampler_name=FAMILIES[r["family"]]["sampler"], scheduler="simple",
+                 denoise=denoise, LanPaint_NumSteps=3, LanPaint_PromptMode="Image First", LanPaint_Info="LanPaint KSampler.",
+                 model=b.model, positive=b.positive, negative=b.negative, latent_image=latent, stage="sampling", role="sampler")
+
+
+# Workflow 09's crop: the source keeps its resolution, a box 1.5x the mask gives context, the box itself is
+# worked on at 1024, and 32 px blend it back in. Holes stay holes: the phone's mask is meant as drawn.
+CROP = {"downscale_algorithm": "bilinear", "upscale_algorithm": "lanczos", "preresize": False, "preresize_mode": "ensure minimum resolution",
+        "preresize_min_width": 1024, "preresize_min_height": 1024, "preresize_max_width": 16384, "preresize_max_height": 16384,
+        "mask_fill_holes": False, "mask_expand_pixels": 0, "mask_invert": False, "mask_blend_pixels": 32, "mask_hipass_filter": 0.1,
+        "extend_for_outpainting": False, "extend_up_factor": 1.0, "extend_down_factor": 1.0, "extend_left_factor": 1.0,
+        "extend_right_factor": 1.0, "context_from_mask_extend_factor": 1.5, "output_resize_to_target_size": True,
+        "output_target_width": 1024, "output_target_height": 1024, "output_padding": "32", "device_mode": "gpu (much faster)"}
+
+
+def _sam(g: G, image: Ref, text: str, threshold: float, expand: int) -> Ref:
+    """What SAM 3.1 finds by `text`, grown a little past its edge."""
+    sam = g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
+    found = g.add("SAM3_Detect", threshold=threshold, refine_iterations=2, individual_masks=False, model=sam, image=image,
+                  conditioning=g.add("CLIPTextEncode", text=text, clip=sam.out(1)), stage="masking")
+    return g.add("GrowMask", expand=expand, tapered_corners=True, mask=found, stage="masking")
 
 
 # A face photo is put on the person by a second pass: the BFS head swap LoRA (catalog.py) on the image's own
@@ -94,182 +142,120 @@ def _base(family: str, unet: str, text: str, negative: str, cfg: float, loras: l
 HEADSWAP_LORA = "bfs_head_swap_v1.1_krea2.safetensors"
 HEADSWAP_PROMPT = "head_swap: replace the head with the reference head."
 HEADSWAP_FAMILIES = ("krea2",)
-SWAPPER = "72"  # the head swap's sampler: its steps count again after the render's
 
 
-def _headswap(g: dict, image: list, face_b64: str, seed: int, ref_boost: float = 4.0) -> list:
-    """Adds the head swap to a graph that already has the Krea 2 loaders as 1, 2 and 3; returns the image
-    with the head swapped and everything else untouched. The render's own LoRAs are left out on purpose:
-    the swap LoRA was trained on the bare model."""
-    both = {"image": ["78", 1], "image_b": ["62", 0]}
-    g |= {
-        # SAM 3.1 finds the head; the box around it (2.5x, so shoulders and some scene come along as the
-        # swap LoRA expects) is cut out at 1024
-        "74": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sam3.1_multiplex_fp16.safetensors"}},
-        "75": {"class_type": "CLIPTextEncode", "inputs": {"text": "head", "clip": ["74", 1]}},
-        "76": {"class_type": "SAM3_Detect", "inputs": {"threshold": 0.5, "refine_iterations": 2, "individual_masks": False,
-                                                       "model": ["74", 0], "image": image, "conditioning": ["75", 0]}},
-        "77": {"class_type": "GrowMask", "inputs": {"expand": 16, "tapered_corners": True, "mask": ["76", 0]}},
-        "78": {"class_type": "InpaintCropImproved", "inputs": {**CROP, "context_from_mask_extend_factor": 2.5, "image": image,
-                                                               "mask": ["77", 0]}},
-        "60": {"class_type": "StudioImageBase64", "inputs": {"data": face_b64}},
-        "62": {"class_type": "ImageScaleToTotalPixels", "inputs": {"upscale_method": "lanczos", "megapixels": 1.0,
-                                                                   "resolution_steps": 16, "image": ["60", 0]}},
-        "65": {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": HEADSWAP_LORA, "strength_model": 1.0, "model": ["1", 0]}},
-        "66": {"class_type": "VAEEncode", "inputs": {"pixels": ["78", 1], "vae": ["3", 0]}},
-        "67": {"class_type": "VAEEncode", "inputs": {"pixels": ["62", 0], "vae": ["3", 0]}},
-        "68": {"class_type": "Krea2EditModelPatch", "inputs": {
-            "model": ["65", 0], "source_latent": ["66", 0], "source_latent_b": ["67", 0], "ref_boost": ref_boost, "ref_boost_a": 1.0,
-            "fit_mode": "fit", "vae": ["3", 0], "source_image": ["78", 1], "source_image_b": ["62", 0]}},
-        "69": {"class_type": "Krea2EditGroundedEncode", "inputs": {"clip": ["2", 0], "prompt": HEADSWAP_PROMPT, "grounding_px": 512,
-                                                                   "system_prompt": "", **both}},
-        "70": {"class_type": "Krea2EditGroundedEncode", "inputs": {"clip": ["2", 0], "prompt": "", "grounding_px": 768,
-                                                                   "system_prompt": "", **both}},
-        "71": {"class_type": "EmptySD3LatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
-        SWAPPER: {"class_type": "KSampler", "inputs": {"seed": seed, "steps": 10, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple",
-                                                      "denoise": 1.0, "model": ["68", 0], "positive": ["69", 0], "negative": ["70", 0],
-                                                      "latent_image": ["71", 0]}},
-        "73": {"class_type": "VAEDecode", "inputs": {"samples": [SWAPPER, 0], "vae": ["3", 0]}},
-        # only the head goes back in, blended over 32 px; the rest of the picture is the render's own pixels
-        "79": {"class_type": "InpaintStitchImproved", "inputs": {"stitcher": ["78", 0], "inpainted_image": ["73", 0]}},
-    }
-    return ["79", 0]
-
-
-def _sampler(family: str, model: list, latent: list, seed: int, steps: int, cfg: float, denoise: float) -> dict:
-    return {"class_type": "KSampler", "inputs": {"seed": seed, "steps": steps, "cfg": cfg, "sampler_name": FAMILIES[family]["sampler"],
-                                                 "scheduler": "simple", "denoise": denoise, "model": model, "positive": ["4", 0],
-                                                 "negative": ["5", 0], "latent_image": latent}}
+def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, ref_boost: float = 4.0) -> Ref:
+    """The head swap on `image` with the Krea 2 loaders of `b`; returns the image with the head swapped and
+    everything else untouched. The render's own LoRAs are left out on purpose: the swap LoRA was trained on the
+    bare model."""
+    # the box around the head is 2.5x, so shoulders and some scene come along as the swap LoRA expects
+    crop = g.add("InpaintCropImproved", {**CROP, "context_from_mask_extend_factor": 2.5}, image=image,
+                 mask=_sam(g, image, "head", 0.5, 16), stage="masking")
+    face = g.add("ImageScaleToTotalPixels", upscale_method="lanczos", megapixels=1.0, resolution_steps=16,
+                 image=_image(g, face_b64))
+    both = {"image": crop.out(1), "image_b": face}
+    patched = g.add("Krea2EditModelPatch",
+                    model=g.add("LoraLoaderModelOnly", lora_name=HEADSWAP_LORA, strength_model=1.0, model=b.bare),
+                    source_latent=g.add("VAEEncode", pixels=crop.out(1), vae=b.vae),
+                    source_latent_b=g.add("VAEEncode", pixels=face, vae=b.vae), ref_boost=ref_boost, ref_boost_a=1.0,
+                    fit_mode="fit", vae=b.vae, source_image=crop.out(1), source_image_b=face, stage="swapping")
+    swapped = g.add("KSampler", seed=seed, steps=10, cfg=1.0, sampler_name="euler", scheduler="simple", denoise=1.0, model=patched,
+                    positive=g.add("Krea2EditGroundedEncode", clip=b.clip, prompt=HEADSWAP_PROMPT, grounding_px=512, system_prompt="", **both),
+                    negative=g.add("Krea2EditGroundedEncode", clip=b.clip, prompt="", grounding_px=768, system_prompt="", **both),
+                    latent_image=g.add("EmptySD3LatentImage", width=1024, height=1024, batch_size=1), stage="swapping", role="swapper")
+    # only the head goes back in, blended over 32 px; the rest of the picture is the render's own pixels
+    return g.add("InpaintStitchImproved", stitcher=crop,
+                 inpainted_image=g.add("VAEDecode", samples=swapped, vae=b.vae, stage="decoding"), stage="decoding")
 
 
 def graph(family: str, unet: str, text: str, negative: str, width: int, height: int, seed: int, steps: int, cfg: float,
-          loras: list[tuple[str, float]], face: str | None = None) -> dict:
-    """A render; with `face` (a base64 photo) the head swap runs on it before it is sent back."""
-    g, model = _base(family, unet, text, negative, cfg, loras)
-    g["6"] = {"class_type": FAMILIES[family]["latent"], "inputs": {"width": width, "height": height, "batch_size": 1}}
-    g[SAMPLER] = _sampler(family, model, ["6", 0], seed, steps, cfg, 1.0)
-    g["8"] = {"class_type": "VAEDecode", "inputs": {"samples": [SAMPLER, 0], "vae": ["3", 0]}}
-    out = _headswap(g, ["8", 0], face, seed) if face else ["8", 0]
-    g["9"] = {"class_type": "SaveImageWebsocket", "inputs": {"images": out}}
-    return g
+          loras: list[tuple[str, float]], face: str | None = None, finish: dict | None = None) -> dict:
+    """A render. With `finish` (family, unet, text, negative, steps, cfg, loras, denoise) another model goes over the
+    whole image lightly afterwards; with `face` (a base64 photo) the head swap runs last, on the last pass's model."""
+    g = G()
+    b = _base(g, family, unet, text, negative, cfg, loras)
+    latent = g.add(FAMILIES[family]["latent"], width=width, height=height, batch_size=1)
+    out = g.add("VAEDecode", samples=_sampler(g, family, b, latent, seed, steps, cfg, 1.0), vae=b.vae, stage="decoding")
+    if finish:
+        f = finish
+        b = _base(g, f["family"], f["unet"], f["text"], f["negative"], f["cfg"], f["loras"])
+        latent = g.add("VAEEncode", pixels=out, vae=b.vae, stage="encoding")
+        out = g.add("VAEDecode", samples=_sampler(g, f["family"], b, latent, seed, f["steps"], f["cfg"], f["denoise"]), vae=b.vae,
+                    stage="decoding")
+    _save(g, _headswap(g, b, out, face, seed) if face else out)
+    return g.prompt()
 
 
 def upscale(image_b64: str, megapixels: float, seed: int, retouch: dict | None = None) -> dict:
     """SeedVR2 to `megapixels`, workflow 03's chain. With `retouch` (family, unet, text, negative, steps,
     cfg, loras, denoise) a light img2img pass with the image's own model runs first, at its own size:
     the prompt steers the touch-up cheaply, and SeedVR2 then restores detail on the result."""
-    g = {"30": {"class_type": "StudioImageBase64", "inputs": {"data": image_b64}}}
-    source = ["30", 0]
+    g = G()
+    source = _image(g, image_b64)
     if retouch:
         r = retouch
-        base, model = _base(r["family"], r["unet"], r["text"], r["negative"], r["cfg"], r["loras"])
-        g |= base
-        g["11"] = {"class_type": "VAEEncode", "inputs": {"pixels": source, "vae": ["3", 0]}}
-        g[SAMPLER] = _sampler(r["family"], model, ["11", 0], seed, r["steps"], r["cfg"], r["denoise"])
-        g["8"] = {"class_type": "VAEDecode", "inputs": {"samples": [SAMPLER, 0], "vae": ["3", 0]}}
-        source = ["8", 0]
+        b = _base(g, r["family"], r["unet"], r["text"], r["negative"], r["cfg"], r["loras"])
+        latent = g.add("VAEEncode", pixels=source, vae=b.vae, stage="encoding")
+        source = g.add("VAEDecode", samples=_sampler(g, r["family"], b, latent, seed, r["steps"], r["cfg"], r["denoise"]),
+                       vae=b.vae, stage="decoding")
     tiled = {"tile_size": 512, "overlap": 128, "temporal_size": 4096, "temporal_overlap": 8}
-    g |= {
-        "40": {"class_type": "UNETLoader", "inputs": {"unet_name": "seedvr2_7b_fp16.safetensors", "weight_dtype": "default"}},
-        "41": {"class_type": "VAELoader", "inputs": {"vae_name": "seedvr2_ema_vae_fp16.safetensors"}},
-        "42": {"class_type": "ImageScaleToTotalPixels", "inputs": {"upscale_method": "lanczos", "megapixels": megapixels, "resolution_steps": 1, "image": source}},
-        "43": {"class_type": "SeedVR2Preprocess", "inputs": {"resized_images": ["42", 0]}},
-        "44": {"class_type": "VAEEncodeTiled", "inputs": {**tiled, "pixels": ["43", 0], "vae": ["41", 0]}},
-        "45": {"class_type": "SeedVR2Conditioning", "inputs": {"model": ["40", 0], "vae_conditioning": ["44", 0]}},
-        UPSCALER: {"class_type": "KSampler", "inputs": {"seed": seed, "steps": 1, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple",
-                                                        "denoise": 1.0, "model": ["40", 0], "positive": ["45", 0], "negative": ["45", 1],
-                                                        "latent_image": ["44", 0]}},
-        "47": {"class_type": "VAEDecodeTiled", "inputs": {**tiled, "samples": [UPSCALER, 0], "vae": ["41", 0]}},
-        "48": {"class_type": "SeedVR2PostProcessing", "inputs": {"color_correction_method": "lab", "images": ["47", 0], "original_resized_images": ["42", 0]}},
-        "9": {"class_type": "SaveImageWebsocket", "inputs": {"images": ["48", 0]}},
-    }
-    return g
+    model = g.add("UNETLoader", unet_name="seedvr2_7b_fp16.safetensors", weight_dtype="default", stage="upscaling")
+    vae = g.add("VAELoader", vae_name="seedvr2_ema_vae_fp16.safetensors")
+    resized = g.add("ImageScaleToTotalPixels", upscale_method="lanczos", megapixels=megapixels, resolution_steps=1, image=source)
+    encoded = g.add("VAEEncodeTiled", **tiled, pixels=g.add("SeedVR2Preprocess", resized_images=resized), vae=vae, stage="upscaling")
+    cond = g.add("SeedVR2Conditioning", model=model, vae_conditioning=encoded)
+    sampled = g.add("KSampler", seed=seed, steps=1, cfg=1.0, sampler_name="euler", scheduler="simple", denoise=1.0, model=model,
+                    positive=cond, negative=cond.out(1), latent_image=encoded, stage="upscaling", role="upscaler")
+    decoded = g.add("VAEDecodeTiled", **tiled, samples=sampled, vae=vae, stage="decoding")
+    _save(g, g.add("SeedVR2PostProcessing", color_correction_method="lab", images=decoded, original_resized_images=resized))
+    return g.prompt()
 
 
-# Workflow 09's crop: the source keeps its resolution, a box 1.5x the mask gives context, the box itself is
-# worked on at 1024, and 32 px blend it back in.
-CROP = {"downscale_algorithm": "bilinear", "upscale_algorithm": "lanczos", "preresize": False, "preresize_mode": "ensure minimum resolution",
-        "preresize_min_width": 1024, "preresize_min_height": 1024, "preresize_max_width": 16384, "preresize_max_height": 16384,
-        "mask_fill_holes": False, "mask_expand_pixels": 0, "mask_invert": False, "mask_blend_pixels": 32, "mask_hipass_filter": 0.1,
-        "extend_for_outpainting": False, "extend_up_factor": 1.0, "extend_down_factor": 1.0, "extend_left_factor": 1.0,
-        "extend_right_factor": 1.0, "context_from_mask_extend_factor": 1.5, "output_resize_to_target_size": True,
-        "output_target_width": 1024, "output_target_height": 1024, "output_padding": "32", "device_mode": "gpu (much faster)"}
-
-
-def _masked(image_b64: str, mask_b64: str) -> dict:
-    """The image as 30, and the box around what is to be repainted as 52: the mask the phone sends (white on
-    black, the image's size), found with SAM (graphs.mask) and refined there."""
-    return {
-        "30": {"class_type": "StudioImageBase64", "inputs": {"data": image_b64}},
-        "35": {"class_type": "StudioImageBase64", "inputs": {"data": mask_b64}},
-        "36": {"class_type": "ImageToMask", "inputs": {"channel": "red", "image": ["35", 0]}},
-        "52": {"class_type": "InpaintCropImproved", "inputs": {**CROP, "image": ["30", 0], "mask": ["36", 0]}},
-    }
+def _masked(g: G, image_b64: str, mask_b64: str) -> tuple[Ref, Ref, Ref]:
+    """The image, the phone's mask (white on black, the image's size: found with graphs.mask and refined there),
+    and the box cut around it; the box's outputs are the stitcher, the cropped image and the cropped mask."""
+    image = _image(g, image_b64)
+    mask = g.add("ImageToMask", channel="red", image=_image(g, mask_b64))
+    return image, mask, g.add("InpaintCropImproved", CROP, image=image, mask=mask, stage="masking")
 
 
 def mask(image_b64: str, text: str) -> dict:
-    """What SAM 3.1 finds in the image by `text`, grown a little past its edge, as white on black: the phone adds
-    it to the mask it is painting."""
-    return {
-        "30": {"class_type": "StudioImageBase64", "inputs": {"data": image_b64}},
-        "37": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sam3.1_multiplex_fp16.safetensors"}},
-        "38": {"class_type": "CLIPTextEncode", "inputs": {"text": text, "clip": ["37", 1]}},
-        "39": {"class_type": "SAM3_Detect", "inputs": {"threshold": 0.4, "refine_iterations": 2, "individual_masks": False,
-                                                    "model": ["37", 0], "image": ["30", 0], "conditioning": ["38", 0]}},
-        "33": {"class_type": "GrowMask", "inputs": {"expand": 12, "tapered_corners": True, "mask": ["39", 0]}},
-        "34": {"class_type": "MaskToImage", "inputs": {"mask": ["33", 0]}},
-        "9": {"class_type": "SaveImageWebsocket", "inputs": {"images": ["34", 0]}},
-    }
-
-
-def _lanpaint(r: dict, model: list, latent: list, seed: int, denoise: float) -> dict:
-    return {"class_type": "LanPaint_KSampler", "inputs": {
-        "seed": seed, "steps": r["steps"], "cfg": r["cfg"], "sampler_name": FAMILIES[r["family"]]["sampler"], "scheduler": "simple",
-        "denoise": denoise, "LanPaint_NumSteps": 3, "LanPaint_PromptMode": "Image First", "LanPaint_Info": "LanPaint KSampler.",
-        "Inpainting_mode": "\U0001f5bc\ufe0f Image Inpainting", "model": model, "positive": ["4", 0], "negative": ["5", 0],
-        "latent_image": latent}}
+    """What SAM 3.1 finds in the image by `text`, as white on black: the phone adds it to the mask it paints."""
+    g = G()
+    _save(g, g.add("MaskToImage", mask=_sam(g, _image(g, image_b64), text, 0.4, 12)))
+    return g.prompt()
 
 
 def inpaint(image_b64: str, mask_b64: str, r: dict, seed: int, face: str | None = None) -> dict:
-    """Repaint part of an image, workflow 09's chain. The mask is the phone's (white on black, the image's size). Only a box around it is cut out and
-    re-rendered, by the image's own model (r: family, unet, text, negative, steps, cfg, loras), with LanPaint
-    standing in for an inpainting checkpoint Krea 2 does not have; with `face`, the head swap runs on the result."""
-    g = _masked(image_b64, mask_b64)
-    base, model = _base(r["family"], r["unet"], r["text"], r["negative"], r["cfg"], r["loras"])
-    g |= base
-    g |= {
-        "11": {"class_type": "VAEEncode", "inputs": {"pixels": ["52", 1], "vae": ["3", 0]}},
-        "53": {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["11", 0], "mask": ["52", 2]}},
-        SAMPLER: _lanpaint(r, model, ["53", 0], seed, 1.0),
-        "8": {"class_type": "VAEDecode", "inputs": {"samples": [SAMPLER, 0], "vae": ["3", 0]}},
-        "54": {"class_type": "InpaintStitchImproved", "inputs": {"stitcher": ["52", 0], "inpainted_image": ["8", 0]}},
-    }
-    out = _headswap(g, ["54", 0], face, seed) if face else ["54", 0]
-    g["9"] = {"class_type": "SaveImageWebsocket", "inputs": {"images": out}}
-    return g
+    """Repaint part of an image, workflow 09's chain. Only a box around the mask is cut out and re-rendered, by
+    `r` (family, unet, text, negative, steps, cfg, loras), with LanPaint standing in for an inpainting checkpoint
+    Krea 2 does not have; with `face`, the head swap runs on the result."""
+    g = G()
+    _, _, box = _masked(g, image_b64, mask_b64)
+    b = _base(g, r["family"], r["unet"], r["text"], r["negative"], r["cfg"], r["loras"])
+    latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=box.out(1), vae=b.vae, stage="encoding"), mask=box.out(2))
+    painted = g.add("VAEDecode", samples=_lanpaint(g, r, b, latent, seed, 1.0), vae=b.vae, stage="decoding")
+    out = g.add("InpaintStitchImproved", stitcher=box, inpainted_image=painted, stage="decoding")
+    _save(g, _headswap(g, b, out, face, seed) if face else out)
+    return g.prompt()
 
 
 # Dressing: workflow 08's chain. SAM 3D Body fits a body to the person, its depth render is cropped with the
 # same box as the picture, and Z-Image's Fun Controlnet takes both the depth (the body stays put) and the
 # picture around the mask (the new clothes agree with it), which is what lets it denoise fully in 8 steps.
-# Optionally Krea 2 then repaints the same mask lightly with LanPaint, so the fabric, skin and light are
-# Krea's while the shape stays where Z-Image put it. Node ids 80 to 97 are the body and Z-Image's.
-DRESSER = "96"  # Z-Image's sampler: its steps are counted like the render's
+# Optionally another model then repaints the same mask lightly with LanPaint, so the fabric, skin and light are
+# its own while the shape stays where Z-Image put it.
 DRESS_HOLD = {"tight": 0.9, "loose": 0.65, "off": 0.9}  # controlnet strength; "off" gives it the picture but no body
-DRESS_FINISH = (0.1, 0.8)  # how much the finish may repaint of the dressed clothes; 0.35 keeps the shape and takes its look
+FINISH = (0.1, 0.8)  # how much a finish may repaint, of a render or of dressed clothes; 0.35 keeps the shape and takes its look
 
 
-def _body(g: dict, image: list) -> list:
+def _body(g: G, image: Ref) -> Ref:
     """RT-DETR picks the person, SAM 3D Body fits a mesh to them; returns the fitted pose data."""
-    g |= {
-        "80": {"class_type": "UNETLoader", "inputs": {"unet_name": "rt_detr_v4-x-hgnet_fp16.safetensors", "weight_dtype": "default"}},
-        "81": {"class_type": "RTDETR_detect", "inputs": {"threshold": 0.5, "class_name": "person", "max_detections": 1,
-                                                         "model": ["80", 0], "image": image}},
-        "82": {"class_type": "SAM3DBody_Loader", "inputs": {"model_file": "sam_3d_body_dinov3_bf16.safetensors"}},
-        "83": {"class_type": "SAM3DBody_Predict", "inputs": {"run_hand_refinement": True, "fov": 0.0, "batch_size": 64,
-                                                             "sam3d_body_model": ["82", 0], "image": image, "bboxes": ["81", 0]}},
-    }
-    return ["83", 0]
+    detector = g.add("UNETLoader", unet_name="rt_detr_v4-x-hgnet_fp16.safetensors", weight_dtype="default", stage="fitting")
+    person = g.add("RTDETR_detect", threshold=0.5, class_name="person", max_detections=1, model=detector, image=image, stage="fitting")
+    model = g.add("SAM3DBody_Loader", model_file="sam_3d_body_dinov3_bf16.safetensors", stage="fitting")
+    return g.add("SAM3DBody_Predict", run_hand_refinement=True, fov=0.0, batch_size=64, sam3d_body_model=model, image=image,
+                 bboxes=person, stage="fitting")
 
 
 def _mesh(shader: str, opacity: float = 1.0) -> dict:
@@ -279,11 +265,10 @@ def _mesh(shader: str, opacity: float = 1.0) -> dict:
 
 def body(image_b64: str) -> dict:
     """The fitted body drawn over the picture, for the phone to show before anything is dressed."""
-    g = {"30": {"class_type": "StudioImageBase64", "inputs": {"data": image_b64}}}
-    pose = _body(g, ["30", 0])
-    g["84"] = {"class_type": "SAM3DBody_Render", "inputs": {**_mesh("normals", 0.75), "pose_data": pose, "background": ["30", 0]}}
-    g["9"] = {"class_type": "SaveImageWebsocket", "inputs": {"images": ["84", 0]}}
-    return g
+    g = G()
+    image = _image(g, image_b64)
+    _save(g, g.add("SAM3DBody_Render", _mesh("normals", 0.75), pose_data=_body(g, image), background=image, stage="fitting"))
+    return g.prompt()
 
 
 def dress(image_b64: str, mask_b64: str, outfit: str, seed: int, hold: str, dresser: dict,
@@ -292,48 +277,30 @@ def dress(image_b64: str, mask_b64: str, outfit: str, seed: int, hold: str, dres
     Z-Image model that dresses it (unet, steps, cfg, loras). With `finish` (family, unet, text, negative, steps, cfg,
     loras, denoise) a second model repaints the clothes lightly afterwards; `face` needs a Krea 2 finish, whose
     loaders the head swap uses."""
-    g = _masked(image_b64, mask_b64)
+    g = G()
+    image, mask, box = _masked(g, image_b64, mask_b64)
     control = {}
     if hold != "off":
-        pose = _body(g, ["30", 0])
-        g["84"] = {"class_type": "SAM3DBody_Render", "inputs": {**_mesh("depth"), "pose_data": pose}}
-        g["85"] = {"class_type": "InpaintCropImproved", "inputs": {**CROP, "image": ["84", 0], "mask": g["52"]["inputs"]["mask"]}}
-        control = {"image": ["85", 1]}
+        depth = g.add("SAM3DBody_Render", _mesh("depth"), pose_data=_body(g, image), stage="fitting")
+        control = {"image": g.add("InpaintCropImproved", CROP, image=depth, mask=mask, stage="fitting").out(1)}
     z = FAMILIES["zimage"]
-    model = ["86", 0]
-    for i, (name, strength) in enumerate(dresser["loras"]):
-        node = str(120 + i)
-        g[node] = {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": name, "strength_model": strength, "model": model}}
-        model = [node, 0]
-    g |= {
-        "86": LOADERS[os.path.splitext(dresser["unet"])[1]](dresser["unet"]),
-        "87": {"class_type": "CLIPLoader", "inputs": {"clip_name": z["clip"][0], "type": z["clip"][1], "device": "default"}},
-        "88": {"class_type": "VAELoader", "inputs": {"vae_name": z["vae"]}},
-        "89": {"class_type": "ModelPatchLoader", "inputs": {"name": "Z-Image-Turbo-Fun-Controlnet-Union-2.1-2602-8steps.safetensors"}},
-        "90": {"class_type": "ZImageFunControlnet", "inputs": {"strength": DRESS_HOLD[hold], "model": model, "model_patch": ["89", 0],
-                                                               "vae": ["88", 0], "inpaint_image": ["52", 1], "mask": ["52", 2], **control}},
-        "91": {"class_type": "ModelSamplingAuraFlow", "inputs": {"shift": z["shift"], "model": ["90", 0]}},
-        "92": {"class_type": "CLIPTextEncode", "inputs": {"text": outfit, "clip": ["87", 0]}},
-        "93": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["92", 0]}},
-        "94": {"class_type": "VAEEncode", "inputs": {"pixels": ["52", 1], "vae": ["88", 0]}},
-        "95": {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["94", 0], "mask": ["52", 2]}},
-        DRESSER: {"class_type": "KSampler", "inputs": {"seed": seed, "steps": dresser["steps"], "cfg": dresser["cfg"], "sampler_name": z["sampler"],
-                                                       "scheduler": "simple", "denoise": 1.0, "model": ["91", 0], "positive": ["92", 0],
-                                                       "negative": ["93", 0], "latent_image": ["95", 0]}},
-        "97": {"class_type": "VAEDecode", "inputs": {"samples": [DRESSER, 0], "vae": ["88", 0]}},
-    }
-    dressed = ["97", 0]
+    vae = g.add("VAELoader", vae_name=z["vae"], stage="dressing")
+    clip = g.add("CLIPLoader", clip_name=z["clip"][0], type=z["clip"][1], device="default", stage="dressing")
+    held = g.add("ZImageFunControlnet", strength=DRESS_HOLD[hold], model=_loras(g, _unet(g, dresser["unet"], "dressing"), dresser["loras"]),
+                 model_patch=g.add("ModelPatchLoader", name="Z-Image-Turbo-Fun-Controlnet-Union-2.1-2602-8steps.safetensors", stage="dressing"),
+                 vae=vae, inpaint_image=box.out(1), mask=box.out(2), **control, stage="dressing")
+    pos = g.add("CLIPTextEncode", text=outfit, clip=clip, stage="encoding")
+    latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=box.out(1), vae=vae), mask=box.out(2))
+    sampled = g.add("KSampler", seed=seed, steps=dresser["steps"], cfg=dresser["cfg"], sampler_name=z["sampler"], scheduler="simple",
+                    denoise=1.0, model=g.add("ModelSamplingAuraFlow", shift=z["shift"], model=held), positive=pos,
+                    negative=g.add("ConditioningZeroOut", conditioning=pos), latent_image=latent, stage="dressing", role="dresser")
+    dressed = g.add("VAEDecode", samples=sampled, vae=vae, stage="decoding")
+    b = None
     if finish:
-        base, model = _base(finish["family"], finish["unet"], finish["text"], finish["negative"], finish["cfg"], finish["loras"])
-        g |= base
-        g |= {
-            "11": {"class_type": "VAEEncode", "inputs": {"pixels": dressed, "vae": ["3", 0]}},
-            "53": {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["11", 0], "mask": ["52", 2]}},
-            SAMPLER: _lanpaint(finish, model, ["53", 0], seed, finish["denoise"]),
-            "8": {"class_type": "VAEDecode", "inputs": {"samples": [SAMPLER, 0], "vae": ["3", 0]}},
-        }
-        dressed = ["8", 0]
-    g["54"] = {"class_type": "InpaintStitchImproved", "inputs": {"stitcher": ["52", 0], "inpainted_image": dressed}}
-    out = _headswap(g, ["54", 0], face, seed) if face and finish and finish["family"] in HEADSWAP_FAMILIES else ["54", 0]
-    g["9"] = {"class_type": "SaveImageWebsocket", "inputs": {"images": out}}
-    return g
+        b = _base(g, finish["family"], finish["unet"], finish["text"], finish["negative"], finish["cfg"], finish["loras"])
+        latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=dressed, vae=b.vae, stage="encoding"), mask=box.out(2))
+        dressed = g.add("VAEDecode", samples=_lanpaint(g, finish, b, latent, seed, finish["denoise"]), vae=b.vae, stage="decoding")
+    out = g.add("InpaintStitchImproved", stitcher=box, inpainted_image=dressed, stage="decoding")
+    swap = face and finish and b and finish["family"] in HEADSWAP_FAMILIES
+    _save(g, _headswap(g, b, out, face, seed) if swap else out)
+    return g.prompt()

@@ -39,7 +39,10 @@ explains where things are and how to change them without breaking the deployment
 
 ## Changing things
 
-- Models and node packs: `comfy_modal/catalog.py`, then deploy. Keep the model layer before the
+- Models and node packs: `comfy_modal/catalog.py`, then deploy. Files from Civitai or Hugging Face go straight
+  into the models volume from Modal's side: `tools/sync.sh civitai|hf` (and the console) call `tools/fetch.py`,
+  which runs `comfy_modal/fetch.py`; the token rides as a header on that one call. `--local` is the old way, through
+  the laptop. Keep the model layer before the
   node-pack layer in `image.py`, so a pack change never re-downloads models.
 - Tunables: `comfy_modal/config.py` only. Never hard-code a volume name, port or app name in a
   node or a tool; tools read them through `from comfy_modal import config`.
@@ -49,8 +52,14 @@ explains where things are and how to change them without breaking the deployment
   in ComfyUI's order and the widget names in the order the node declares them. Read them from the
   running server with `GET /api/object_info/<NodeType>`. A wrong order does not error: the GUI shows
   the values under the wrong widgets and the API prompt sends them to the wrong inputs.
-- Studio: its graphs are `comfy_modal/graphs.py`. A model family (encoder, VAE, sampling) is one
-  entry in `FAMILIES`; a file tested with the studio goes in `VERIFIED` with its settings.
+- Studio: its graphs are `comfy_modal/graphs.py`, built with `comfy_modal/graph.py`: `G.add` hands out node ids,
+  so no id means anything. A node the studio watches carries a `stage` (what the phone shows while it runs) or a
+  `role` (`sampler`, `dresser`, `swapper`, `upscaler`, `output`) in its `_meta`; the API and the mock read those
+  back. A model family (encoder, VAE, sampling) is one entry in `FAMILIES`; a file tested with the studio goes in
+  `VERIFIED` with its settings; a model file format is one entry in `LOADERS` plus its node pack.
+- Tests: `uv run pytest -q tests` builds every graph (`tests/samples.py`) and checks it against ComfyUI's node
+  definitions in `tests/object_info.json`; after adding a node type or pack, deploy and refresh that file with
+  `uv run tools/object_info_snapshot.py`. `npm --prefix studio test` runs vitest on the pure domain code. CI runs both.
 - Studio app layers, each importing only from the ones below it (lint enforces it): `src/ui` (the
   primitives: Button, Chip, Segmented, Checkbox, fields, Modal and Sheet, Note; the only place a raw
   `<button>`, `<input>` or `<dialog>` may appear), `src/domain` (plain TypeScript: the recipe, its
@@ -80,7 +89,10 @@ explains where things are and how to change them without breaking the deployment
   `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
   through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with
   `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it
-  keys off the graphs' node ids, so a renumbered node needs the mock updated too.
+  keys off node classes and the roles in `_meta`.
+  Images go to the studio once: `POST /api/images` returns a hash, and requests send `{"ref": hash}` instead of
+  base64 (`studio/src/data/images.ts`); the studio keeps them in memory and answers 409 for one it lost, and the
+  phone uploads it again. A render can have a finish pass: another setup over the whole image at a strength.
 - Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that
   shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,

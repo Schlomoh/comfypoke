@@ -1,6 +1,7 @@
 // A render as the device keeps it: the settings it was sent with, how long it took, and what the person
 // added to it later. An upscale or an edit is a render of its own that links back to its source.
 import type { Recipe } from "@/domain/recipe";
+import type { Pass } from "@/domain/setup";
 
 export type Lora = { name: string; strength: number };
 export type Params = {
@@ -15,6 +16,7 @@ export type Params = {
   seed: number;
   loras: Lora[];
   reference?: boolean; // made with a face reference photo
+  finish?: (Omit<Pass, "loras"> & { loras: Lora[]; denoise: number }) | null; // a second pass with another setup
 };
 
 export type Upscale = { megapixels: number; prompt: string; denoise: number }; // prompt "" means no retouch

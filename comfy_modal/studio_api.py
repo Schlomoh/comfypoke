@@ -11,6 +11,7 @@ written to disk.
 import asyncio
 import base64
 import functools
+import hashlib
 import hmac
 import json
 import logging
@@ -20,6 +21,7 @@ import re
 import struct
 import time
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 
 import modal
@@ -27,7 +29,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, graphs
+from . import config, graph, graphs
 
 KEY = os.environ.get("COMFY_ACCESS_KEY", "")
 COOKIE = "studio_key"
@@ -91,6 +93,8 @@ class Job:
         self.ended = 0.0
         self.cancelled = False  # asked before the worker had the prompt: interrupted once it does
         self.task: asyncio.Task | None = None
+        self.stages: dict[str, str] = {}  # node id to the stage the phone shows, from the prompt (graph.stages)
+        self.counted: set[str] = set()  # the samplers whose steps are the step counter (graph.COUNTED)
 
     def emit(self, name: str, data):
         self.events.append((name, data))
@@ -145,9 +149,9 @@ def _handle(job: Job, msg) -> bool:
             job.emit("image" if fmt == PNG else "preview", base64.b64encode(data[8:]).decode())
     elif kind == "json":
         d = data.get("data") or {}
-        if data["type"] == "executing" and d.get("node") in graphs.STAGES:
-            job.emit("stage", graphs.STAGES[d["node"]])
-        elif data["type"] == "progress" and d.get("node") in (graphs.SAMPLER, graphs.SWAPPER, graphs.DRESSER):  # SeedVR2's one step needs no counter
+        if data["type"] == "executing" and d.get("node") in job.stages:
+            job.emit("stage", job.stages[d["node"]])
+        elif data["type"] == "progress" and d.get("node") in job.counted:
             job.emit("progress", {"value": d["value"], "max": d["max"]})
         elif data["type"] == "execution_success":
             job.end("done", {"seconds": round(time.time() - job.started, 1)})
@@ -159,6 +163,8 @@ def _handle(job: Job, msg) -> bool:
 
 
 async def _run(job: Job, prompt: dict, queued: bool = True):
+    job.stages = graph.stages(prompt)
+    job.counted = graph.counted(prompt)
     payload = {"prompt": prompt, "prompt_id": job.id, "deploy_id": config.DEPLOY_ID, "io": False}  # see Worker.run
     try:
         for attempt in (1, 2):
@@ -279,19 +285,62 @@ def _reference(body: dict, family: str) -> str | None:
     return ref
 
 
+# ---- images: each sent once and referred to by its hash after that ----------------------------------------
+# A find, a body preview and a few dressings of one picture would otherwise upload it each time, over a phone's
+# connection. Kept in this container's memory, oldest out first; a reference to one that is gone (the container
+# scaled down in between) is a 410, and the phone uploads it again.
+
+IMAGE_CACHE = 600 * 2**20  # base64 characters
+_images: OrderedDict[str, str] = OrderedDict()
+
+
+@api.post("/api/images")
+async def put_image(request: Request):
+    data = await request.body()
+    if not data or len(data) * 4 // 3 > MAX_IMAGE:
+        raise HTTPException(400, "missing image, or larger than 40 MB")
+    if not data.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")):  # a render or a mask, or a face photo (JPEG)
+        raise HTTPException(400, "not a PNG or JPEG")
+    sha = hashlib.sha256(data).hexdigest()
+    if sha not in _images:
+        _images[sha] = base64.b64encode(data).decode()
+        while sum(map(len, _images.values())) > IMAGE_CACHE and len(_images) > 1:
+            _images.popitem(last=False)
+    _images.move_to_end(sha)
+    return {"ref": sha}
+
+
+async def _json(request: Request) -> dict:
+    """The request's JSON with every image given as {"ref": sha} replaced by the image itself."""
+    body = await request.json()
+    for key in ("image", "mask", "reference"):
+        v = body.get(key)
+        if isinstance(v, dict):
+            sha = str(v.get("ref", ""))
+            if sha not in _images:
+                raise HTTPException(410, "the studio no longer has that image: send it again")
+            _images.move_to_end(sha)
+            body[key] = _images[sha]
+    return body
+
+
 @api.post("/api/generate")
 async def generate(request: Request):
-    body = await request.json()
+    body = await _json(request)
     p = _params(body)
-    reference = _reference(body, p["family"])
+    finish = _finish(body.get("finish"), p["prompt"], p["seed"], "the finish")
+    reference = _reference(body, (finish or p)["family"])  # the head swap runs on the last pass's model
     p["reference"] = bool(reference)
+    # what edits and retouches of this render run with by default: its last pass (setup.passOf)
+    p["finish"] = finish and {k: finish[k] for k in ("unet", "family", "steps", "cfg", "denoise")} | {
+        "loras": [{"name": n, "strength": w} for n, w in finish["loras"]]}
     _note_stop_after(body)
     _purge()
     job = Job(p)
     jobs[job.id] = job
     job.emit("queued", {**job.params, "started": job.started})  # replayed on every reconnect
     prompt = graphs.graph(p["family"], p["unet"], p["prompt"], p["negative"], p["width"], p["height"], p["seed"], p["steps"], p["cfg"],
-                          [(x["name"], x["strength"]) for x in p["loras"]], reference)
+                          [(x["name"], x["strength"]) for x in p["loras"]], reference, finish)
     job.task = asyncio.create_task(_run(job, prompt))
     return {"id": job.id, **job.params}
 
@@ -313,7 +362,7 @@ def _png_size(data: bytes) -> tuple[int, int]:
 async def upscale(request: Request):
     """SeedVR2 to a megapixel size, with an optional prompt retouch first (graphs.upscale). The phone
     sends the image itself; with `retouch`, the settings it was made with plus a prompt and strength."""
-    body = await request.json()
+    body = await _json(request)
     b64 = str(body.get("image", ""))
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
@@ -361,7 +410,7 @@ async def inpaint(request: Request):
     """Repaint part of an image (graphs.inpaint). The phone sends the image, its mask at the image's size (found
     with /api/mask and painted), the prompt for what goes inside, the setup to repaint with, optionally `target`
     (what the mask was found as, recorded only) and a face photo for the head swap."""
-    body = await request.json()
+    body = await _json(request)
     b64, mask = str(body.get("image", "")), str(body.get("mask", ""))
     if not b64 or not mask or len(b64) > MAX_IMAGE or len(mask) > MAX_IMAGE:
         raise HTTPException(400, "missing image or mask, or larger than 40 MB")
@@ -406,6 +455,21 @@ def _pass(spec, prompt: str, seed: int, what: str) -> dict:
     return _retouch(_params({**spec, "prompt": prompt, "seed": seed, "width": 1024, "height": 1024}))
 
 
+def _finish(spec, prompt: str, seed: int, what: str) -> dict | None:
+    """A light second pass with another setup at `denoise` (graphs.FINISH), after a render or a dressing; None for none."""
+    if spec is None:
+        return None
+    finish = _pass(spec, prompt, seed, what)
+    try:
+        finish["denoise"] = float(spec.get("denoise", 0.35))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, f"malformed finish strength: {e}")
+    lo, hi = graphs.FINISH
+    if not lo <= finish["denoise"] <= hi:
+        raise HTTPException(400, f"finish strength must be between {lo} and {hi}")
+    return finish
+
+
 def _dress(body: dict, b64: str, mask: str, seed: int, size: tuple[int, int], target: str) -> dict:
     """Dressing (graphs.dress): the prompt is the outfit. `dress` holds the hold, the Z-Image setup that dresses the
     body, and optionally the setup that finishes it with its strength; a face photo needs a Krea 2 finish."""
@@ -416,16 +480,7 @@ def _dress(body: dict, b64: str, mask: str, seed: int, size: tuple[int, int], ta
     dresser = _pass(d.get("dresser"), outfit, seed, "the dress pass")
     if dresser["family"] != "zimage":
         raise HTTPException(400, "the dress pass runs on a Z-Image model: its controlnet holds the body")
-    finish = None
-    if d.get("finish") is not None:
-        finish = _pass(d["finish"], outfit, seed, "the finish")
-        try:
-            finish["denoise"] = float(d["finish"].get("denoise", 0.35))
-        except (TypeError, ValueError) as e:
-            raise HTTPException(400, f"malformed finish strength: {e}")
-        lo, hi = graphs.DRESS_FINISH
-        if not lo <= finish["denoise"] <= hi:
-            raise HTTPException(400, f"finish strength must be between {lo} and {hi}")
+    finish = _finish(d.get("finish"), outfit, seed, "the finish")
     swap = bool(finish) and finish["family"] in graphs.HEADSWAP_FAMILIES
     if body.get("reference") and not swap:
         raise HTTPException(400, "a face photo needs a Krea 2 finish: the head swap runs on its loaders")
@@ -441,7 +496,7 @@ def _dress(body: dict, b64: str, mask: str, seed: int, size: tuple[int, int], ta
 async def mask_preview(request: Request):
     """What SAM 3.1 finds by `text` in a picture, as a white-on-black mask (graphs.mask), for the phone to add to the
     mask it paints. Runs outside stop-after, like the body preview."""
-    body = await request.json()
+    body = await _json(request)
     b64, text = str(body.get("image", "")), str(body.get("text", "")).strip()
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
@@ -459,7 +514,7 @@ async def mask_preview(request: Request):
 @api.post("/api/body")
 async def body_preview(request: Request):
     """The body SAM 3D Body fits to a picture, drawn over it (graphs.body): what dressing will hold in place."""
-    body = await request.json()
+    body = await _json(request)
     b64 = str(body.get("image", ""))
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")

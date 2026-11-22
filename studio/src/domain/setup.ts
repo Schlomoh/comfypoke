@@ -3,7 +3,7 @@
 import { isRecord, isText } from "@/domain/parse";
 import type { Recipe } from "@/domain/recipe";
 import { legacyUnet } from "@/domain/recipe";
-import type { Lora, Render } from "@/domain/render";
+import type { Lora, Render, Upscale } from "@/domain/render";
 
 /** What a pass of the server runs with; steps and cfg null mean the model's own defaults. */
 export type Pass = { unet: string; family: string; steps: number | null; cfg: number | null; loras: Lora[] };
@@ -64,14 +64,18 @@ export const toPass = ({ unet, family, steps, cfg, loras }: Pass): Pass => ({
   loras,
 });
 
-/** What a render was made with, as a pass: edits run with the image's own model unless another is picked. */
-export const passOf = (r: Render): Pass => ({
-  unet: r.unet ?? legacyUnet(r.model),
-  family: r.family,
-  steps: r.steps,
-  cfg: r.cfg,
-  loras: r.loras ?? [],
-});
+/** What a render was made with, as a pass: edits run with the image's own model unless another is picked. With a
+ * finish, that is the finish's model, which gave the image its look. */
+export const passOf = (r: Render): Pass =>
+  r.finish && !r.edit
+    ? toPass(r.finish)
+    : {
+        unet: r.unet ?? legacyUnet(r.model),
+        family: r.family,
+        steps: r.steps,
+        cfg: r.cfg,
+        loras: r.loras ?? [],
+      };
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
@@ -91,5 +95,20 @@ export function parseSetup(raw: unknown): Setup | null {
       isRecord(l) && isText(l.name) && isNum(l.strength) ? [{ name: l.name, strength: l.strength }] : [],
     ),
     at: isNum(raw.at) ? raw.at : Date.now(),
+  };
+}
+
+/** An upscale's touch-up pass: the image's own model again, lightly, its words added to the image's prompt; null
+ * without words. */
+export function retouchOf(r: Render, u: Upscale) {
+  if (!u.prompt.trim()) return null;
+  const own = passOf(r); // the model that gave the image its look: its finish's, when it had one
+  return {
+    unet: own.unet,
+    family: own.family,
+    prompt: `${r.prompt} ${u.prompt.trim()}`,
+    negative: own.unet === (r.unet ?? legacyUnet(r.model)) ? (r.negative ?? "") : "", // another model, not its negative
+    loras: own.loras,
+    denoise: u.denoise,
   };
 }

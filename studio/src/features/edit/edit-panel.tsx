@@ -20,7 +20,7 @@ import { Chip, ChipRow } from "@/ui/chip";
 import { Labeled, Select, Textarea } from "@/ui/field";
 import { Section } from "@/ui/section";
 import { Segmented } from "@/ui/segmented";
-import { Slider } from "@/ui/slider";
+import { SliderRow } from "@/ui/slider";
 import { Note } from "@/ui/text";
 
 const HOLDS = [
@@ -141,17 +141,14 @@ function Passes() {
             onChange={(v) => set({ finish: v })}
           />
           {finishing && (
-            <label className="flex items-center gap-3">
-              <span className="w-16 label">Strength</span>
-              <Slider
-                min={0.1}
-                max={0.8}
-                step={0.05}
-                value={c.strength}
-                onValue={(strength) => set({ strength })}
-              />
-              <span className="w-10 text-right font-mono text-xs tabular-nums">{c.strength.toFixed(2)}</span>
-            </label>
+            <SliderRow
+              label="Strength"
+              min={0.1}
+              max={0.8}
+              step={0.05}
+              value={c.strength}
+              onValue={(strength) => set({ strength })}
+            />
           )}
           <Note>
             {finishing

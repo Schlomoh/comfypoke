@@ -1,4 +1,5 @@
 // Everything about how the image is made rather than what is in it.
+import { FinishSection } from "@/features/model/finish";
 import { Loras } from "@/features/model/loras";
 import { ModelSection } from "@/features/model/model-section";
 import { SamplingSection } from "@/features/model/sampling";
@@ -12,6 +13,7 @@ export function ModelPanel() {
       <SetupsSection />
       <ModelSection />
       <Loras />
+      <FinishSection />
       <SizeSection />
       <SeedSection />
       <UpscaleSection />

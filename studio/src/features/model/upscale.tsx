@@ -8,7 +8,7 @@ import { Checkbox } from "@/ui/checkbox";
 import { Textarea } from "@/ui/field";
 import { Section } from "@/ui/section";
 import { Segmented } from "@/ui/segmented";
-import { Slider } from "@/ui/slider";
+import { SliderRow } from "@/ui/slider";
 import { Note } from "@/ui/text";
 
 export function UpscaleSection() {
@@ -34,17 +34,14 @@ export function UpscaleSection() {
         placeholder="touch-up, optional: sharper eyes, cleaner skin"
       />
       {u.prompt.trim() && (
-        <label className="flex items-center gap-3">
-          <span className="w-16 label">Strength</span>
-          <Slider
-            min={0.05}
-            max={0.8}
-            step={0.05}
-            value={u.denoise}
-            onValue={(denoise) => put({ denoise })}
-          />
-          <span className="w-10 text-right font-mono text-xs tabular-nums">{u.denoise.toFixed(2)}</span>
-        </label>
+        <SliderRow
+          label="Strength"
+          min={0.05}
+          max={0.8}
+          step={0.05}
+          value={u.denoise}
+          onValue={(denoise) => put({ denoise })}
+        />
       )}
       <Note>
         SeedVR2 restores detail at {u.megapixels} MP{u.megapixels === 4 ? " (2048 square)" : ""}. With a

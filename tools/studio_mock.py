@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 import modal  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
-from comfy_modal import graphs, studio_api  # noqa: E402
+from comfy_modal import graph, studio_api  # noqa: E402
 
 STEP_SECONDS = 0.4
 
@@ -39,25 +39,33 @@ def frame(fmt: int, color, size, image: Image.Image | None = None) -> bytes:
     return (1).to_bytes(4, "big") + fmt.to_bytes(4, "big") + b.getvalue()
 
 
+def _nodes(g: dict, class_type: str) -> list[dict]:
+    return [n for n in g.values() if n["class_type"] == class_type]
+
+
+def _images(g: dict) -> list[Image.Image]:
+    """The base64 images in the prompt, in order: the picture, then a mask or a face photo."""
+    return [Image.open(io.BytesIO(base64.b64decode(n["inputs"]["data"]))) for n in _nodes(g, "StudioImageBase64")]
+
+
 async def run(payload):
     g, pid = payload["prompt"], payload["prompt_id"]
     msg = lambda kind, **d: ("json", {"type": kind, "data": {"prompt_id": pid, **d}})  # noqa: E731
+    roles, stages = graph.roles(g), graph.stages(g)
     await asyncio.sleep(float(os.environ.get("MOCK_BOOT", "0")))
-    enc = g.get("4", g.get("92", {})).get("inputs", {})  # 92: a dressing without the Krea finish
-    text = enc.get("text") or enc.get("prompt") or ""  # a face reference encodes with ostris' node, whose input is "prompt"
-    if "fail" in text.lower():
+    texts = [n["inputs"].get("text") or n["inputs"].get("prompt") or "" for n in _nodes(g, "CLIPTextEncode")]
+    if any("fail" in t.lower() for t in texts):
         yield msg("execution_error", exception_message="the mock was asked to fail")
         return
-    out = None
-    if "39" in g and "52" not in g:  # SAM finding by text: a white blob on black, placed by the text so finds differ
-        src = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"])))
-        w, h = src.size
+    images, out = _images(g), None
+    cropped = bool(_nodes(g, "InpaintCropImproved")) and "SetLatentNoiseMask" in {n["class_type"] for n in g.values()}
+    if _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
+        w, h = images[0].size
         out = Image.new("RGB", (w, h))
-        k = sum(map(ord, g["38"]["inputs"]["text"])) % 5  # one of five bands, top to bottom
+        k = sum(map(ord, texts[0])) % 5  # one of five bands, top to bottom
         ImageDraw.Draw(out).ellipse((w // 4, h * k // 5, 3 * w // 4, h * (k + 1) // 5), fill=(255, 255, 255))
-        size, color = out.size, None
-    elif "84" in g and "52" not in g:  # the body preview: a stick figure over the picture
-        out = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"]))).convert("RGB")
+    elif _nodes(g, "SAM3DBody_Render") and not cropped:  # the body preview: a stick figure over the picture
+        out = images[0].convert("RGB")
         w, h = out.size
         d = ImageDraw.Draw(out)
         x, line = w // 2, dict(fill=(140, 194, 224), width=max(3, w // 120))
@@ -65,38 +73,38 @@ async def run(payload):
         for a, b in [((x, h // 4), (x, h * 3 // 5)), ((x - w // 6, h // 3), (x + w // 6, h // 3)), ((x, h * 3 // 5), (x - w // 8, h * 9 // 10)),
                      ((x, h * 3 // 5), (x + w // 8, h * 9 // 10))]:
             d.line((a, b), **line)
-        size, color = out.size, None
-    elif "52" in g:  # an inpaint or a dressing: the source back, with what would be repainted tinted
-        src = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"]))).convert("RGB")
-        mask = Image.open(io.BytesIO(base64.b64decode(g["35"]["inputs"]["data"]))).convert("L")
-        tint = (150, 80, 220) if graphs.DRESSER in g else (60, 140, 230)
+    elif cropped:  # an inpaint or a dressing: the source back, with what would be repainted tinted
+        src, mask = images[0].convert("RGB"), images[1].convert("L")
+        tint = (150, 80, 220) if "dresser" in roles else (60, 140, 230)
         out = Image.composite(Image.new("RGB", src.size, tint), src, mask.point(lambda v: v * 6 // 10))
-        size, color = src.size, None
-    elif "30" in g:  # an upscale: the image comes with the prompt
-        src = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"])))
-        s = (g["42"]["inputs"]["megapixels"] * 1024 * 1024 / (src.width * src.height)) ** 0.5
-        size, color = (round(src.width * s), round(src.height * s)), src.convert("RGB").getpixel((src.width // 2, src.height // 2))
+    elif "upscaler" in roles:  # an upscale: the image comes with the prompt
+        src = images[0]
+        s = (_nodes(g, "ImageScaleToTotalPixels")[-1]["inputs"]["megapixels"] * 1024 * 1024 / (src.width * src.height)) ** 0.5
+        out = Image.new("RGB", (round(src.width * s), round(src.height * s)), src.convert("RGB").getpixel((src.width // 2, src.height // 2)))
     else:
-        size, color = (g["6"]["inputs"]["width"], g["6"]["inputs"]["height"]), (200, 120, 60)
-    yield msg("executing", node="1" if "1" in g else "30")
-    await asyncio.sleep(STEP_SECONDS)
-    if "84" in g:
-        yield msg("executing", node="83")
-        await asyncio.sleep(STEP_SECONDS * 3)
-    for sampler in (graphs.DRESSER, graphs.SAMPLER):
-        if sampler not in g:
+        latent = next(n for n in g.values() if n["class_type"].startswith("Empty") and "Latent" in n["class_type"])
+        out = Image.new("RGB", (latent["inputs"]["width"], latent["inputs"]["height"]), (200, 120, 60))
+    size = out.size
+    for nid, stage in stages.items():  # each stage once, in the prompt's order, as ComfyUI announces nodes
+        if stage in ("sampling", "dressing", "swapping", "upscaling") and nid in roles.values():
+            continue  # the samplers below announce themselves
+        yield msg("executing", node=nid)
+        await asyncio.sleep(STEP_SECONDS / 4)
+    for role in ("dresser", "sampler", "swapper"):
+        if role not in roles:
             continue
-        steps = g[sampler]["inputs"]["steps"]
-        yield msg("executing", node=sampler)
+        nid = roles[role]
+        steps = g[nid]["inputs"]["steps"]
+        yield msg("executing", node=nid)
         for i in range(1, steps + 1):
-            yield msg("progress", node=sampler, value=i, max=steps)
+            yield msg("progress", node=nid, value=i, max=steps)
             yield ("bytes", frame(1, (20 * i % 255, 80, 160), (max(8, size[0] // 8), max(8, size[1] // 8))))
             await asyncio.sleep(STEP_SECONDS)
-    if graphs.UPSCALER in g:
-        yield msg("executing", node=graphs.UPSCALER)
+    if "upscaler" in roles:
+        yield msg("executing", node=roles["upscaler"])
         await asyncio.sleep(STEP_SECONDS * 4)
-    yield msg("executing", node="9")
-    yield ("bytes", frame(2, color, size, out))
+    yield msg("executing", node=roles["output"])
+    yield ("bytes", frame(2, None, size, out))
     yield msg("execution_success")
 
 

@@ -22,3 +22,28 @@ export function Slider({
     />
   );
 }
+
+/** A slider with its name before it and its value after it: a strength, a denoise. */
+export function SliderRow({
+  label,
+  value,
+  onValue,
+  min,
+  max,
+  step,
+}: {
+  label: string;
+  value: number;
+  onValue: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+}) {
+  return (
+    <label className="flex items-center gap-3">
+      <span className="w-16 label">{label}</span>
+      <Slider min={min} max={max} step={step} value={value} onValue={onValue} />
+      <span className="w-10 text-right font-mono text-xs tabular-nums">{value.toFixed(2)}</span>
+    </label>
+  );
+}

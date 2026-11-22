@@ -115,6 +115,7 @@ export function parseRecipe(raw: unknown): Recipe {
   const sceneRaw = legacy ?? record(r.scene);
   const scene = record(r.scene);
   const up = record(r.upscale);
+  const fin = record(r.finish);
   let unet = isText(r.model) ? legacyUnet(r.model) : EMPTY.unet;
   if (isText(r.unet)) unet = r.unet;
   const cast = castRaw.length ? castRaw.slice(0, MAX_PEOPLE).map(cleanPerson) : EMPTY.cast;
@@ -145,5 +146,12 @@ export function parseRecipe(raw: unknown): Recipe {
       prompt: isText(up.prompt) ? up.prompt : "",
       denoise: finite(up.denoise) ? Math.min(0.8, Math.max(0.05, up.denoise)) : EMPTY.upscale.denoise,
     },
+    finish:
+      isText(fin.setup) && fin.setup
+        ? {
+            setup: fin.setup,
+            strength: finite(fin.strength) ? Math.min(0.8, Math.max(0.1, fin.strength)) : 0.35,
+          }
+        : null,
   };
 }

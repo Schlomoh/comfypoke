@@ -1,7 +1,6 @@
 // Everything recorded about one image. Title, notes, tags and character name are the user's and
 // editable; how the image was made (prompt, model, seed, LoRAs, upscale) is the record and stays
 // as it was. Exported PNGs carry the same record (@/domain/png).
-import { useAtomValue } from "jotai";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { loadImage, updateRender } from "@/data/db/renders";
@@ -9,8 +8,7 @@ import { useSpace } from "@/data/db/space";
 import { shortName } from "@/domain/format";
 import { parameters } from "@/domain/png";
 import type { Render } from "@/domain/render";
-import { useImageActions } from "@/state/actions";
-import { rendersAtom } from "@/state/studio";
+import { Linked } from "@/features/viewer/linked";
 import { Button } from "@/ui/button";
 import { Input, Labeled, Textarea } from "@/ui/field";
 import { notify } from "@/ui/notify";
@@ -73,7 +71,7 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [
     ["Created", new Date(render.createdAt).toLocaleString()],
     ["Took", `${render.seconds} s`],
-    ["Model", render.unet ? shortName(render.unet) : render.model],
+    ["Model", `${render.unet ? shortName(render.unet) : render.model}${finishedBy(render)}`],
     ["Family", render.family],
     ["Size", `${render.width} × ${render.height}`],
     ["Steps", render.steps],
@@ -121,41 +119,9 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
   return rows;
 }
 
-/** What a render made from another one is: a new outfit, an edit or an upscale. */
-function made(r: Render) {
-  if (r.edit?.dress) return "outfit";
-  return r.edit ? "edit" : "upscale";
-}
-
-function Linked({ render }: { render: Render }) {
-  const all = useAtomValue(rendersAtom) ?? [];
-  const { open } = useImageActions();
-  const source = render.source ? all.find((r) => r.id === render.source) : undefined;
-  const upscales = all.filter((r) => r.source === render.id);
-  if (!render.source && !upscales.length) return null;
-  return (
-    <section className="flex flex-col gap-1.5">
-      <Heading>Linked</Heading>
-      {render.source && !source && <p className="font-mono text-faint">source image deleted</p>}
-      {source && (
-        <Button variant="link" size="inline" className="justify-start px-0" onClick={() => open(source.id)}>
-          ← source image, {source.width} × {source.height}
-        </Button>
-      )}
-      {upscales.map((u) => (
-        <Button
-          key={u.id}
-          variant="link"
-          size="inline"
-          className="justify-start px-0"
-          onClick={() => open(u.id)}
-        >
-          → {made(u)}, {u.width} × {u.height}
-        </Button>
-      ))}
-    </section>
-  );
-}
+/** A render's finish pass, after its model: " → krea2_raw_bf16 at 0.35". */
+const finishedBy = (r: Render) =>
+  r.finish && !r.edit ? ` → ${shortName(r.finish.unet)} at ${r.finish.denoise}` : "";
 
 export function Inspector({ render }: { render: Render }) {
   const space = useSpace();

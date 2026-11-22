@@ -92,7 +92,10 @@ export type Recipe = {
   sameSeed: boolean; // the versions share their seeds, so only the changed phrase differs between them
   stopAfter: boolean; // the GPU stops once the queue this sends is done
   upscale: UpscaleSettings;
+  finish: FinishSettings | null; // a second, light pass over each render with a saved setup
 };
+/** setup: a saved setup's id (domain/setup.ts); strength: how much of the render it may repaint. */
+export type FinishSettings = { setup: string; strength: number };
 // auto: every new render is upscaled once it is stored; prompt "" upscales without a retouch
 export type UpscaleSettings = { auto: boolean; megapixels: number; prompt: string; denoise: number };
 
@@ -113,6 +116,7 @@ export const EMPTY: Recipe = {
   sameSeed: true,
   stopAfter: false,
   upscale: { auto: false, megapixels: 4, prompt: "", denoise: 0.3 },
+  finish: null,
 };
 
 /** Renders and recipes from before the model list knew only "turbo" and "raw". */

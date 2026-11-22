@@ -7,13 +7,13 @@ import { useState } from "react";
 import { api, Locked } from "@/data/api";
 import { loadImage } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
+import { imageRef, withImages } from "@/data/images";
 import { lockApp } from "@/data/queries";
 import { errorText } from "@/domain/format";
 import { status } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import { areaOf, type Op } from "@/features/edit/mask";
 import { masksAtom, showBodyAtom } from "@/features/edit/state";
-import { base64 } from "@/state/jobs";
 import { preview, usePreview } from "@/state/preview";
 import { Button } from "@/ui/button";
 import { Chip, ChipRow, Tag } from "@/ui/chip";
@@ -50,7 +50,7 @@ export function FindSection({ render }: { render: Render }) {
   const [finding, setFinding] = useState<Record<string, string>>({}); // text → its stage
   const [error, setError] = useState("");
   const add = (op: Op) => setMasks((m) => ({ ...m, [render.id]: [...(m[render.id] ?? []), op] }));
-  const image = async () => base64(await loadImage(space, render.id));
+  const image = async () => imageRef(await loadImage(space, render.id));
 
   /** `label` is how the area is listed and recorded, `what` what SAM is asked for. */
   const find = async (label: string, what = label) => {
@@ -60,7 +60,7 @@ export function FindSection({ render }: { render: Render }) {
     setFinding((f) => ({ ...f, [t]: "queued" }));
     try {
       const b64 = await preview(
-        async () => api.mask(await image(), what.trim()),
+        async () => withImages(async () => api.mask(await image(), what.trim())),
         (stage) => setFinding((f) => ({ ...f, [t]: stage })),
       );
       const area = await areaOf(b64);
@@ -76,7 +76,7 @@ export function FindSection({ render }: { render: Render }) {
   };
 
   const toggleBody = () => {
-    if (!showBody) body.run(async () => api.body(await image()));
+    if (!showBody) body.run(async () => withImages(async () => api.body(await image())));
     setBodyOf(showBody ? null : render.id);
   };
 

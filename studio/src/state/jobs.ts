@@ -9,22 +9,16 @@ import { api, quietly, type DressRequest, type Request, type Started } from "@/d
 import { addPending, dropPending, pendingIds, pendingMeta } from "@/data/db/pending";
 import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
+import { imageRef, withImages } from "@/data/images";
 import { errorText } from "@/domain/format";
 import type { Job } from "@/domain/job";
 import { legacyUnet } from "@/domain/recipe";
 import type { Edit, JobMeta, Params, Render, Upscale } from "@/domain/render";
-import { passOf, type Pass } from "@/domain/setup";
+import { passOf, retouchOf, type Pass } from "@/domain/setup";
 import { focusAtom, jobsAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
-
-export const base64 = async (blob: Blob) => {
-  let bin = "";
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-};
 
 /** The PNG's own size: a retouch's VAE crops to its grid, so the server's estimate can be a few pixels off. */
 async function pngSize(blob: Blob) {
@@ -156,8 +150,11 @@ function createRunner(store: Store, space: Space) {
     });
   };
 
-  const generate = async (p: Request, meta: JobMeta) => {
-    const r = await api.generate(p);
+  /** A render; `face`, the photo its head swap puts on the person, goes as an image reference. */
+  const generate = async (p: Request, meta: JobMeta, face?: Blob) => {
+    const r = await withImages(async () =>
+      api.generate({ ...p, ...(face ? { reference: await imageRef(face) } : {}) }),
+    );
     await addPending(space, r.id, meta);
     attach(r.id);
     return r;
@@ -165,24 +162,17 @@ function createRunner(store: Store, space: Space) {
 
   /** The image goes to the studio, which runs graphs.upscale: SeedVR2, after a retouch when there is a prompt. */
   const upscale = async (r: Render, u: Upscale, stopAfter?: boolean): Promise<Started> => {
-    const retouch = u.prompt.trim()
-      ? {
-          unet: r.unet ?? legacyUnet(r.model),
-          family: r.family ?? null,
-          prompt: `${r.prompt} ${u.prompt.trim()}`, // the touch-up is said on top of what the image already is
-          negative: r.negative ?? "",
-          loras: r.loras ?? [],
-          denoise: u.denoise,
-        }
-      : null;
-    const image = await base64(await loadImage(space, r.id));
-    const res = await api.upscale({
-      image,
-      megapixels: u.megapixels,
-      seed: r.seed,
-      retouch,
-      stop_after: stopAfter,
-    });
+    const retouch = retouchOf(r, u);
+    const png = await loadImage(space, r.id);
+    const res = await withImages(async () =>
+      api.upscale({
+        image: await imageRef(png),
+        megapixels: u.megapixels,
+        seed: r.seed,
+        retouch,
+        stop_after: stopAfter,
+      }),
+    );
     await addPending(space, res.id, { upscaleOf: r, upscale: u });
     attach(res.id);
     return res;
@@ -203,22 +193,25 @@ function createRunner(store: Store, space: Space) {
   ): Promise<Started> => {
     const { mask, face, stopAfter } = o;
     const pass = o.pass ?? passOf(r);
-    const res = await api.inpaint({
-      image: await base64(await loadImage(space, r.id)),
-      mask: await base64(mask),
-      target: e.target,
-      prompt: e.prompt,
-      unet: pass.unet,
-      family: pass.family,
-      negative: pass.unet === (r.unet ?? legacyUnet(r.model)) ? (r.negative ?? "") : "", // another model, not its negative
-      loras: pass.loras,
-      steps: pass.steps,
-      cfg: pass.cfg,
-      seed: null, // a new one each time: Repaint again is how to get another take
-      reference: face && (await base64(face)),
-      stop_after: stopAfter,
-      ...(o.dress ? { dress: o.dress } : {}),
-    });
+    const png = await loadImage(space, r.id);
+    const res = await withImages(async () =>
+      api.inpaint({
+        image: await imageRef(png),
+        mask: await imageRef(mask),
+        target: e.target,
+        prompt: e.prompt,
+        unet: pass.unet,
+        family: pass.family,
+        negative: pass.unet === (r.unet ?? legacyUnet(r.model)) ? (r.negative ?? "") : "", // another model, not its negative
+        loras: pass.loras,
+        steps: pass.steps,
+        cfg: pass.cfg,
+        seed: null, // a new one each time: Repaint again is how to get another take
+        reference: face && (await imageRef(face)),
+        stop_after: stopAfter,
+        ...(o.dress ? { dress: o.dress } : {}),
+      }),
+    );
     await addPending(space, res.id, { editOf: r, edit: e });
     attach(res.id);
     return res;

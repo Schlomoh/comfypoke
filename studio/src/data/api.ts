@@ -3,17 +3,18 @@ import type { Catalog } from "@/domain/catalog";
 import type { Hold, Lora, Params } from "@/domain/render";
 import type { Pass } from "@/domain/setup";
 
-export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg" | "reference"> & {
+export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg" | "reference" | "finish"> & {
+  finish?: (Pass & { denoise: number }) | null; // a second pass with a saved setup
   family: string | null;
   seed: number | null;
   steps: number | null;
   cfg: number | null;
   stop_after?: boolean; // stop the GPU once the queue is empty; the latest request decides, absent leaves it as it is
-  reference?: string; // base64 face photo the head swap puts on the person
+  reference?: ImageRef; // face photo the head swap puts on the person
 };
 /** An upscale: SeedVR2 to `megapixels`, with an optional prompt retouch at the image's own size first. */
 export type UpscaleRequest = {
-  image: string; // base64 PNG
+  image: ImageRef; // PNG
   megapixels: number;
   seed?: number | null;
   retouch?: {
@@ -34,10 +35,10 @@ export type InpaintRequest = Pick<Params, "unet" | "prompt" | "negative" | "lora
   steps: number | null; // null: the model's default
   cfg: number | null;
   seed: number | null;
-  image: string; // base64 PNG
-  mask: string; // base64 PNG of the image's size, white where to repaint
+  image: ImageRef; // PNG
+  mask: ImageRef; // PNG of the image's size, white where to repaint
   target: string; // what the mask was found as, recorded only; the mask is what is replaced
-  reference?: string; // base64 face photo
+  reference?: ImageRef; // face photo
   stop_after?: boolean;
   dress?: DressRequest; // replace the clothes against the body's mesh (graphs.dress); prompt is the outfit
 };
@@ -60,6 +61,8 @@ export type Gpu = {
 export type Started = Params & { id: string };
 
 export class Locked extends Error {}
+/** The studio no longer has an image sent before (410: it restarted): send it again (data/images.ts). */
+export class Gone extends Error {}
 
 const detail = (body: unknown) => {
   if (typeof body !== "object" || body === null) return undefined;
@@ -71,9 +74,15 @@ const detail = (body: unknown) => {
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(path, {
     ...init,
-    headers: init.body ? { "Content-Type": "application/json" } : undefined,
+    headers: init.body
+      ? {
+          "Content-Type":
+            init.body instanceof Blob ? init.body.type || "application/octet-stream" : "application/json",
+        }
+      : undefined,
   });
   if (r.status === 401) throw new Locked();
+  if (r.status === 410) throw new Gone();
   // Anything but JSON is not the studio answering: a dev server without its proxy serves the
   // app's own index.html with 200, a proxy in trouble serves an error page.
   if (!r.headers.get("content-type")?.includes("application/json"))
@@ -87,6 +96,9 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+/** An image the studio already has, by its hash (data/images.ts); sent in place of the base64 itself. */
+export type ImageRef = { ref: string };
+
 const post = <T>(path: string, data?: unknown) =>
   call<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) });
 
@@ -96,8 +108,9 @@ export const api = {
   generate: (p: Request) => post<Started>("/api/generate", p),
   upscale: (u: UpscaleRequest) => post<Started>("/api/upscale", u),
   inpaint: (i: InpaintRequest) => post<Started>("/api/inpaint", i),
-  body: (image: string) => post<Started>("/api/body", { image }), // the fitted body drawn over the picture
-  mask: (image: string, text: string) => post<Started>("/api/mask", { image, text }), // what SAM finds by text, white on black
+  body: (image: ImageRef) => post<Started>("/api/body", { image }), // the fitted body drawn over the picture
+  mask: (image: ImageRef, text: string) => post<Started>("/api/mask", { image, text }), // what SAM finds by text, white on black
+  putImage: (png: Blob) => call<ImageRef>("/api/images", { method: "POST", body: png }), // once per image, see data/images.ts
   cancel: (id: string) => post<unknown>(`/api/jobs/${id}/cancel`),
   // also cancels; keepalive so it survives a reload right after
   forget: (id: string) => call<unknown>(`/api/jobs/${id}`, { method: "DELETE", keepalive: true }),

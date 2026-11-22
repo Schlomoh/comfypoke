@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { FACE_FAMILIES, Locked } from "@/data/api";
 import { loadFace } from "@/data/db/faces";
+import { useSetups } from "@/data/db/setups";
 import { useSpace } from "@/data/db/space";
 import { lockApp, useCatalog, useGpu } from "@/data/queries";
 import { plan, runCount, summary } from "@/domain/batch";
@@ -13,7 +14,8 @@ import { compose } from "@/domain/compose";
 import { errorText, median, shortName } from "@/domain/format";
 import { legacyUnet, size, type Recipe } from "@/domain/recipe";
 import type { Upscale } from "@/domain/render";
-import { base64, useJobs } from "@/state/jobs";
+import { toPass } from "@/domain/setup";
+import { useJobs } from "@/state/jobs";
 import { useTriggers } from "@/state/recipe";
 import { focusAtom, recipeAtom, rendersAtom } from "@/state/studio";
 
@@ -54,6 +56,8 @@ export function useGenerate() {
   const triggers = useTriggers();
   const { generate } = useJobs();
   const each = useRenderTime();
+  const setups = useSetups();
+  const finishing = recipe.finish && setups.find((s) => s.id === recipe.finish?.setup);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -76,9 +80,12 @@ export function useGenerate() {
         .map((c) => c.name)
         .join(" & ") || undefined; // the library filters by it
     const { width, height } = size(r.aspect, r.mp);
-    const face = FACE_FAMILIES.includes(sent.family.id) ? faceFor(r)?.face : null;
+    const fin = r.finish && setups.find((s) => s.id === r.finish?.setup);
+    const finish = fin && r.finish ? { ...toPass(fin), denoise: r.finish.strength } : null;
+    const last = finish?.family ?? sent.family.id; // the head swap runs on the last pass's model
+    const face = FACE_FAMILIES.includes(last) ? faceFor(r)?.face : null;
     try {
-      const reference = face ? await base64(await loadFace(space, face)) : undefined;
+      const photo = face ? await loadFace(space, face) : undefined;
       // one job per version and seed; stop_after rides on each, so the last one sent decides
       for (const [i, run] of plan(r, triggers).entries()) {
         const started = await generate(
@@ -94,10 +101,11 @@ export function useGenerate() {
             cfg: r.cfg,
             loras: active,
             stop_after: r.stopAfter,
-            reference,
+            finish,
           },
           // oxlint-disable-next-line unicorn/no-thenable -- the field's name in jobs already stored on phones
           { recipe: run.recipe, characterName, then: r.upscale.auto ? upscaleOf(r) : undefined },
+          photo,
         );
         if (i === 0) setFocus(started.id);
       }
@@ -120,6 +128,8 @@ export function useGenerate() {
     cost: seconds != null && gpu ? (seconds * gpu.rate_per_hour) / 3600 : null,
     booting: gpu ? !gpu.booted : false,
     stopAfter: recipe.stopAfter,
-    label: summary(recipe) ?? `${shortName(recipe.unet)} · ${aspect.width}×${aspect.height}`,
+    label:
+      (summary(recipe) ?? `${shortName(recipe.unet)} · ${aspect.width}×${aspect.height}`) +
+      (finishing ? ` → ${finishing.name}` : ""),
   };
 }
