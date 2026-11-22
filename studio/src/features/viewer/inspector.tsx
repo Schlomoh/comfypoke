@@ -1,7 +1,6 @@
 // Everything recorded about one image. Title, notes, tags and character name are the user's and
 // editable; how the image was made (prompt, model, seed, LoRAs, upscale) is the record and stays
 // as it was. Exported PNGs carry the same record (@/domain/png).
-import { useAtomValue } from "jotai";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { loadImage, updateRender } from "@/data/db/renders";
@@ -9,8 +8,7 @@ import { useSpace } from "@/data/db/space";
 import { shortName } from "@/domain/format";
 import { parameters } from "@/domain/png";
 import type { Render } from "@/domain/render";
-import { useImageActions } from "@/state/actions";
-import { rendersAtom } from "@/state/studio";
+import { Linked } from "@/features/viewer/linked";
 import { Button } from "@/ui/button";
 import { Input, Labeled, Textarea } from "@/ui/field";
 import { notify } from "@/ui/notify";
@@ -60,10 +58,20 @@ const copy = (text: string, what: string) =>
   );
 
 function facts(render: Render, bytes?: number): [string, ReactNode][] {
+  const file = bytes ? `PNG · ${(bytes / 1024 / 1024).toFixed(2)} MB` : "PNG";
+  if (render.uploaded)
+    // nothing rendered it: what it was made with is not a thing to show
+    return [
+      ["Added", new Date(render.createdAt).toLocaleString()],
+      ["Photo", render.uploaded],
+      ["Size", `${render.width} × ${render.height}`],
+      ["File", file],
+      ["Edits with", render.unet ? shortName(render.unet) : ""],
+    ];
   const rows: [string, ReactNode][] = [
     ["Created", new Date(render.createdAt).toLocaleString()],
     ["Took", `${render.seconds} s`],
-    ["Model", render.unet ? shortName(render.unet) : render.model],
+    ["Model", `${render.unet ? shortName(render.unet) : render.model}${finishedBy(render)}`],
     ["Family", render.family],
     ["Size", `${render.width} × ${render.height}`],
     ["Steps", render.steps],
@@ -86,8 +94,22 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
         ? render.loras.map((l) => `${shortName(l.name)} ${l.strength}`).join(", ")
         : "none",
     ],
-    ["File", bytes ? `PNG · ${(bytes / 1024 / 1024).toFixed(2)} MB` : "PNG"],
+    ["File", file],
   ];
+  if (render.reference) rows.push(["Face", "swapped in from a face photo"]);
+  const e = render.edit;
+  if (e?.dress) {
+    const d = e.dress;
+    const finish = typeof d.finish === "string" ? d.finish : d.finish && "Krea 2";
+    rows.push([
+      "Outfit",
+      `"${e.prompt}" in place of ${e.target}, body held ${d.hold} · dressed by ${d.dresser ?? "Z-Image Turbo"}${finish ? ` · finished by ${finish}${d.strength ? ` at ${d.strength}` : ""}` : ""}${e.face ? ` · ${e.face}'s face` : ""}`,
+    ]);
+  } else if (e)
+    rows.push([
+      "Edit",
+      `repainted "${e.prompt}"${e.target ? ` where "${e.target}" was found` : ""}${e.setup ? ` · with ${e.setup}` : ""}${e.face ? ` · ${e.face}'s face` : ""}`,
+    ]);
   const u = render.upscale;
   if (u)
     rows.push([
@@ -97,35 +119,9 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
   return rows;
 }
 
-function Linked({ render }: { render: Render }) {
-  const all = useAtomValue(rendersAtom) ?? [];
-  const { open } = useImageActions();
-  const source = render.source ? all.find((r) => r.id === render.source) : undefined;
-  const upscales = all.filter((r) => r.source === render.id);
-  if (!render.source && !upscales.length) return null;
-  return (
-    <section className="flex flex-col gap-1.5">
-      <Heading>Linked</Heading>
-      {render.source && !source && <p className="font-mono text-faint">source image deleted</p>}
-      {source && (
-        <Button variant="link" size="inline" className="justify-start px-0" onClick={() => open(source.id)}>
-          ← source image, {source.width} × {source.height}
-        </Button>
-      )}
-      {upscales.map((u) => (
-        <Button
-          key={u.id}
-          variant="link"
-          size="inline"
-          className="justify-start px-0"
-          onClick={() => open(u.id)}
-        >
-          → upscale, {u.width} × {u.height}
-        </Button>
-      ))}
-    </section>
-  );
-}
+/** A render's finish pass, after its model: " → krea2_raw_bf16 at 0.35". */
+const finishedBy = (r: Render) =>
+  r.finish && !r.edit ? ` → ${shortName(r.finish.unet)} at ${r.finish.denoise}` : "";
 
 export function Inspector({ render }: { render: Render }) {
   const space = useSpace();
@@ -180,18 +176,20 @@ export function Inspector({ render }: { render: Render }) {
         onCommit={(c) => edit({ characterName: c.trim() || undefined })}
       />
 
-      <section className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <Heading>Prompt</Heading>
-          <Button variant="text" onClick={() => copy(render.prompt, "Prompt")}>
-            copy
-          </Button>
-        </div>
-        <p className="font-mono leading-relaxed text-muted select-text">{render.prompt}</p>
-        {render.negative && (
-          <p className="font-mono leading-relaxed text-faint select-text">Negative: {render.negative}</p>
-        )}
-      </section>
+      {render.prompt && (
+        <section className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <Heading>Prompt</Heading>
+            <Button variant="text" onClick={() => copy(render.prompt, "Prompt")}>
+              copy
+            </Button>
+          </div>
+          <p className="font-mono leading-relaxed text-muted select-text">{render.prompt}</p>
+          {render.negative && (
+            <p className="font-mono leading-relaxed text-faint select-text">Negative: {render.negative}</p>
+          )}
+        </section>
+      )}
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 font-mono">
         {facts(render, bytes).map(([k, v]) => (

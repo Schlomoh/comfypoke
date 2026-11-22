@@ -1,12 +1,13 @@
-// This workspace's saved characters and scenes, with the shared presets and LoRA notes, as one JSON
+// This workspace's saved characters and scenes, with the shared presets, model setups and LoRA notes, as one JSON
 // file: the backup, and how a library moves between devices.
 import { unsealJson } from "@/data/crypto";
 import { putSaved } from "@/data/db/saved";
 import { db, STARTERS, type LoraNote, type Preset } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
 import { isRecord, isText, LEGACY_ROW } from "@/domain/parse";
-import { ROWS, type RowId } from "@/domain/rows";
+import { PRESET_ROWS, type PresetRow } from "@/domain/rows";
 import { toSaved, type Saved } from "@/domain/saved";
+import { BUILT_IN, parseSetup, type Setup } from "@/domain/setup";
 
 const savedOf = async (space: Space) => {
   const rows = await db.chars.where("ws").equals(space.id).toArray();
@@ -14,19 +15,22 @@ const savedOf = async (space: Space) => {
   return raw.map(toSaved).filter((x): x is Saved => x !== null);
 };
 
+const faceless = (s: Saved): Saved => ({ ...s, face: undefined });
+
 export async function exportLibrary(space: Space) {
   const data = {
     version: 2,
-    saved: await savedOf(space),
+    saved: (await savedOf(space)).map(faceless), // face photos stay on the device they were added on
     loraNotes: await db.loraNotes.toArray(),
     presets: await db.presets.toArray(),
+    setups: await db.setups.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
 }
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const rowIds = new Set<string>(ROWS.map((r) => r.id));
-const isRow = (v: string): v is RowId => rowIds.has(v);
+const rowIds = new Set<string>(PRESET_ROWS.map((r) => r.id));
+const isRow = (v: string): v is PresetRow => rowIds.has(v);
 
 function presetsIn(raw: unknown): Preset[] {
   const out: Preset[] = [];
@@ -43,8 +47,10 @@ function presetsIn(raw: unknown): Preset[] {
 const notesIn = (raw: unknown): LoraNote[] =>
   list(raw)
     .filter(isRecord)
-    .filter((n): n is { name: string; trigger: string } => isText(n.name) && isText(n.trigger))
-    .map((n) => ({ name: n.name, trigger: n.trigger }));
+    .filter(
+      (n): n is { name: string; trigger: string; family?: unknown } => isText(n.name) && isText(n.trigger),
+    )
+    .map((n) => ({ name: n.name, trigger: n.trigger, ...(isText(n.family) ? { family: n.family } : {}) }));
 
 const presetKey = (p: Preset) => `${p.block}\u0000${p.text.toLowerCase()}`;
 
@@ -73,11 +79,26 @@ export async function importLibrary(space: Space, file: File) {
     const local = mine.get(c.id);
     if (local && local.updatedAt >= c.updatedAt) continue;
     // the same backup imported into a second workspace makes copies there, not moves
-    await putSaved(space, taken.has(c.id) ? { ...c, id: crypto.randomUUID() } : c);
+    // a face id from another device or workspace points at nothing here; the one this entry has here stays
+    const entry = { ...faceless(c), face: local?.face };
+    await putSaved(space, taken.has(c.id) ? { ...entry, id: crypto.randomUUID() } : entry);
     added++;
   }
-  await db.loraNotes.bulkPut(notesIn(data.loraNotes));
+  // a note merges into what is here: an older backup, or one without a family, never erases one set on this device
+  const here = await db.loraNotes.toArray();
+  await db.loraNotes.bulkPut(
+    notesIn(data.loraNotes).map((n) => {
+      const old = here.find((h) => h.name === n.name);
+      return { ...old, ...n, trigger: n.trigger || old?.trigger || "", family: n.family ?? old?.family };
+    }),
+  );
   await addPresets(presetsIn(data.presets));
+  // a setup already here by that name stays as it is
+  const names = new Set([...BUILT_IN, ...(await db.setups.toArray())].map((s) => s.name));
+  const setups = list(data.setups)
+    .map(parseSetup)
+    .filter((s): s is Setup => s !== null && !names.has(s.name) && !!names.add(s.name));
+  await db.setups.bulkPut(setups.map((s) => ({ ...s, id: crypto.randomUUID() })));
   const skipped = raw.length - saved.length;
   return `Imported ${added} of ${saved.length} saved characters and scenes${skipped ? `, skipped ${skipped} malformed` : ""}.`;
 }

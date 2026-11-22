@@ -17,6 +17,7 @@ const merge = extendTailwindMerge({
         "faint",
         "ok",
         "warn",
+        "mask",
         "bad",
       ],
     },

@@ -7,10 +7,13 @@ import { Dexie, type EntityTable } from "dexie";
 import type { Lock, Sealed } from "@/data/crypto";
 import { LEGACY_ROW } from "@/domain/parse";
 import type { Render } from "@/domain/render";
-import type { RowId } from "@/domain/rows";
+import type { PresetRow } from "@/domain/rows";
+import type { Setup } from "@/domain/setup";
 
-export type LoraNote = { name: string; trigger: string };
-export type Preset = { id: string; block: RowId; text: string; label?: string; at: number }; // block: the row it is offered in
+/** What is known about a LoRA file, shared by all workspaces: its trigger words, and the model family it was trained
+ * for, when said (a LoRA for another family is skipped when sent). */
+export type LoraNote = { name: string; trigger: string; family?: string };
+export type Preset = { id: string; block: PresetRow; text: string; label?: string; at: number }; // block: the row it is offered in
 // Names are in the clear so the start screen can list them; `key` is the raw data key of a workspace without a password.
 export type Workspace = {
   id: string;
@@ -39,6 +42,8 @@ export const db = new Dexie("studio") as Dexie & {
   chars: EntityTable<Row, "id">;
   drafts: EntityTable<{ ws: string; sealed: Sealed }, "ws">;
   pending: EntityTable<Row, "id">;
+  faces: EntityTable<Row, "id">; // face reference photos, sealed: a person or character points at one by id
+  setups: EntityTable<Setup, "id">; // model setups, shared like presets: model files and LoRAs are the volume's, not a workspace's
 };
 
 // The chips a device used to start with, by the block ids of the time. Version 5 takes them out again:
@@ -132,6 +137,10 @@ db.version(5)
         p.block = LEGACY_ROW[p.block] ?? p.block;
       }),
   );
+// Face reference photos for characters.
+db.version(6).stores({ faces: "id, ws" });
+// Model setups, saved from the Model tab and picked per pass of an edit.
+db.version(7).stores({ setups: "id, at" });
 // Another tab purged everything (deleted the database): this one must not quietly recreate it
 // with its own draft or jobs. Reloading drops all of its state.
 db.on("versionchange", () => {

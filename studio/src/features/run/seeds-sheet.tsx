@@ -1,18 +1,23 @@
-// Every render Generate will send, one after another: how many seeds, whether versions share them,
-// whether the GPU stops after the queue, and what it will take.
+// The dock's ×N: how many seeds, random or fixed, whether versions share them, whether the GPU stops after the
+// queue, what it will take, and every render Generate will send, one after another. Surprise me sends that many
+// renders instead, each with one row changed to one of its presets (domain/shuffle.ts).
 import { useAtom } from "jotai";
 
 import { api, quietly } from "@/data/api";
+import { usePresets } from "@/data/db/presets";
 import { useGpu } from "@/data/queries";
-import { plan } from "@/domain/batch";
+import { plan, randomSeed } from "@/domain/batch";
 import { duration } from "@/domain/format";
-import { useRenderTime } from "@/state/generate";
+import { surprises } from "@/domain/shuffle";
+import { useGenerate, useRenderTime } from "@/state/generate";
 import { useTriggers } from "@/state/recipe";
 import { layerAtom, recipeAtom } from "@/state/studio";
+import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
+import { Input } from "@/ui/field";
 import { Sheet } from "@/ui/modal";
 import { Segmented } from "@/ui/segmented";
-import { Facts, Heading } from "@/ui/text";
+import { Facts, Heading, Note } from "@/ui/text";
 
 const SHOWN = 40;
 
@@ -26,7 +31,47 @@ function Explained({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-export function RenderSheet() {
+const SEED_MODES = [
+  { value: "random", label: "random seed" },
+  { value: "fixed", label: "fixed seed" },
+] as const;
+
+function SeedMode() {
+  const [{ seed, count }, setRecipe] = useAtom(recipeAtom);
+  return (
+    <>
+      <div className="flex gap-2">
+        <Segmented
+          className="w-56 shrink-0"
+          value={seed == null ? "random" : "fixed"}
+          options={SEED_MODES}
+          onChange={(v) => setRecipe((r) => ({ ...r, seed: v === "random" ? null : randomSeed() }))}
+        />
+        {seed != null && (
+          <>
+            <Input
+              mono
+              inputMode="numeric"
+              aria-label="Seed"
+              value={seed}
+              onChange={(e) => {
+                const typed = Number(e.target.value.replace(/\D/g, "")) || 0;
+                setRecipe((r) => ({ ...r, seed: typed }));
+              }}
+              className="min-w-0 flex-1"
+            />
+            <Button onClick={() => setRecipe((r) => ({ ...r, seed: randomSeed() }))} title="New seed">
+              New
+            </Button>
+          </>
+        )}
+      </div>
+      {seed != null && count > 1 && <Note>A batch counts up from this seed.</Note>}
+    </>
+  );
+}
+
+export function SeedsSheet() {
   const [layer, setLayer] = useAtom(layerAtom);
   const [recipe, setRecipe] = useAtom(recipeAtom);
   const triggers = useTriggers();
@@ -36,19 +81,34 @@ export function RenderSheet() {
   const runs = open ? plan(recipe, triggers, 0) : [];
   const total = each == null ? null : each * runs.length;
   const rate = gpu?.rate_per_hour ?? null;
+  const presets = usePresets() ?? [];
+  const { surprise, sending } = useGenerate();
+  const surprising = open ? surprises(recipe, presets, recipe.count, () => 0).length : 0; // as many as there are changes
 
   return (
     <Sheet
       open={open}
       onClose={() => setLayer(null)}
-      title={`${runs.length} separate render${runs.length === 1 ? "" : "s"}`}
+      title={`${runs.length} render${runs.length === 1 ? "" : "s"}`}
     >
-      <Heading>Seeds</Heading>
+      <Heading>Seeds per version</Heading>
       <Segmented
         value={recipe.count}
-        options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))}
+        options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))}
         onChange={(count) => setRecipe((r) => ({ ...r, count }))}
       />
+      <Button
+        disabled={!surprising || sending}
+        onClick={() => void surprise(presets).then((n) => n && setLayer(null))}
+      >
+        Surprise me: {surprising || recipe.count} render{(surprising || recipe.count) === 1 ? "" : "s"}
+      </Button>
+      <Note>
+        {surprising
+          ? "Each one changes one row to one of its presets; pinned rows stay as they are."
+          : "No row has a preset left to change to: unpin a row or save presets."}
+      </Note>
+      <SeedMode />
       <Checkbox
         on={recipe.sameSeed}
         onChange={(sameSeed) => setRecipe((r) => ({ ...r, sameSeed }))}

@@ -1,6 +1,7 @@
 // The library's tiles: a finished render, or a job still running (or failed) ahead of them.
 import { useThumb } from "@/data/db/renders";
 import { isUpscale, progress, type Job } from "@/domain/job";
+import { kindOf } from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
@@ -28,7 +29,11 @@ export function Thumb({
       role={picking ? "checkbox" : undefined}
       aria-checked={picking ? selected : undefined}
       aria-label={render.title ?? render.prompt}
-      className={cn(tile, ((active && !picking) || selected) && "outline-2 outline-ink")}
+      className={cn(
+        tile,
+        ((active && !picking) || selected) && "outline-2 outline-ink",
+        render.passed && !active && "opacity-40",
+      )}
     >
       {url && (
         <img
@@ -49,6 +54,14 @@ export function Thumb({
           aria-hidden
         >
           ↑{render.upscale.megapixels}MP
+        </span>
+      )}
+      {kindOf(render) && (
+        <span
+          className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
+          aria-hidden
+        >
+          {kindOf(render)}
         </span>
       )}
       {picking && (

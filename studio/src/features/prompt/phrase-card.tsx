@@ -1,8 +1,9 @@
 // One phrase in its row's sheet: on or off, its text, its versions, and the switch that sends the picker
 // below to add versions of it.
 import { useAtom, useSetAtom } from "jotai";
+import type { ReactNode } from "react";
 
-import { editPhrase, editRow, insertAt, type RowRef } from "@/domain/cast";
+import { insertAt, type Lens } from "@/domain/cast";
 import type { Phrase } from "@/domain/recipe";
 import { emptiedAtom } from "@/features/prompt/state";
 import { useTapGuard } from "@/features/prompt/use-tap-guard";
@@ -19,26 +20,30 @@ function targetLabel(p: Phrase, picked: boolean) {
   return p.versions.length ? "+ version" : "+ versions to compare";
 }
 
-export function PhraseCard({
-  at,
+export function PhraseCard<T extends Phrase>({
+  lens,
   phrase: p,
   index,
   picked,
   onPick,
+  children,
 }: {
-  at: RowRef;
-  phrase: Phrase;
+  lens: Lens<T>;
+  phrase: T;
   index: number;
   picked: boolean;
   onPick: (target: string | null) => void;
+  /** Above the text: who does it to whom, for an interaction. */
+  children?: ReactNode;
 }) {
   const setRecipe = useSetAtom(recipeAtom);
   const [emptied, setEmptied] = useAtom(emptiedAtom);
   const guard = useTapGuard();
-  const change = (f: (p: Phrase) => Phrase) => setRecipe((r) => editPhrase(r, { ...at, id: p.id }, f));
+  const edit = (c: (xs: T[]) => T[]) => setRecipe((r) => lens.edit(r, c));
+  const change = (f: (p: T) => T) => edit((xs) => xs.map((x) => (x.id === p.id ? f(x) : x)));
 
   const remove = guard(() => {
-    setRecipe((r) => editRow(r, at, (xs) => xs.filter((x) => x.id !== p.id)));
+    edit((xs) => xs.filter((x) => x.id !== p.id));
     if (picked) onPick(null);
     // an emptied phrase comes back with the text it had before
     const back = { ...p, t: p.t.trim() || emptied.get(p.id) || p.versions[0] || "" };
@@ -47,10 +52,7 @@ export function PhraseCard({
     notify(`Removed “${back.t}”`, {
       action: {
         label: "Undo",
-        run: () =>
-          setRecipe((r) =>
-            editRow(r, at, (xs) => (xs.some((x) => x.id === p.id) ? xs : insertAt(xs, index, back))),
-          ),
+        run: () => edit((xs) => (xs.some((x) => x.id === p.id) ? xs : insertAt(xs, index, back))),
       },
     });
   });
@@ -68,6 +70,7 @@ export function PhraseCard({
 
   return (
     <div id={`card-${p.id}`} className={cn("shrink-0 border bg-bg", picked ? "border-warn" : "border-line")}>
+      {children}
       <div className="flex items-center">
         <Checkbox
           on={p.on}

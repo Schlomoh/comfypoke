@@ -4,6 +4,7 @@
 import { loadImage } from "@/data/db/renders";
 import { db } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
+import { fileName } from "@/domain/format";
 import { isRecord, isText } from "@/domain/parse";
 import { withMetadata } from "@/domain/png";
 import type { Render } from "@/domain/render";
@@ -77,7 +78,9 @@ async function write(dir: Dir, name: string, data: Blob | string) {
 // The render's id in the name: two renders with the same seed are different files, and a second
 // run over the same images finds them already there and skips them.
 export const folderName = (r: Render) =>
-  `studio-${r.characterName ? `${r.characterName.replace(/[^\w-]+/g, "_").slice(0, 60)}-` : ""}${r.seed}-${r.id.slice(0, 8)}.png`;
+  r.uploaded
+    ? `${fileName(r)}.png`
+    : `studio-${r.characterName ? `${r.characterName.replace(/[^\w-]+/g, "_").slice(0, 60)}-` : ""}${r.seed}-${r.id.slice(0, 8)}.png`;
 
 let queue: Promise<unknown> = Promise.resolve();
 

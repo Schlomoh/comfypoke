@@ -1,114 +1,79 @@
-// The LoRA stack: each one on or off, its strength and its trigger words.
+// The LoRA stack, in the order it runs: drag a row by its handle to change it. Each row says whose it is (the
+// look's, or a saved character's in the cast) and a tap on that gives it to another (lora-row.tsx). A LoRA made for
+// another model family stays listed, greyed and skipped when sent.
 import { useAtomValue, useSetAtom } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
-import { setTrigger, useLoraNotes } from "@/data/db/presets";
+import { useLoraNotes } from "@/data/db/presets";
+import { useSaved } from "@/data/db/saved";
 import { useCatalog } from "@/data/queries";
+import { resolve } from "@/domain/catalog";
 import { shortName } from "@/domain/format";
+import { fits, moved } from "@/domain/loras";
 import type { StackLora } from "@/domain/recipe";
+import { LoraRow, type Owner } from "@/features/model/lora-row";
+import { useGiveLora } from "@/state/recipe";
 import { recipeAtom } from "@/state/studio";
-import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
-import { cn } from "@/ui/cn";
-import { Input, Select } from "@/ui/field";
+import { Select } from "@/ui/field";
+import { useReorder } from "@/ui/reorder";
 import { Section } from "@/ui/section";
-import { Slider } from "@/ui/slider";
 import { Note } from "@/ui/text";
 
-/** A field typed into while its value can also change from elsewhere (the slider, a note loading). */
-function useEditable(value: string) {
-  const ref = useRef<HTMLInputElement>(null);
-  const [text, setText] = useState(value);
-  useEffect(() => {
-    if (document.activeElement !== ref.current) setText(value);
-  }, [value]);
-  return [ref, text, setText] as const;
-}
-
-// Both fields apply on every keystroke: a tap on Generate (or Cmd+Enter) must not race a blur.
-function LoraTuning({
-  lora,
-  trigger,
-  onStrength,
-}: {
-  lora: StackLora;
-  trigger: string;
-  onStrength: (v: number) => void;
-}) {
-  const [strengthRef, strength, setStrength] = useEditable(String(lora.strength));
-  const [triggerRef, words, setWords] = useEditable(trigger);
-  return (
-    <>
-      <div className="flex items-center gap-2">
-        <Slider min={-6} max={6} step={0.05} value={lora.strength} onValue={onStrength} />
-        <Input
-          ref={strengthRef}
-          size="sm"
-          mono
-          inputMode="decimal"
-          value={strength}
-          onChange={(e) => {
-            setStrength(e.target.value);
-            const v = Number(e.target.value);
-            if (e.target.value.trim() !== "" && Number.isFinite(v)) onStrength(Math.max(-8, Math.min(8, v))); // the slider stops at ±6, typing goes to ±8
-          }}
-          onBlur={() => setStrength(String(lora.strength))}
-          className="w-16 text-right"
-        />
-      </div>
-      <Input
-        ref={triggerRef}
-        size="sm"
-        value={words}
-        onChange={(e) => {
-          setWords(e.target.value);
-          void setTrigger(lora.name, e.target.value.trim());
-        }}
-        placeholder="trigger words (kept on this device, added to the prompt)"
-      />
-    </>
-  );
-}
+const keyOf = (l: StackLora) => `${l.from ?? ""}:${l.name}`;
 
 export function Loras() {
-  const loras = useAtomValue(recipeAtom).loras;
+  const recipe = useAtomValue(recipeAtom);
+  const loras = recipe.loras;
   const setRecipe = useSetAtom(recipeAtom);
-  const available = useCatalog().catalog.loras;
+  const { catalog } = useCatalog();
+  const family = resolve(recipe, catalog).family?.id;
   const notes = useLoraNotes();
-  const unused = available.filter((n) => !loras.some((l) => l.name === n));
+  const saved = useSaved();
+  const give = useGiveLora();
+  const [open, setOpen] = useState<string | null>(null);
+  const nameOf = (id: string) => saved.find((s) => s.id === id)?.name ?? "a character";
+  const owners: Owner[] = [
+    { id: undefined, name: "Look" },
+    // saved characters in the cast: one deleted meanwhile can't take a LoRA
+    ...saved
+      .filter((s) => recipe.cast.some((p) => p.savedId === s.id))
+      .map((s) => ({ id: s.id, name: s.name })),
+  ];
+  const unused = catalog.loras.filter((n) => !loras.some((l) => l.name === n && !l.from));
   const put = (i: number, patch: Partial<StackLora>) =>
     setRecipe((r) => ({ ...r, loras: r.loras.map((l, j) => (j === i ? { ...l, ...patch } : l)) }));
+  const move = (from: number, to: number) => setRecipe((r) => ({ ...r, loras: moved(r.loras, from, to) }));
+  const { list, handle, row } = useReorder(move);
 
   return (
-    <Section title={`LoRAs · ${loras.filter((l) => l.on).length} active`}>
-      {loras.map((l, i) => (
-        <div
-          key={l.name}
-          className={cn("flex flex-col gap-1.5 border border-line bg-bg p-2", !l.on && "opacity-45")}
-        >
-          <div className="flex items-center gap-1">
-            <Checkbox
-              on={l.on}
-              onChange={(on) => put(i, { on })}
-              title={l.name}
-              className="min-w-0 flex-1"
-              label={<span className="truncate font-mono text-xs">{shortName(l.name)}</span>}
-            />
-            <Button
-              variant="text"
-              onClick={() => setRecipe((r) => ({ ...r, loras: r.loras.filter((_, j) => j !== i) }))}
-            >
-              remove
-            </Button>
-          </div>
-          <LoraTuning
+    <Section
+      title={`LoRAs · ${loras.filter((l) => l.on && fits(l.name, notes, family)).length} active`}
+      tip="They run in this order, top first, and their trigger words lead the prompt in the same order: drag a row by its handle to change it. A saved character's LoRAs come and go with that person in the cast, and their trigger words go into that person's description instead. A LoRA marked for another model family stays here, greyed, and is skipped."
+    >
+      <div ref={list} className="flex flex-col border-t border-line">
+        {loras.map((l, i) => (
+          <LoraRow
+            key={keyOf(l)}
             lora={l}
-            trigger={notes.find((n) => n.name === l.name)?.trigger ?? ""}
-            onStrength={(strength) => put(i, { strength })}
+            index={i}
+            last={i === loras.length - 1}
+            owner={l.from ? nameOf(l.from) : "Look"}
+            owners={family ? owners : []}
+            onGive={(o) => give(l, o.id)}
+            note={notes.find((n) => n.name === l.name)}
+            off={!fits(l.name, notes, family)}
+            expanded={open === keyOf(l)}
+            families={catalog.families}
+            handle={handle}
+            dragged={row(i)}
+            onToggle={() => setOpen(open === keyOf(l) ? null : keyOf(l))}
+            put={(patch) => put(i, patch)}
+            move={(to) => move(i, to)}
+            remove={() => setRecipe((r) => ({ ...r, loras: r.loras.filter((_, j) => j !== i) }))}
           />
-        </div>
-      ))}
-      {available.length === 0 && (
+        ))}
+      </div>
+      {catalog.loras.length === 0 && (
         <Note>
           No LoRAs on the volume yet. Upload one with{" "}
           <code className="font-mono text-muted">tools/sync.sh lora file.safetensors</code>.

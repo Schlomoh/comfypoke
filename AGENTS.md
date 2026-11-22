@@ -39,7 +39,10 @@ explains where things are and how to change them without breaking the deployment
 
 ## Changing things
 
-- Models and node packs: `comfy_modal/catalog.py`, then deploy. Keep the model layer before the
+- Models and node packs: `comfy_modal/catalog.py`, then deploy. Files from Civitai or Hugging Face go straight
+  into the models volume from Modal's side: `tools/sync.sh civitai|hf` (and the console) call `tools/fetch.py`,
+  which runs `comfy_modal/fetch.py`; the token rides as a header on that one call. `--local` is the old way, through
+  the laptop. Keep the model layer before the
   node-pack layer in `image.py`, so a pack change never re-downloads models.
 - Tunables: `comfy_modal/config.py` only. Never hard-code a volume name, port or app name in a
   node or a tool; tools read them through `from comfy_modal import config`.
@@ -49,11 +52,17 @@ explains where things are and how to change them without breaking the deployment
   in ComfyUI's order and the widget names in the order the node declares them. Read them from the
   running server with `GET /api/object_info/<NodeType>`. A wrong order does not error: the GUI shows
   the values under the wrong widgets and the API prompt sends them to the wrong inputs.
-- Studio: its graphs are `comfy_modal/graphs.py`. A model family (encoder, VAE, sampling) is one
-  entry in `FAMILIES`; a file tested with the studio goes in `VERIFIED` with its settings.
+- Studio: its graphs are `comfy_modal/graphs.py`, built with `comfy_modal/graph.py`: `G.add` hands out node ids,
+  so no id means anything. A node the studio watches carries a `stage` (what the phone shows while it runs) or a
+  `role` (`sampler`, `dresser`, `swapper`, `upscaler`, `output`) in its `_meta`; the API and the mock read those
+  back. A model family (encoder, VAE, sampling) is one entry in `FAMILIES`; a file tested with the studio goes in
+  `VERIFIED` with its settings; a model file format is one entry in `LOADERS` plus its node pack.
+- Tests: `uv run pytest -q tests` builds every graph (`tests/samples.py`) and checks it against ComfyUI's node
+  definitions in `tests/object_info.json`; after adding a node type or pack, deploy and refresh that file with
+  `uv run tools/object_info_snapshot.py`. `npm --prefix studio test` runs vitest on the pure domain code. CI runs both.
 - Studio app layers, each importing only from the ones below it (lint enforces it): `src/ui` (the
-  primitives: Button, Chip, Segmented, Checkbox, fields, Modal and Sheet, Note; the only place a raw
-  `<button>`, `<input>` or `<dialog>` may appear), `src/domain` (plain TypeScript: the recipe, its
+  primitives: Button, Chip, Segmented, Checkbox, fields, Modal and Sheet, Popover and Tip on the native Popover
+  API, Note; the only place a raw `<button>`, `<input>` or `<dialog>` may appear), `src/domain` (plain TypeScript: the recipe, its
   rows and presets in `rows.ts`, `compose.ts`, versions, `batch.ts` that turns versions and seeds into
   one job each, parsing of stored data), `src/data` (the API client, TanStack Query in `queries.ts`,
   IndexedDB in `db/`), `src/state` (Jotai atoms, one store per open workspace; the jobs runner;
@@ -67,9 +76,36 @@ explains where things are and how to change them without breaking the deployment
   `ws`, never in the clear or in localStorage. WebCrypto cannot run inside a Dexie upgrade, so
   moving data between tables is a function like `migrate()`, run before the start screen.
   Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
-  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Try UI changes with
+  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Edits happen in the Edit tab
+  (`studio/src/features/edit`) on the image the stage shows. The mask is made from the bar under the stage
+  (`mask-tools.tsx`: brush, eraser, tap, find…, body, invert and clear) and built on the phone as steps
+  (`edit/mask.ts`, listed and removable in `mask-summary.tsx`): areas SAM 3.1 found through `/api/mask`
+  (`graphs.mask`, white on black) by words (`use-find.ts`) or by tapped points (`use-taps.ts`), brush and eraser
+  strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own at edit time. The
+  fitted body (`/api/body`) shows as a half-strength layer under the mask, with every tool still working. One
+  switch, "Keep the body's shape" (`editAtom.mode`), picks the chain: off is a repaint, `graphs.inpaint`
+  (workflow 09's chain: crop and stitch, LanPaint) with a picked look; on is dressing, `graphs.dress`, sent
+  through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as depth into Z-Image's
+  Fun Controlnet) with a Z-Image look, and optionally a light LanPaint finish with any look. Its outfits are a
+  person's Wearing row of the Prompt tab, spelled out per render (`domain/outfits.ts`): switched-on chips are
+  worn together, each version is another job. The passes are chips (`edit/passes.tsx`). `/api/mask` and
+  `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
+  Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,
+  managed from the Look tab's head (`model/look-sheet.tsx`) and picked per pass. A LoRA in the stack belongs to
+  the look or to a saved character in the cast (`StackLora.from`, the character's `loras[family]`); its row's tag
+  gives it to another in its place (`reassign` in `domain/loras.ts`, applied by `useCastLoras` once the
+  characters are written). The library shows stacks, an image and everything made from it
+  (`domain/lineage.ts`), grouped by the Generate that made them. A die on a Prompt row adds a preset as a
+  version, a pin keeps the row out of Surprise me, which sends renders that each change one row to a preset
+  (`domain/shuffle.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
+  `features/library`. A person's face photo (`data/db/faces.ts`, sealed) rides along as
+  `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
+  through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with
   `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it
-  keys off the graphs' node ids, so a renumbered node needs the mock updated too.
+  keys off node classes and the roles in `_meta`.
+  Images go to the studio once: `POST /api/images` returns a hash, and requests send `{"ref": hash}` instead of
+  base64 (`studio/src/data/images.ts`); the studio keeps them in memory and answers 409 for one it lost, and the
+  phone uploads it again. A render can have a finish pass: another setup over the whole image at a strength.
 - Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that
   shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,

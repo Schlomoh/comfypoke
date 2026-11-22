@@ -3,8 +3,9 @@
 #   tools/sync.sh pull              copy new renders to $SYNC_DIR/output (default ~/comfy-renders; each file once, deleted ones stay deleted)
 #   tools/sync.sh push <path>       upload an image or folder to Modal's input dir
 #   tools/sync.sh lora <file> [folder]           upload a model file (default folder: loras)
-#   tools/sync.sh civitai <id|model page url> [folder]   download from Civitai (needs CIVITAI_TOKEN), then upload
-#   tools/sync.sh hf <repo> <path-in-repo> [folder]   download from Hugging Face (HF_TOKEN for gated repos), then upload
+#   tools/sync.sh civitai <id|model page url> [folder] [--local]   Civitai to the models volume (needs CIVITAI_TOKEN)
+#   tools/sync.sh hf <repo> <path-in-repo> [folder] [--local]   Hugging Face to the models volume (HF_TOKEN if gated)
+#     Both download on Modal's side (tools/fetch.py), straight into the volume; --local downloads here, then uploads.
 #   tools/sync.sh workflows         upload workflows/ to the UI's saved workflows; numbered ones (NN-*.json) no
 #                                   longer in workflows/ are removed there, workflows you saved in the GUI are kept
 #   tools/sync.sh workflows-save [message]   commit and push workflows/private/ (your own git checkout, private repo)
@@ -82,20 +83,24 @@ case "$1" in
         echo "if that mirror is one you trust, add it once:  echo CIVITAI_HOSTS=<host> >> .env"
         exit 1
       }
-      [[ "$URL" == *"token="* ]] || URL+="$([[ "$URL" == *"?"* ]] && echo "&" || echo "?")token=$CIVITAI_TOKEN"
-    elif [[ "$2" =~ modelVersionId=([0-9]+) ]]; then URL="https://civitai.com/api/download/models/${BASH_REMATCH[1]}?token=$CIVITAI_TOKEN"
-    elif [[ "$2" =~ ^[0-9]+$ ]]; then URL="https://civitai.com/api/download/models/$2?token=$CIVITAI_TOKEN"
+    elif [[ "$2" =~ modelVersionId=([0-9]+) ]]; then URL="https://civitai.com/api/download/models/${BASH_REMATCH[1]}"
+    elif [[ "$2" =~ ^[0-9]+$ ]]; then URL="https://civitai.com/api/download/models/$2"
     elif [[ "$2" =~ /models/([0-9]+) ]]; then
       echo "model page, looking up its newest version..."
       ID=$(curl -sS --fail "https://civitai.com/api/v1/models/${BASH_REMATCH[1]}" |
         python3 -c 'import json,sys; m=json.load(sys.stdin); v=m["modelVersions"][0]; print(v["id"], "-", m["name"], v["name"], file=sys.stderr); print(v["id"])') ||
         { echo "could not read that model from the Civitai API"; exit 1; }
-      URL="https://civitai.com/api/download/models/$ID?token=$CIVITAI_TOKEN"
+      URL="https://civitai.com/api/download/models/$ID"
     else
       echo "no model or version id found in: $2"
       echo "paste the model page URL (civitai.com/models/NNN), the Download button's link, or a bare version id"
       exit 1
     fi
+    if [[ "$4" != "--local" && "$3" != "--local" ]]; then
+      (cd "$REPO" && uv run tools/fetch.py "$URL" "${3:-loras}" --auth CIVITAI_TOKEN)
+      exit
+    fi
+    [[ "$URL" == *"token="* ]] || URL+="$([[ "$URL" == *"?"* ]] && echo "&" || echo "?")token=$CIVITAI_TOKEN"
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     # Download to a fixed name so --retry can resume with -C - after a reset mid-transfer;
     # the real filename comes from the Content-Disposition header curl saves alongside it.
@@ -105,16 +110,21 @@ case "$1" in
     NAME=$(sed -nE 's/.*[Ff]ilename="?([^";]+)"?.*/\1/p' "$STAGE/.headers" | tail -1 | tr -d '\r')
     [[ -n "$NAME" ]] || NAME="civitai-${URL##*/models/}"; NAME="${NAME%%\?*}"
     mv "$STAGE/.download" "$STAGE/$NAME"
-    upload_model "$STAGE/$NAME" "${3:-loras}"
+    upload_model "$STAGE/$NAME" "$([[ "$3" == "--local" ]] && echo loras || echo "${3:-loras}")"
     ;;
   hf)
-    [[ -n "$3" ]] || { echo "usage: tools/sync.sh hf <owner/repo> <path/in/repo.safetensors> [folder]"; exit 1; }
+    [[ -n "$3" ]] || { echo "usage: tools/sync.sh hf <owner/repo> <path/in/repo.safetensors> [folder] [--local]"; exit 1; }
+    if [[ "$5" != "--local" && "$4" != "--local" ]]; then
+      AUTH=(); [[ -n "$HF_TOKEN" ]] && AUTH=(--auth HF_TOKEN)
+      (cd "$REPO" && uv run tools/fetch.py "https://huggingface.co/$2/resolve/main/$3" "${4:-loras}" "${AUTH[@]}")
+      exit
+    fi
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     AUTH=(); [[ -n "$HF_TOKEN" ]] && AUTH=(-H "Authorization: Bearer $HF_TOKEN")
     curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
       "${AUTH[@]}" -o "$STAGE/$(basename "$3")" "https://huggingface.co/$2/resolve/main/$3" ||
       { echo "download failed; re-running is safe"; exit 1; }
-    upload_model "$STAGE/$(basename "$3")" "${4:-loras}"
+    upload_model "$STAGE/$(basename "$3")" "$([[ "$4" == "--local" ]] && echo loras || echo "${4:-loras}")"
     ;;
   ls|cp|mv|rm)
     (cd "$REPO" && uv run tools/files.py "$@")

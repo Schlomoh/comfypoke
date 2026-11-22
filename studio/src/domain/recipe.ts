@@ -1,5 +1,6 @@
 // What is being built: the people in the picture and its scene as rows of phrases, the model settings
 // and the LoRAs. A phrase is one idea; its versions are alternatives, each rendered separately.
+import type { Gender } from "@/domain/presets/gender";
 import type { PersonRow, SceneRow } from "@/domain/rows";
 
 export type Phrase = { id: string; t: string; on: boolean; versions: string[] };
@@ -7,16 +8,22 @@ export type Side = "left" | "center" | "right";
 export type Depth = "auto" | "front" | "back";
 export const SIDES: Side[] = ["left", "center", "right"];
 export const MAX_PEOPLE = 5;
-// savedId links a person to a saved character (a scene to a saved scene); null is a new one
+// savedId links a person to a saved character (a scene to a saved scene); null is a new one. face is a
+// photo stored on this device (data/db/faces.ts) whose identity the render keeps; null is none.
 export type Person = {
   id: string;
   name: string;
   savedId: string | null;
   side: Side[];
   depth: Depth;
+  gender: Gender;
+  face: string | null;
 } & Record<PersonRow, Phrase[]>;
 export type Scene = { name: string; savedId: string | null } & Record<SceneRow, Phrase[]>;
-export type StackLora = { name: string; strength: number; on: boolean };
+/** Something one person does with another: the phrase is said of `from`, its them and their are `to`. */
+export type Interaction = Phrase & { from: string; to: string };
+/** `from`: the saved character it came with (domain/loras.ts); none for the stack's own. */
+export type StackLora = { name: string; strength: number; on: boolean; from?: string };
 
 export const phrase = (t: string, versions: string[] = []): Phrase => ({
   id: crypto.randomUUID(),
@@ -30,6 +37,8 @@ export const newPerson = (name: string): Person => ({
   savedId: null,
   side: [],
   depth: "auto",
+  gender: "woman",
+  face: null,
   who: [],
   look: [],
   wear: [],
@@ -70,6 +79,7 @@ export function fromSize(width: number, height: number) {
 export type Recipe = {
   cast: Person[];
   scene: Scene;
+  together: Interaction[];
   unet: string;
   family: string | null; // null: the family the model list suggests for unet
   negative: string;
@@ -83,13 +93,20 @@ export type Recipe = {
   sameSeed: boolean; // the versions share their seeds, so only the changed phrase differs between them
   stopAfter: boolean; // the GPU stops once the queue this sends is done
   upscale: UpscaleSettings;
+  finish: FinishSettings | null; // a second, light pass over each render with a saved setup
+  draft: boolean; // render small and quick (DRAFT_MP), to find a direction; a draft is made big from the library
+  pinned: string[]; // rows Surprise me leaves alone, by rowKey (domain/shuffle.ts)
 };
+export const DRAFT_MP = 0.5;
+/** setup: a saved setup's id (domain/setup.ts); strength: how much of the render it may repaint. */
+export type FinishSettings = { setup: string; strength: number };
 // auto: every new render is upscaled once it is stored; prompt "" upscales without a retouch
 export type UpscaleSettings = { auto: boolean; megapixels: number; prompt: string; denoise: number };
 
 export const EMPTY: Recipe = {
   cast: [{ ...newPerson("Person 1"), id: "p1" }],
   scene: emptyScene(),
+  together: [],
   unet: "krea2_turbo_bf16.safetensors",
   family: null,
   negative: "blurry, washed out, plastic skin",
@@ -103,6 +120,9 @@ export const EMPTY: Recipe = {
   sameSeed: true,
   stopAfter: false,
   upscale: { auto: false, megapixels: 4, prompt: "", denoise: 0.3 },
+  finish: null,
+  draft: false,
+  pinned: [],
 };
 
 /** Renders and recipes from before the model list knew only "turbo" and "raw". */

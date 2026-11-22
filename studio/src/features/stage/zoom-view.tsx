@@ -2,19 +2,36 @@
 // the center of the frame (fractions, not pixels), so it stays put when the image changes: same
 // spot, same magnification, which is how two seeds get compared. At fit, a horizontal swipe asks for
 // the next or previous image and, in the full-screen viewer, a swipe down closes it. Zoomed in, a
-// drag pans, so arrows at the edges take over going to the next image.
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+// drag pans, so arrows at the edges take over going to the next image. With `paint` (the Edit tab) one pointer
+// paints instead, in fractions of the image, and two fingers (or Space and a drag) zoom and pan.
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 
 import { FIT, type View } from "@/domain/view";
-import { Pressable } from "@/ui/pressable";
+import { EdgeArrows } from "@/features/stage/edge-arrows";
+import { useSpaceHeld } from "@/features/stage/use-space-held";
 
 const MAX = 8;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 type Point = { x: number; y: number };
+/** Painting hides it: the brush ring stands in for it. */
+const cursorOf = (painting: boolean, view: View) => {
+  if (painting) return "crosshair"; // the brush ring shows only over the image
+  return view.scale == null ? "zoom-in" : "grab";
+};
 /** Where a pointer is in the frame, which every pointer handler is on. */
 const local = (e: PointerEvent<HTMLDivElement>): Point => {
   const r = e.currentTarget.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
+};
+
+/** A point of the image as fractions of its width and height. */
+export type At = [number, number];
+export type Paint = {
+  start: (at: At, width: number, alt: boolean) => void; // width: the image's on screen, in CSS pixels, for the brush's size; alt: Alt held
+  move: (at: At) => void;
+  end: () => void;
+  cancel: () => void; // a second finger came down: that is a pinch, not a stroke
+  hover: (at: At | null) => void; // where the brush is, for its ring
 };
 
 type Props = {
@@ -25,9 +42,11 @@ type Props = {
   onSwipe?: (dir: 1 | -1) => void;
   onTap?: () => void;
   onDismiss?: () => void; // a swipe down at fit; the frame then handles vertical drags itself
+  paint?: Paint;
+  overlay?: ReactNode; // drawn over the image, in its box
 };
 
-export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }: Props) {
+export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss, paint, overlay }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [nat, setNat] = useState({ w: 0, h: 0 });
   const [vp, setVp] = useState({ w: 0, h: 0 });
@@ -44,6 +63,8 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
   const lastTap = useRef(0);
   const tapTimer = useRef<number>(undefined);
   const [pull, setPull] = useState(0); // how far a swipe down has dragged the image, for the viewer's close
+  const painting = useRef(false);
+  const space = useSpaceHeld(!!paint); // held: a drag pans while painting, as in most paint programs
 
   useEffect(() => {
     const ro = new ResizeObserver(([e]) => setVp({ w: e.contentRect.width, h: e.contentRect.height }));
@@ -76,6 +97,7 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
       cy: clamp((vp.h / 2 - (to.y - v * nat.h * s)) / (nat.h * s), 0, 1),
     });
   };
+  const atImage = (p: Point): At => [(p.x - left) / w, (p.y - top) / h];
   const toggle = (at: Point) => (view.scale == null ? zoomAt(Math.max(1, fit * 2), at) : setView(FIT));
 
   useEffect(() => {
@@ -114,8 +136,8 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
       ref={box}
       className="group relative size-full overflow-hidden select-none"
       style={{
-        touchAction: view.scale == null && !onDismiss ? "pan-y" : "none",
-        cursor: view.scale == null ? "zoom-in" : "grab",
+        touchAction: view.scale == null && !onDismiss && !paint ? "pan-y" : "none",
+        cursor: cursorOf(!!paint, view),
       }}
       onPointerDown={(e) => {
         try {
@@ -124,10 +146,24 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
           // a pointer that is already gone: the gesture still works inside the frame
         }
         pointers.current.set(e.pointerId, local(e));
+        if (paint && nat.w && pointers.current.size === 1 && !space.current && e.button === 0) {
+          painting.current = true;
+          paint.start(atImage(local(e)), w, e.altKey);
+          return;
+        }
+        if (painting.current) {
+          painting.current = false;
+          paint?.cancel();
+        }
         const p = pointers.current.size === 2 ? spread() : { ...local(e), dist: 0 };
         gesture.current = { x: p.x, y: p.y, dist: p.dist, view, scale, moved: false, t: Date.now() };
       }}
       onPointerMove={(e) => {
+        if (paint && e.pointerType !== "touch") paint.hover(atImage(local(e)));
+        if (painting.current && pointers.current.has(e.pointerId)) {
+          pointers.current.set(e.pointerId, local(e)); // where a pinch starts from if a second finger comes down
+          return paint?.move(atImage(local(e)));
+        }
         const g = gesture.current;
         if (!g || !pointers.current.has(e.pointerId)) return;
         pointers.current.set(e.pointerId, local(e));
@@ -161,6 +197,10 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
         const g = gesture.current;
         const p = local(e);
         pointers.current.delete(e.pointerId);
+        if (painting.current) {
+          painting.current = false;
+          return paint?.end();
+        }
         if (pointers.current.size === 1 && g) {
           // one finger of a pinch lifted: the other pans on from here, not from before the pinch
           const [rest] = pointers.current.values();
@@ -175,6 +215,7 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
         if (onDismiss && g.view.scale == null && !g.dist && dy > 90 && dy > 1.5 * Math.abs(dx))
           return onDismiss();
         const sideways = !g.dist && Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy);
+        if (paint) return; // a pan with Space or two fingers; no swipes or taps while painting
         if (sideways && g.view.scale == null) return onSwipe?.(dx < 0 ? 1 : -1);
         if (sideways) {
           // zoomed: a drag that runs past the image's edge by 60 px goes on to the next image
@@ -190,9 +231,14 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
         lastTap.current = Date.now();
         if (onTap) tapTimer.current = window.setTimeout(onTap, 300); // wait: it may become a double tap
       }}
+      onPointerLeave={() => paint?.hover(null)}
       onPointerCancel={(e) => {
         pointers.current.delete(e.pointerId); // the browser took over, for a vertical page scroll
         gesture.current = null;
+        if (painting.current) {
+          painting.current = false;
+          paint?.cancel();
+        }
         setPull(0);
       }}
     >
@@ -211,33 +257,12 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss }:
           imageRendering: scale >= 2 ? "pixelated" : "auto",
         }}
       />
-      {onSwipe && (
-        // zoomed in, a drag pans the image, so these are how to get to the next one; with a mouse they show on hover
-        <div
-          className={`pointer-events-none absolute inset-0 items-center justify-between px-2 ${
-            view.scale == null
-              ? "hidden opacity-0 group-hover:opacity-100 [@media(pointer:fine)]:flex"
-              : "flex" // at fit a finger swipes instead
-          }`}
-        >
-          {(
-            [
-              [-1, "‹", "Previous image"],
-              [1, "›", "Next image"],
-            ] as const
-          ).map(([dir, glyph, label]) => (
-            <Pressable
-              key={dir}
-              aria-label={label}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onSwipe(dir)}
-              className="pointer-events-auto grid size-11 place-items-center border border-line bg-bg/75 text-lg text-ink backdrop-blur-sm hover:border-edge"
-            >
-              {glyph}
-            </Pressable>
-          ))}
+      {overlay && nat.w > 0 && (
+        <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h }}>
+          {overlay}
         </div>
       )}
+      {onSwipe && <EdgeArrows shown={view.scale != null || !!paint} onStep={onSwipe} />}
     </div>
   );
 }

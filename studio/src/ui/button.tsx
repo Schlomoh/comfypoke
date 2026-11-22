@@ -1,6 +1,6 @@
 // The one clickable control. Sizes follow the pointer: 44px for a finger, compact for a mouse.
 import { cva, type VariantProps } from "class-variance-authority";
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 import { cn } from "@/ui/cn";
 
@@ -11,6 +11,9 @@ const button = cva(
       variant: {
         primary: "bg-ink font-medium text-bg hover:bg-white",
         ghost: "border border-line bg-panel font-medium hover:border-edge",
+        // on and off, like ghost: on shows in the mask's color
+        toggle:
+          "border border-line bg-panel font-medium hover:border-edge aria-pressed:border-mask aria-pressed:text-mask",
         quiet: "font-medium text-muted hover:text-ink",
         danger: "border border-line bg-panel font-medium text-bad hover:border-bad",
         // the small uppercase actions beside a heading: copy, reset, remove
@@ -34,7 +37,8 @@ const button = cva(
   },
 );
 
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof button>;
+export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  VariantProps<typeof button> & { ref?: Ref<HTMLButtonElement> };
 
 export function Button({ variant, size, className, type = "button", ...props }: ButtonProps) {
   return <button type={type} {...props} className={cn(button({ variant, size }), className)} />;

@@ -36,6 +36,15 @@ function textChunk(key: string, value: string) {
 
 /** The readable summary: prompt, then the settings on one line. */
 export function parameters(r: Render) {
+  if (r.uploaded)
+    // a photo: nothing rendered it, so there are no settings to claim
+    return [
+      `Photo: ${r.uploaded}`,
+      `Size: ${r.width}x${r.height}`,
+      r.upscale && `Upscaled: SeedVR2 ${r.upscale.megapixels} MP`,
+    ]
+      .filter(Boolean)
+      .join(", ");
   const loras = (r.loras ?? []).map((l) => `${l.name}:${l.strength}`).join(", ");
   const settings = [
     r.steps && `Steps: ${r.steps}`,

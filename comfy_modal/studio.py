@@ -24,7 +24,7 @@ image = (
 @app.function(
     image=image,
     cpu=0.25,
-    memory=512,
+    memory=2048,  # holds the images phones sent (studio_api._images)
     max_containers=1,  # jobs live in this container's memory, so there must be exactly one
     scaledown_window=config.STUDIO_IDLE_SECONDS,
     timeout=config.WORKER_CALL_TIMEOUT,

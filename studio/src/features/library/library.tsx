@@ -3,13 +3,17 @@
 // what is shown (into a folder, or as a zip), and the library backup (characters, presets and
 // LoRA notes as one JSON file).
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { addPhoto } from "@/data/db/renders";
+import { useSpace } from "@/data/db/space";
+import { errorText } from "@/domain/format";
 import type { Render } from "@/domain/render";
 import { BackupSection } from "@/features/library/backup-section";
 import { DownloadSection } from "@/features/library/download-section";
 import { SelectionBar } from "@/features/library/selection-bar";
-import { Pending, Thumb } from "@/features/library/thumb";
+import { StackGrid } from "@/features/library/stack-grid";
+import { Pending } from "@/features/library/thumb";
 import { useExport } from "@/features/library/use-export";
 import { useImageActions } from "@/state/actions";
 import {
@@ -21,17 +25,20 @@ import {
   libraryFilterAtom,
   liveJobsAtom,
   shownAtom,
+  visibleStacksAtom,
   stageAtom,
   viewerAtom,
 } from "@/state/studio";
 import { Button } from "@/ui/button";
-import { Select } from "@/ui/field";
+import { Input, Select } from "@/ui/field";
+import { notify } from "@/ui/notify";
 import { Segmented } from "@/ui/segmented";
 import { Heading } from "@/ui/text";
 
 /** column: the desktop's right column, beside the stage. A tap there only puts an image on the stage, and the job on the stage is not listed again. */
 export function Library({ column = false }: { column?: boolean }) {
   const shown = useAtomValue(shownAtom);
+  const covers = useAtomValue(visibleStacksAtom).map((s) => s.cover);
   const names = useAtomValue(characterNamesAtom);
   const filter = useAtomValue(libraryFilterAtom);
   const setFilter = useSetAtom(characterFilterAtom);
@@ -45,6 +52,8 @@ export function Library({ column = false }: { column?: boolean }) {
   const chosen = picked ? shown.filter((r) => picked.has(r.id)) : [];
   const target = picked ? chosen : shown; // Download works on the selection while there is one
   const out = useExport(target, !!picked);
+  const space = useSpace();
+  const file = useRef<HTMLInputElement>(null);
 
   const jobs = column ? live.filter((j) => j !== stage.job) : live;
   const focus = (stage.job ?? stage.render)?.id ?? null;
@@ -53,6 +62,15 @@ export function Library({ column = false }: { column?: boolean }) {
   // the stage still shows what it showed when the viewer closes
   const show = column ? setFocus : open;
   const showImage = column ? setFocus : setViewer;
+
+  /** A photo from the device joins the library as an image to repaint or dress, and opens. */
+  const upload = async (f: File) => {
+    try {
+      showImage((await addPhoto(space, f)).id);
+    } catch (e) {
+      notify(`Could not read that photo: ${errorText(e)}`, { bad: true });
+    }
+  };
 
   const toggle = (r: Render) =>
     setPicked((p) => {
@@ -63,42 +81,62 @@ export function Library({ column = false }: { column?: boolean }) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-        <Heading className="flex-1 whitespace-nowrap">Library · {shown.length}</Heading>
-        <Segmented
-          value={best ? "best" : "all"}
-          options={[
-            { value: "all", label: "All" },
-            { value: "best", label: `★ ${bestCount}` },
-          ]}
-          onChange={(v) => setBest(v === "best")}
-          className="w-28"
-        />
-        {names.length > 0 && (
-          <Select
-            value={filter.character}
-            onChange={(e) => setFilter(e.target.value)}
-            aria-label="Character"
-            className="max-w-40"
+      {/* two rows on purpose: what it is and what to do on top, the filters below, so nothing wraps when the list
+          grows a scrollbar */}
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Heading className="flex-1 whitespace-nowrap">Library · {shown.length}</Heading>
+          <Button onClick={() => file.current?.click()} title="Add a photo from this device to edit or dress">
+            Photo
+          </Button>
+          <Input
+            ref={file}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void upload(f);
+            }}
+          />
+          <Button
+            onClick={() => setPicked(picked ? null : new Set())}
+            aria-pressed={!!picked}
+            disabled={!shown.length}
           >
-            <option value="">All characters</option>
-            {names.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </Select>
-        )}
-        <Button
-          onClick={() => setPicked(picked ? null : new Set())}
-          aria-pressed={!!picked}
-          disabled={!shown.length}
-        >
-          {picked ? "Done" : "Select"}
-        </Button>
+            {picked ? "Done" : "Select"}
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Segmented
+            value={best ? "best" : "all"}
+            options={[
+              { value: "all", label: "All" },
+              { value: "best", label: `★ ${bestCount}` },
+            ]}
+            onChange={(v) => setBest(v === "best")}
+            className="w-28"
+          />
+          {names.length > 0 && (
+            <Select
+              value={filter.character}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Character"
+              className="min-w-0 flex-1"
+            >
+              <option value="">All characters</option>
+              {names.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
       </div>
       {picked ? (
-        <SelectionBar shown={shown} chosen={chosen} setPicked={setPicked} out={out} />
+        <SelectionBar visible={covers} chosen={chosen} setPicked={setPicked} out={out} />
       ) : (
         <p className="hidden border-b border-line px-4 py-2 font-mono text-[10.5px] text-faint [@media(pointer:fine)]:block">
           ← → browse · F full screen · B best · press ? for all keys
@@ -108,20 +146,12 @@ export function Library({ column = false }: { column?: boolean }) {
         <p className="px-4 py-6 font-mono text-xs text-faint">
           {best
             ? "Nothing marked best here. Press B or ★ on an image to mark it."
-            : "Nothing here yet. Renders are kept on this device only."}
+            : "Nothing here yet. Renders, and photos you add to edit or dress, are kept on this device only."}
         </p>
       ) : (
         <div className="grid grid-cols-3 gap-px bg-line p-px sm:grid-cols-4 lg:grid-cols-2">
           {!picked && jobs.map((j) => <Pending key={j.id} job={j} active={j.id === focus} onFocus={show} />)}
-          {shown.map((r) => (
-            <Thumb
-              key={r.id}
-              render={r}
-              active={r.id === focus}
-              selected={picked ? picked.has(r.id) : undefined}
-              onSelect={picked ? toggle : (x) => showImage(x.id)}
-            />
-          ))}
+          <StackGrid focus={focus} picked={picked} onSelect={picked ? toggle : (x) => showImage(x.id)} />
         </div>
       )}
       <DownloadSection count={target.length} selected={!!picked} out={out} />

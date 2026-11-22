@@ -6,31 +6,30 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useRef } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
-import { useSpace } from "@/data/db/space";
 import { describe } from "@/domain/format";
 import { status, type Job } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import { ActivityButton } from "@/features/activity/activity-button";
-import { BestButton } from "@/features/library/best-button";
-import { saveImage } from "@/features/library/files";
+import { ImageActions } from "@/features/library/image-actions";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { Inspector } from "@/features/viewer/inspector";
+import { LineageStrip } from "@/features/viewer/lineage-strip";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
 import { infoAtom, viewAtom, viewerAtom, viewerItemAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Modal } from "@/ui/modal";
+import { Pressable } from "@/ui/pressable";
 
 const MARK = "studioViewer"; // our entry in history.state
 const ours = () => !!(history.state as Record<string, unknown> | null)?.[MARK];
 
 function RenderView({ render, onClose }: { render: Render; onClose: () => void }) {
-  const space = useSpace();
   const [info, setInfo] = useAtom(infoAtom);
   const [view, setView] = useAtom(viewAtom);
-  const { reuse, upscaleMany, remove, step } = useImageActions();
+  const { step } = useImageActions();
   const url = useObjectUrl(useImage(render.id));
   return (
     <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
@@ -66,29 +65,30 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
             />
           )}
         </div>
-        {info ? (
+        {info && (
           <aside className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-line lg:w-96 lg:flex-none lg:border-t-0 lg:border-l">
             <Inspector key={render.id} render={render} />
           </aside>
-        ) : (
-          <p className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 font-mono text-xs text-muted">
-            {render.prompt}
-          </p>
         )}
       </div>
-      <div className="grid shrink-0 grid-cols-[auto_1fr_1fr_1fr_1fr] gap-2 border-t border-line p-3 lg:border-t-0">
-        <BestButton render={render} className="w-12" />
-        <Button onClick={() => reuse(render)}>Reuse</Button>
-        <Button
-          onClick={() => void upscaleMany([render])}
-          title="Upscale with the settings in the Model tab (U)"
+      <LineageStrip render={render} />
+      {/* below the row, not in it: beside the image on a wide screen it took the width and left the image none */}
+      {!info && (
+        // the prompt opens the info, as Info does: everything the image was made with
+        <Pressable
+          onClick={() => setInfo(true)}
+          title="Show everything it was made with"
+          className="block shrink-0 border-t border-line px-3 pt-3 text-left font-mono text-xs text-muted hover:text-ink"
         >
-          Upscale
-        </Button>
-        <Button onClick={() => void saveImage(space, render)}>Save</Button>
-        <Button variant="danger" onClick={() => void remove(render)}>
-          Delete
-        </Button>
+          {/* the clamp on a span: Safari does not clamp a button's own box */}
+          <span className="line-clamp-3">
+            {render.draft && <span className="mr-1.5 bg-warn px-1 text-bg">draft</span>}
+            {render.prompt}
+          </span>
+        </Pressable>
+      )}
+      <div className="flex shrink-0 gap-2 border-t border-line p-3 lg:border-t-0">
+        <ImageActions render={render} fill />
       </div>
     </div>
   );

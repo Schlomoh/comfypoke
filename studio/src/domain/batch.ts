@@ -1,6 +1,7 @@
 // What Generate sends: one render per combination of versions, once per seed, each its own job. With
 // shared seeds the versions of one seed differ only by the phrases that vary.
 import { compose } from "@/domain/compose";
+import type { Triggers } from "@/domain/loras";
 import type { Recipe } from "@/domain/recipe";
 import { axes, collapse, combos } from "@/domain/versions";
 
@@ -20,7 +21,7 @@ function seedLabel(r: Recipe, s: number, seed: number | null) {
 }
 
 /** Seeds outermost, so the versions of one seed sit next to each other in the library. */
-export function plan(r: Recipe, triggers: string[], base = r.seed ?? randomSeed()): Planned[] {
+export function plan(r: Recipe, triggers: Triggers, base = r.seed ?? randomSeed()): Planned[] {
   const ax = axes(r);
   const out: Planned[] = [];
   for (let s = 0; s < r.count; s++)

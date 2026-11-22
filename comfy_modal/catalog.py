@@ -81,6 +81,13 @@ MODELS = [
     # Trained on Krea 2 Turbo. Workflow 10 runs it on RAW anyway, which is the thing to suspect
     # first if the pose does not take; krea2_turbo_bf16 at 8 steps and CFG 1 is the trained case.
     Model("thedeoxen/Krea-2-pose-controlnet", "krea2_turbo_openpose_controlnet.safetensors", "loras"),
+    # --- BFS head swap for Krea 2: the studio's face photos ---
+    # Puts the head from a reference photo onto a rendered person: the render and the photo go in as
+    # two references through comfyui-krea2edit (NODE_PACKS), prompt "head_swap: replace the head with
+    # the reference head.", Turbo at 10 steps and CFG 1. graphs.HEADSWAP_LORA. Its maker's workflow:
+    # huggingface.co/Alissonerdx/BFS-Best-Face-Swap, workflows/Head Swap Krea 2 - V1 Simple Workflow.json.
+    # krea2-reid stood here before; one photo gave it a lookalike, not the person.
+    Model("Alissonerdx/BFS-Best-Face-Swap", "bfs_head_swap_v1.1_krea2.safetensors", "loras"),
     # --- SeedVR2 7B: one-step restoration upscaler (Apache 2.0), workflow 03 ---
     Model("Comfy-Org/SeedVR2", "diffusion_models/seedvr2_7b_fp16.safetensors", "diffusion_models"),
     Model("Comfy-Org/SeedVR2", "vae/seedvr2_ema_vae_fp16.safetensors", "vae"),
@@ -99,4 +106,10 @@ MODELS = [
 # resolution, blend it back. Without it a 200 px jacket in a 2K photo only ever gets 200 px of the
 # model's attention. Installing it from the GUI does not stick, because the container is rebuilt
 # from this image every cold start; listed here it is part of the image.
-NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit"]
+# Krea 2 Identity Edit (comfyui-krea2edit): the source-patch and grounded-encode nodes the BFS head
+# swap was trained with; two references at once, and a dial for how hard the second one is copied.
+# comfyui-gguf-reboot (molbal's fork of city96's ComfyUI-GGUF): UnetLoaderGGUF, the loader graphs.LOADERS uses for
+# quantized .gguf diffusion models put in extra/diffusion_models. The fork, because city96's refuses Krea 2 files
+# ("Unexpected architecture type in GGUF file: 'krea2'"). Never both: they register the same node names.
+NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit", "comfyui-krea2edit",
+              "comfyui-gguf-reboot"]

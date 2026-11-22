@@ -4,19 +4,21 @@ import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
-import { useSpace } from "@/data/db/space";
 import { useGpu } from "@/data/queries";
 import { describe } from "@/domain/format";
 import { progress, running, status, type Job } from "@/domain/job";
 import { size } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
-import { BestButton } from "@/features/library/best-button";
-import { download, saveImage } from "@/features/library/files";
+import { EditCanvas } from "@/features/edit/edit-canvas";
+import { MaskTools } from "@/features/edit/mask-tools";
+import { masksAtom } from "@/features/edit/state";
+import { download } from "@/features/library/files";
+import { ImageActions } from "@/features/library/image-actions";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
-import { recipeAtom, rendersAtom, stageAtom, viewAtom } from "@/state/studio";
+import { recipeAtom, rendersAtom, stageAtom, tabAtom, viewAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { Progress } from "@/ui/text";
 
@@ -37,6 +39,8 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
   const { open, step } = useImageActions();
   const recipe = useAtomValue(recipeAtom);
   const url = useObjectUrl(useImage(render?.id));
+  const editing = useAtomValue(tabAtom) === "edit";
+  if (!job && render && url && editing) return <EditCanvas render={render} url={url} />;
   if (!job && render && url)
     return (
       <ZoomView
@@ -103,42 +107,26 @@ function RunningBar({ job }: { job: Job }) {
 }
 
 function RenderBar({ render }: { render: Render }) {
-  const space = useSpace();
-  const { reuse, upscaleMany, remove } = useImageActions();
   return (
     <>
-      <div className="hidden sm:block">
-        <ZoomBar />
-      </div>
-      {/* on a phone the settings are a tap away in the viewer; the bar keeps room for the buttons */}
+      {/* on a phone the settings are in More; the bar keeps room for the buttons */}
       <span className="min-w-0 flex-1 truncate text-faint max-sm:hidden" title={describe(render)}>
         {render.characterName && <span className="text-muted">{render.characterName} · </span>}
         {describe(render)} · {render.seconds}s
       </span>
-      <BestButton render={render} className="max-sm:w-14" />
-      <Button onClick={() => reuse(render)} title="Load these settings" className="max-sm:flex-1">
-        Reuse
-      </Button>
-      <Button onClick={() => void saveImage(space, render)} className="max-sm:flex-1">
-        Save
-      </Button>
-      <Button
-        onClick={() => void upscaleMany([render])}
-        title="Upscale with the settings in the Model tab (U)"
-        className="max-sm:hidden"
-      >
-        Upscale
-      </Button>
-      <Button variant="danger" onClick={() => void remove(render)}>
-        Delete
-      </Button>
+      <div className="flex gap-2 max-sm:min-w-0 max-sm:flex-1">
+        <ImageActions render={render} fill />
+      </div>
     </>
   );
 }
 
 function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: boolean }) {
+  const editing = useAtomValue(tabAtom) === "edit";
+  const steps = useAtomValue(masksAtom)[render?.id ?? ""]?.length ?? 0;
   if (job?.error) return <FailedBar job={job} />;
   if (job) return <RunningBar job={job} />;
+  if (render && editing) return <MaskTools render={render} steps={steps} />;
   if (render) return <RenderBar render={render} />;
   return <span className="text-faint">{loading ? "" : "Ready"}</span>;
 }
@@ -146,12 +134,19 @@ function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: bo
 export function Stage() {
   const { job, render } = useAtomValue(stageAtom);
   const loading = useAtomValue(rendersAtom) === undefined; // the workspace's renders are still being decrypted
+  const editing = useAtomValue(tabAtom) === "edit"; // the corner is paint area there
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
         <Canvas job={job} render={render} loading={loading} />
+        {/* the framing sits on the canvas, out of the bar's way */}
+        {render && !job && !editing && (
+          <div className="absolute top-1 right-1 z-10 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]">
+            <ZoomBar />
+          </div>
+        )}
       </div>
-      <div className="flex min-h-12 items-center gap-2 border-t border-line bg-panel px-3 py-1 font-mono text-xs">
+      <div className="flex min-h-12 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs">
         <Bar job={job} render={render} loading={loading} />
       </div>
     </div>

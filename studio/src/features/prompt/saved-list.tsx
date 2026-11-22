@@ -1,6 +1,7 @@
 // The other saved characters (or scenes): use one in this tab, or delete it.
 import { useAtom } from "jotai";
 
+import { dropFace } from "@/data/db/faces";
 import { deleteSaved, putSaved } from "@/data/db/saved";
 import { useSpace } from "@/data/db/space";
 import { adoptSaved, kindOf, ownerOf, replaceOwner, type Key } from "@/domain/cast";
@@ -43,10 +44,19 @@ export function SavedList({
     });
   };
 
-  const remove = (x: Saved) => {
-    void deleteSaved(x.id);
+  const remove = async (x: Saved) => {
+    await deleteSaved(x.id);
+    // its face photo goes with it, unless another character or a tab still uses it
+    const kept = [...list.filter((s) => s.id !== x.id).map((s) => s.face), ...recipe.cast.map((c) => c.face)];
+    const restore = x.face ? await dropFace(x.face, kept) : () => {};
     notify(`Deleted the saved ${what} “${x.name}”`, {
-      action: { label: "Undo", run: () => void putSaved(space, x) },
+      action: {
+        label: "Undo",
+        run: () => {
+          restore();
+          void putSaved(space, x);
+        },
+      },
     });
   };
 
@@ -78,7 +88,7 @@ export function SavedList({
                 <Button
                   variant="icon"
                   size="square"
-                  onClick={() => remove(x)}
+                  onClick={() => void remove(x)}
                   aria-label={`Delete the saved ${what} ${x.name}`}
                 >
                   ×

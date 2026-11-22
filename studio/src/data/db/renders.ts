@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { sealBlob, sealJson, unsealBlob, unsealJson } from "@/data/crypto";
 import { db } from "@/data/db/schema";
 import { currentGeneration, images, thumbs, useSpace, useUnsealed, type Space } from "@/data/db/space";
-import type { Render } from "@/domain/render";
+import { uploadedRender, type Render } from "@/domain/render";
 
 export async function putShot(space: Space, r: Render, image: Blob, thumb: Blob) {
   const [sealed, t, i] = await Promise.all([
@@ -21,6 +21,24 @@ export async function putShot(space: Space, r: Render, image: Blob, thumb: Blob)
     await db.thumbs.put({ id: r.id, sealed: t });
     await db.images.put({ id: r.id, sealed: i });
   });
+}
+
+const UPLOAD_LONG_SIDE = 2048; // larger only slows every edit: the GPU works on a 1024 box around the change anyway
+
+/** A photo from the device as a render of its own: upright, at most UPLOAD_LONG_SIDE, PNG as the studio takes images. */
+export async function addPhoto(space: Space, file: File) {
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => {
+    throw new Error(`this browser cannot open ${file.type || "this file"}; export it as JPEG or PNG first`);
+  });
+  const scale = Math.min(1, UPLOAD_LONG_SIDE / Math.max(bmp.width, bmp.height));
+  const canvas = new OffscreenCanvas(Math.round(bmp.width * scale), Math.round(bmp.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no canvas to draw it on");
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  bmp.close();
+  const r = uploadedRender(file.name, canvas.width, canvas.height);
+  await saveRender(space, r, await canvas.convertToBlob({ type: "image/png" }));
+  return r;
 }
 
 async function thumbnail(blob: Blob, short = 360): Promise<Blob> {

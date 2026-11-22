@@ -1,0 +1,218 @@
+// Who a person is and how they look: women, men and people of any gender, real and unretouched.
+import type { Group } from "@/domain/presets/gender";
+
+export const WHO: readonly Group[] = [
+  {
+    name: "Age",
+    items: [
+      "{noun} in {their} early twenties",
+      "{noun} in {their} mid twenties",
+      "{noun} in {their} late twenties",
+      "{noun} in {their} thirties",
+      "{noun} in {their} forties",
+      "{noun} in {their} fifties",
+    ],
+  },
+  {
+    name: "Build",
+    only: ["woman"],
+    items: [
+      "slim build",
+      "athletic build",
+      "curvy build",
+      "petite frame",
+      "tall and long-legged",
+      "plus-size figure",
+      "soft natural body",
+    ],
+  },
+  {
+    name: "Build",
+    only: ["man"],
+    items: [
+      "lean build",
+      "athletic build",
+      "muscular build",
+      "broad-shouldered",
+      "tall and lean",
+      "stocky build",
+      "soft natural body",
+      "plus-size build",
+    ],
+  },
+  {
+    name: "Build",
+    only: ["person"],
+    items: [
+      "slim build",
+      "athletic build",
+      "lean build",
+      "tall",
+      "petite frame",
+      "plus-size figure",
+      "soft natural body",
+    ],
+  },
+  {
+    name: "Body",
+    items: [
+      "toned stomach",
+      "soft belly",
+      "natural stretch marks",
+      "visible tan lines",
+      "freckled shoulders",
+      "defined collarbones",
+    ],
+  },
+  {
+    name: "Skin",
+    items: [
+      "fair skin with freckles",
+      "light olive skin",
+      "warm tan skin",
+      "golden brown skin",
+      "deep brown skin",
+      "natural skin texture, visible pores",
+    ],
+  },
+  {
+    name: "Background",
+    items: [
+      "Scandinavian features",
+      "Mediterranean features",
+      "East Asian features",
+      "South Asian features",
+      "{latin} features",
+      "Black {noun}",
+      "Middle Eastern features",
+      "mixed heritage",
+    ],
+  },
+  {
+    name: "Presence",
+    items: [
+      "natural, approachable look",
+      "confident model presence",
+      "relaxed and candid",
+      "editorial poise",
+      "warm, friendly energy",
+      "quiet confidence",
+      "sporty energy",
+    ],
+  },
+];
+
+export const LOOK: readonly Group[] = [
+  {
+    name: "Hair",
+    only: ["woman"],
+    items: [
+      "long straight hair",
+      "long loose waves",
+      "shoulder-length wavy hair",
+      "sleek bob",
+      "pixie cut",
+      "curly hair",
+      "high ponytail",
+      "messy low bun",
+      "hair tucked behind one ear",
+    ],
+  },
+  {
+    name: "Hair",
+    only: ["man"],
+    items: [
+      "short textured crop",
+      "buzz cut",
+      "slicked-back hair",
+      "messy medium-length hair",
+      "curly top, faded sides",
+      "shoulder-length hair",
+      "hair tied back in a bun",
+      "shaved head",
+    ],
+  },
+  {
+    name: "Hair",
+    only: ["person"],
+    items: [
+      "short textured hair",
+      "shoulder-length wavy hair",
+      "long straight hair",
+      "curly hair",
+      "buzz cut",
+      "shaved head",
+    ],
+  },
+  {
+    name: "Hair color",
+    items: [
+      "platinum blonde",
+      "honey blonde",
+      "light brown",
+      "chestnut brown",
+      "dark brown",
+      "jet black",
+      "auburn",
+      "copper red",
+      "salt and pepper",
+    ],
+  },
+  {
+    name: "Face",
+    items: [
+      "green eyes",
+      "hazel eyes",
+      "brown eyes",
+      "blue eyes",
+      "light freckles",
+      "defined brows",
+      "high cheekbones",
+      "strong jawline",
+      "dimples",
+      "soft smile lines",
+    ],
+  },
+  {
+    name: "Facial hair",
+    only: ["man", "person"],
+    items: ["clean-shaven", "light stubble", "short beard", "full groomed beard", "mustache"],
+  },
+  {
+    name: "Makeup",
+    only: ["woman", "person"],
+    items: [
+      "no-makeup look",
+      "dewy natural makeup",
+      "soft glam makeup",
+      "bold red lips",
+      "nude lip gloss",
+      "subtle winged liner",
+    ],
+  },
+  {
+    name: "Jewelry",
+    items: [
+      "delicate gold necklace",
+      "thin silver chain",
+      "small hoop earrings",
+      "stacked rings",
+      "simple wristwatch",
+      "thin-framed glasses",
+    ],
+  },
+  {
+    name: "Tattoos",
+    items: [
+      "fine-line tattoo on the forearm",
+      "small tattoo on the ribs",
+      "tattoo sleeve on one arm",
+      "small tattoo behind the ear",
+    ],
+  },
+  {
+    name: "Nails",
+    only: ["woman", "person"],
+    items: ["short natural nails", "manicured nude nails", "red nail polish", "black nail polish"],
+  },
+];
