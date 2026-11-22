@@ -63,6 +63,8 @@ export type Started = Params & { id: string };
 export class Locked extends Error {}
 /** The studio no longer has an image sent before (410: it restarted): send it again (data/images.ts). */
 export class Gone extends Error {}
+/** The image key was wrapped for an older deploy's worker (409): fetch /api/transport again (data/images.ts). */
+export class Stale extends Error {}
 
 const detail = (body: unknown) => {
   if (typeof body !== "object" || body === null) return undefined;
@@ -82,7 +84,8 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
       : undefined,
   });
   if (r.status === 401) throw new Locked();
-  if (r.status === 410) throw new Gone();
+  if (r.status === 410) throw new Gone("The studio restarted and lost the images sent to it. Try again.");
+  if (r.status === 409) throw new Stale("The studio was redeployed while this was being sent. Try again.");
   // Anything but JSON is not the studio answering: a dev server without its proxy serves the
   // app's own index.html with 200, a proxy in trouble serves an error page.
   if (!r.headers.get("content-type")?.includes("application/json"))
@@ -98,6 +101,8 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 /** An image the studio already has, by its hash (data/images.ts); sent in place of the base64 itself. */
 export type ImageRef = { ref: string };
+/** The workspace's image key wrapped for this deploy's worker, and the id of the public key it was wrapped with. */
+export type WrappedKey = { kid: string; key: string };
 
 const post = <T>(path: string, data?: unknown) =>
   call<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) });
@@ -108,14 +113,21 @@ export type Pt = { x: number; y: number };
 export const api = {
   login: (key: string) => post<{ ok: true }>("/api/login", { key }),
   models: () => call<Catalog>("/api/models"),
-  generate: (p: Request) => post<Started>("/api/generate", p),
-  upscale: (u: UpscaleRequest) => post<Started>("/api/upscale", u),
-  inpaint: (i: InpaintRequest) => post<Started>("/api/inpaint", i),
-  body: (image: ImageRef) => post<Started>("/api/body", { image }), // the fitted body drawn over the picture
+  // Every request that makes an image carries the key it comes back sealed with (data/images.ts).
+  generate: (key: WrappedKey, p: Request) => post<Started>("/api/generate", { ...p, key }),
+  upscale: (key: WrappedKey, u: UpscaleRequest) => post<Started>("/api/upscale", { ...u, key }),
+  inpaint: (key: WrappedKey, i: InpaintRequest) => post<Started>("/api/inpaint", { ...i, key }),
+  body: (key: WrappedKey, image: ImageRef) => post<Started>("/api/body", { image, key }), // the fitted body drawn over the picture
   /** What SAM finds by text, by tapped points (pixels) or both, white on black. */
-  mask: (image: ImageRef, text: string, points?: { positive: Pt[]; negative: Pt[] }) =>
-    post<Started>("/api/mask", { image, text, points }),
-  putImage: (png: Blob) => call<ImageRef>("/api/images", { method: "POST", body: png }), // once per image, see data/images.ts
+  mask: (key: WrappedKey, image: ImageRef, text: string, points?: { positive: Pt[]; negative: Pt[] }) =>
+    post<Started>("/api/mask", { image, text, points, key }),
+  transport: () => call<{ kid: string; spki: string }>("/api/transport"),
+  /** A sealed image, once per image (data/images.ts); a PNG's size goes along, since the studio cannot read it. */
+  putImage: (sealed: Blob, size?: { width: number; height: number }) =>
+    call<ImageRef>(`/api/images${size ? `?w=${size.width}&h=${size.height}` : ""}`, {
+      method: "POST",
+      body: sealed,
+    }),
   cancel: (id: string) => post<unknown>(`/api/jobs/${id}/cancel`),
   // also cancels; keepalive so it survives a reload right after
   forget: (id: string) => call<unknown>(`/api/jobs/${id}`, { method: "DELETE", keepalive: true }),

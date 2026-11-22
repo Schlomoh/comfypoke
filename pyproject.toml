@@ -8,6 +8,7 @@ dependencies = [
     "aiohttp>=3.9",
     "questionary>=2.1.1",
     "rich>=15.0.0",
+    "cryptography>=50.0.2",
 ]
 
 [tool.uv]

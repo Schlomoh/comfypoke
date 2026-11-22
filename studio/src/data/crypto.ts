@@ -57,3 +57,56 @@ export async function unlock(l: Lock, password: string) {
     throw new WrongPassword("Wrong password."); // AES-GCM refuses to decrypt with the wrong key
   }
 }
+
+// ---- images in transit (comfy_modal/seal.py) ----------------------------------------------------------------
+// Images cross to the GPU worker sealed with a transport key: derived with HKDF from the workspace's key and the
+// deploy's key id, so it needs no storage of its own, opens nothing in IndexedDB and changes with every deploy, and
+// sent wrapped with the worker's RSA-OAEP public key, which only the worker can unwrap. A sealed image is iv then ciphertext and tag, as AES-GCM writes them.
+
+const OAEP = { name: "RSA-OAEP", hash: "SHA-256" } as const;
+export async function transportKey(dataKey: CryptoKey, kid: string) {
+  const base = await crypto.subtle.importKey("raw", await exportKey(dataKey), "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(32),
+      info: new TextEncoder().encode(`comfypoke studio transport v1 ${kid}`),
+    },
+    base,
+    AES,
+    true, // extractable: it is wrapped for the worker
+    ["encrypt", "decrypt"],
+  );
+}
+
+/** `key` wrapped with the worker's public key (base64 SubjectPublicKeyInfo DER, from /api/transport). */
+export async function wrapFor(spki: string, key: CryptoKey) {
+  const pub = await crypto.subtle.importKey("spki", fromBase64(spki), OAEP, false, ["wrapKey"]);
+  return toBase64(await crypto.subtle.wrapKey("raw", key, pub, OAEP));
+}
+
+export async function sealWire(key: CryptoKey, data: BufferSource) {
+  const { iv, data: ct } = await seal(key, data);
+  const out = new Uint8Array(iv.byteLength + ct.byteLength);
+  out.set(iv);
+  out.set(new Uint8Array(ct), iv.byteLength);
+  return out;
+}
+
+export const unsealWire = (key: CryptoKey, wire: Uint8Array<ArrayBuffer>) =>
+  unseal(key, { iv: wire.slice(0, 12), data: wire.slice(12).buffer });
+
+export function toBase64(data: ArrayBuffer | Uint8Array<ArrayBuffer>) {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+export function fromBase64(b64: string) {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}

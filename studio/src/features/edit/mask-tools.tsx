@@ -108,7 +108,9 @@ export function MaskTools({ render, steps }: { render: Render; steps: number }) 
   };
   const toggleBody = () => {
     if (!showBody)
-      body.run(async () => withImages(async () => api.body(await imageRef(await loadImage(space, id)))));
+      body.run(async () =>
+        withImages(space, async (t) => api.body(t.wire, await imageRef(t, await loadImage(space, id)))),
+      );
     setBodyOf(showBody ? null : id);
   };
 

@@ -9,7 +9,7 @@ import { api, quietly, type DressRequest, type Request, type Started } from "@/d
 import { addPending, dropPending, pendingIds, pendingMeta } from "@/data/db/pending";
 import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
-import { imageRef, withImages } from "@/data/images";
+import { imageRef, openImage, openPreview, pngSize, withImages } from "@/data/images";
 import { errorText } from "@/domain/format";
 import type { Job } from "@/domain/job";
 import { legacyUnet } from "@/domain/recipe";
@@ -19,12 +19,6 @@ import { focusAtom, jobsAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
-
-/** The PNG's own size: a retouch's VAE crops to its grid, so the server's estimate can be a few pixels off. */
-async function pngSize(blob: Blob) {
-  const head = new DataView(await blob.slice(16, 24).arrayBuffer());
-  return { width: head.getUint32(0), height: head.getUint32(4) };
-}
 
 /** An upscale or an edit is a new image with its source's record, its own size, and a link back. */
 type Finished = { id: string; params: Params; seconds: number; size: { width: number; height: number } };
@@ -97,7 +91,8 @@ function createRunner(store: Store, space: Space) {
   };
 
   const keep = async (id: string, params: Params, image: string, seconds: number) => {
-    const blob = await (await fetch(`data:image/png;base64,${image}`)).blob();
+    const blob = await openImage(space, image).catch(() => null);
+    if (!blob) return finish(id, "The image came back but did not open with this workspace's key.");
     let then: (() => Promise<unknown>) | undefined;
     try {
       const meta = await pendingMeta(space, id);
@@ -139,7 +134,7 @@ function createRunner(store: Store, space: Space) {
     on("progress", (p: { value: number; max: number }) =>
       update(id, { stage: "sampling", step: p.value, steps: p.max }),
     );
-    on("preview", (b64: string) => update(id, { preview: `data:image/jpeg;base64,${b64}` }));
+    on("preview", (sealed: string) => openPreview(space, sealed, (preview) => update(id, { preview })));
     on("image", (b64: string) => (image = b64));
     on("done", ({ seconds }: { seconds: number }) => {
       es.close(); // before the await: the server ends the stream and EventSource would reconnect
@@ -162,8 +157,8 @@ function createRunner(store: Store, space: Space) {
 
   /** A render; `face`, the photo its head swap puts on the person, goes as an image reference. */
   const generate = async (p: Request, meta: JobMeta, face?: Blob) => {
-    const r = await withImages(async () =>
-      api.generate({ ...p, ...(face ? { reference: await imageRef(face) } : {}) }),
+    const r = await withImages(space, async (t) =>
+      api.generate(t.wire, { ...p, ...(face ? { reference: await imageRef(t, face) } : {}) }),
     );
     await addPending(space, r.id, meta);
     attach(r.id);
@@ -174,9 +169,9 @@ function createRunner(store: Store, space: Space) {
   const upscale = async (r: Render, u: Upscale, stopAfter?: boolean): Promise<Started> => {
     const retouch = retouchOf(r, u);
     const png = await loadImage(space, r.id);
-    const res = await withImages(async () =>
-      api.upscale({
-        image: await imageRef(png),
+    const res = await withImages(space, async (t) =>
+      api.upscale(t.wire, {
+        image: await imageRef(t, png),
         megapixels: u.megapixels,
         seed: r.seed,
         retouch,
@@ -204,10 +199,10 @@ function createRunner(store: Store, space: Space) {
     const { mask, face, stopAfter } = o;
     const pass = o.pass ?? passOf(r);
     const png = await loadImage(space, r.id);
-    const res = await withImages(async () =>
-      api.inpaint({
-        image: await imageRef(png),
-        mask: await imageRef(mask),
+    const res = await withImages(space, async (t) =>
+      api.inpaint(t.wire, {
+        image: await imageRef(t, png),
+        mask: await imageRef(t, mask),
         target: e.target,
         prompt: e.prompt,
         unet: pass.unet,
@@ -217,7 +212,7 @@ function createRunner(store: Store, space: Space) {
         steps: pass.steps,
         cfg: pass.cfg,
         seed: null, // a new one each time: Repaint again is how to get another take
-        reference: face && (await imageRef(face)),
+        reference: face && (await imageRef(t, face)),
         stop_after: stopAfter,
         ...(o.dress ? { dress: o.dress } : {}),
       }),

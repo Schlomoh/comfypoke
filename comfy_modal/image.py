@@ -103,6 +103,7 @@ image = (
     # registry-install asks api.comfy.org directly and exits non-zero when it cannot, so the build
     # fails instead of the workflow.
     .run_commands(*[f"comfy --skip-prompt node registry-install {pack}" for pack in NODE_PACKS])
+    .uv_pip_install("cryptography==50.0.2")  # the worker opens and seals the studio's images (seal.py); last, so it rebuilds nothing above
     # Mounted at container start (copy=False): editing these needs no image rebuild.
     .add_local_dir("comfy_nodes", f"{config.COMFY_DIR}/custom_nodes", copy=False)
     .add_local_python_source("comfy_modal", copy=False)

@@ -56,8 +56,11 @@ export function useFind(render: Render) {
     set(t, "queued");
     try {
       const b64 = await preview(
+        space,
         async () =>
-          withImages(async () => api.mask(await imageRef(await loadImage(space, render.id)), what.trim())),
+          withImages(space, async (tr) =>
+            api.mask(tr.wire, await imageRef(tr, await loadImage(space, render.id)), what.trim()),
+          ),
         (stage) => set(t, stage),
       );
       const area = await areaOf(b64);

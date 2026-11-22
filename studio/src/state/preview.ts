@@ -4,6 +4,8 @@
 import { useEffect, useReducer } from "react";
 
 import { api, Locked, quietly, type Started } from "@/data/api";
+import { useSpace, type Space } from "@/data/db/space";
+import { openBase64 } from "@/data/images";
 import { lockApp } from "@/data/queries";
 import { errorText } from "@/domain/format";
 
@@ -16,7 +18,7 @@ const put = (key: string, e: Entry) => {
 };
 const RETRIES = 5; // reconnects in a row with nothing heard before giving up on the stream
 
-/** The job's one image as base64, or why there is none; the stage as it goes. */
+/** The job's one image as base64, still sealed, or why there is none; the stage as it goes. */
 function follow(id: string, onStage: (stage: string) => void) {
   return new Promise<string>((resolve, reject) => {
     const es = new EventSource(`/api/jobs/${id}/events`);
@@ -47,12 +49,21 @@ function follow(id: string, onStage: (stage: string) => void) {
   }).finally(() => quietly(api.forget(id)));
 }
 
-/** One preview job from start to its image (base64 PNG). */
-export const preview = async (start: () => Promise<Started>, onStage: (stage: string) => void = () => {}) =>
-  follow((await start()).id, onStage);
+/** One preview job from start to its image (base64 PNG), opened with the workspace's key. */
+export const preview = async (
+  space: Space,
+  start: () => Promise<Started>,
+  onStage: (stage: string) => void = () => {},
+) => {
+  const sealed = await follow((await start()).id, onStage);
+  return openBase64(space, sealed).catch(() => {
+    throw new Error("the preview came back but did not open with this workspace's key");
+  });
+};
 
 /** The preview for `key` as it stands, and `run` to start it unless it is there or on its way. */
 export function usePreview(key: string) {
+  const space = useSpace();
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     listeners.add(rerender);
@@ -65,7 +76,7 @@ export function usePreview(key: string) {
     put(key, { stage: "queued", error: undefined });
     void (async () => {
       try {
-        const b64 = await preview(start, (stage) => put(key, { stage }));
+        const b64 = await preview(space, start, (stage) => put(key, { stage }));
         put(key, { url: `data:image/png;base64,${b64}`, stage: undefined });
       } catch (e) {
         if (e instanceof Locked) lockApp();

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import modal
 
-from . import config
+from . import config, seal
 from .app import app
 from .ui import read_access_key
 
@@ -28,7 +28,7 @@ image = (
     max_containers=1,  # jobs live in this container's memory, so there must be exactly one
     scaledown_window=config.STUDIO_IDLE_SECONDS,
     timeout=config.WORKER_CALL_TIMEOUT,
-    secrets=[modal.Secret.from_dict(config.container_env(COMFY_ACCESS_KEY=read_access_key()))],
+    secrets=[modal.Secret.from_dict(config.container_env(COMFY_ACCESS_KEY=read_access_key(), **{config.TRANSPORT_PUBLIC_ENV: seal.deploy_keys()[1]}))],
 )
 @modal.concurrent(max_inputs=50)
 @modal.asgi_app()

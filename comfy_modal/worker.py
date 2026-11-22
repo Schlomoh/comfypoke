@@ -12,7 +12,7 @@ from pathlib import Path
 
 import modal
 
-from . import comfy, config, volumes
+from . import comfy, config, seal, volumes
 from .app import app
 
 TERMINAL = ("execution_success", "execution_error", "execution_interrupted")
@@ -34,7 +34,7 @@ def _error(pid, text, kind):
     gpu=config.GPUS,
     max_containers=1,
     volumes={config.CACHE_DIR: volumes.models, config.IO_DIR: volumes.io},
-    secrets=[modal.Secret.from_dict(config.container_env())],
+    secrets=[modal.Secret.from_dict(config.container_env(**{config.TRANSPORT_PRIVATE_ENV: seal.deploy_keys()[0]}))],
     scaledown_window=config.WORKER_IDLE_SECONDS,
     timeout=config.WORKER_CALL_TIMEOUT,
     # No memory/GPU snapshot: the detached ComfyUI process did not survive
@@ -66,6 +66,7 @@ class Worker:
         self.log.seek(0, 2)
         self.log_owner = None  # prompt_id of the one run that tails the log (overlapping runs would duplicate lines)
         self.dequeued = set()  # prompt_ids that interrupt() removed from ComfyUI's pending queue
+        self.transport = None  # the private key the studio's image keys arrive wrapped for, loaded by the first that does
         self._beat("warm")
 
     # --- heartbeat for the GUI's GPU badge (gpu_relay reads the Dict) ---------------------------------------
@@ -147,6 +148,18 @@ class Worker:
         # reload swaps the mount under any run already in progress: a second run's mkdir failed with
         # "Operation not permitted", and running streams stalled for up to a minute while it happened.
         io = payload.pop("io", True)
+        # The studio's runs carry a wrapped key: their images arrive sealed and leave sealed, and nothing that could
+        # hold an opened image (the history's copy of the prompt, an error's inputs or received values, the log)
+        # is passed back (seal.py).
+        key = payload.pop("key", None)
+        if key is not None:
+            try:
+                self.transport = self.transport or seal.load_private(os.environ[config.TRANSPORT_PRIVATE_ENV])
+                key = seal.unwrap(self.transport, key)
+                payload["prompt"] = seal.open_prompt(key, payload["prompt"])
+            except seal.SealError as e:
+                yield _error(pid, str(e), "SealError")
+                return
         self.busy += 1
         self._wake.set()
         terminal_seen = False
@@ -172,11 +185,14 @@ class Worker:
                     async with s.post(f"{BASE}/prompt", json=payload) as r:
                         res = await r.json()
                         if r.status != 200:
-                            yield _error(pid, json.dumps(res.get("error", res)) + "\n" + json.dumps(res.get("node_errors", {})), "ValidationError")
+                            errors = res.get("node_errors", {})
+                            if key:  # their received values can be the opened image: the messages only
+                                errors = {n: [f"{x.get('message')}: {x.get('details')}" for x in e.get("errors", [])] for n, e in errors.items()}
+                            yield _error(pid, json.dumps(res.get("error", res)) + "\n" + json.dumps(errors), "ValidationError")
                             return
                     async for m in ws:
                         if m.type == aiohttp.WSMsgType.BINARY:
-                            yield ("bytes", m.data)
+                            yield ("bytes", seal.seal_frame(key, m.data) if key else m.data)
                             continue
                         if m.type != aiohttp.WSMsgType.TEXT:
                             closed = f"{m.type.name}: {ws.exception() or m.data}"
@@ -184,7 +200,7 @@ class Worker:
                         msg = json.loads(m.data)
                         d = msg.get("data") or {}
                         lines = self.log_lines(pid)
-                        if lines:
+                        if lines and not key:
                             yield ("log", lines)
                         if pid in self.dequeued:  # the dequeue's status message wakes us; ComfyUI sends nothing else for it
                             self.dequeued.discard(pid)
@@ -195,6 +211,8 @@ class Worker:
                             continue
                         if msg["type"] == "status":
                             d.pop("sid", None)  # the browser would adopt the worker's socket id as its own
+                        if key and msg["type"] == "execution_error":
+                            d.update(current_inputs={}, current_outputs={})  # a failing image node's input is the opened image
                         if msg["type"] == "executed" and io:
                             await volumes.io.commit.aio()  # make the new files visible to the UI container
                         yield ("json", msg)
@@ -208,11 +226,11 @@ class Worker:
                     async with s.get(f"{BASE}/history/{pid}") as r:
                         hist = await r.json()
             lines = self.log_lines(pid)
-            if lines:
+            if lines and not key:
                 yield ("log", lines)
             if not terminal_seen:
                 yield _error(pid, f"worker websocket closed before the prompt finished ({closed})", "GPUWorkerError")
-            elif pid in hist:
+            elif pid in hist and not key:
                 yield ("history", hist[pid])
         finally:
             if self.log_owner == pid:
