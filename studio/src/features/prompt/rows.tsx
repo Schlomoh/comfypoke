@@ -11,6 +11,7 @@ import { GENDERS, type Gender } from "@/domain/presets/gender";
 import { SIDES, type Depth, type Person, type Phrase } from "@/domain/recipe";
 import { PERSON_ROWS, SCENE_ROWS, TOGETHER, type RowId } from "@/domain/rows";
 import { fresh, offered, rowKey, SCENE, withVersion } from "@/domain/shuffle";
+import { valuesOf } from "@/domain/versions";
 import { CharacterLoras } from "@/features/prompt/character-loras";
 import { FaceRow } from "@/features/prompt/face-row";
 import { recipeAtom } from "@/state/studio";
@@ -146,12 +147,12 @@ export function Row({
           .map((p) => (
             <Chip key={p.id} tone={tone(p)} text="body" onClick={() => onOpen(p.id)}>
               <span className="min-w-0 break-words">{say(p)}</span>
-              {p.on && p.versions.length > 0 && (
+              {p.on && valuesOf(p).length > 1 && (
                 <span
                   className="bg-warn/15 px-1.5 font-mono text-[10.5px] text-warn no-underline"
-                  title={`${p.versions.length + 1} versions`}
+                  title={`${valuesOf(p).length} versions: one render each`}
                 >
-                  {p.versions.length + 1}
+                  {valuesOf(p).length}
                 </span>
               )}
             </Chip>

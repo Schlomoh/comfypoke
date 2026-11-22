@@ -4,6 +4,7 @@ import { presetGroups } from "@/domain/presets";
 import type { Gender } from "@/domain/presets/gender";
 import { phrase, type Phrase, type Recipe } from "@/domain/recipe";
 import { PERSON_ROWS, SCENE_ROWS, type RowId } from "@/domain/rows";
+import { sameText, says } from "@/domain/versions";
 
 /** A row of the recipe: a person's (by id) or the scene's. */
 export const rowKey = (owner: string, row: RowId) => `${owner}:${row}`;
@@ -19,8 +20,10 @@ export const offered = (row: RowId, gender: Gender, mine: { block: string; text:
 
 /** The presets a row could still take: not already one of its phrases or versions. */
 export function fresh(phrases: Phrase[], presets: string[]): string[] {
-  const used = new Set(phrases.flatMap((p) => [p.t, ...p.versions].map((t) => t.trim())));
-  return [...new Set(presets.map((t) => t.trim()))].filter((t) => t && !used.has(t));
+  const out: string[] = [];
+  for (const t of presets.map((x) => x.trim()))
+    if (t && !phrases.some((p) => says(p, t)) && !out.some((x) => sameText(x, t))) out.push(t);
+  return out;
 }
 
 /** The row with `text` as another version of its first switched-on phrase, or as its first phrase when it has none. */

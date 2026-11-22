@@ -3,12 +3,24 @@ import type { Phrase, Recipe } from "@/domain/recipe";
 import { PERSON_ROWS, SCENE_ROWS, TOGETHER } from "@/domain/rows";
 
 export type Axis = { owner: string; row: string; phrase: Phrase; values: string[] };
+
+/** Two texts that read the same, case and spaces aside: one render, not two. */
+const key = (t: string) => t.trim().toLowerCase().replace(/\s+/g, " ");
+export const sameText = (a: string, b: string) => key(a) === key(b);
+
+/** A phrase's text and its versions, each once and non-empty, the phrase's own first: one render each. */
+export const valuesOf = (p: Phrase) =>
+  [p.t, ...p.versions].filter((t, i, all) => t.trim() && all.findIndex((x) => sameText(x, t)) === i);
+
+/** Whether a phrase already says this, as its text or a version. */
+export const says = (p: Phrase, t: string) => [p.t, ...p.versions].some((x) => sameText(x, t));
+
 export function axes(r: Recipe): Axis[] {
   const out: Axis[] = [];
   // a phrase emptied while its sheet is open is not in the prompt, so it varies nothing
   const add = (owner: string, row: string, p: Phrase) => {
-    if (p.on && p.t.trim() && p.versions.length)
-      out.push({ owner, row, phrase: p, values: [p.t, ...p.versions] });
+    const values = valuesOf(p);
+    if (p.on && p.t.trim() && values.length > 1) out.push({ owner, row, phrase: p, values });
   };
   for (const c of r.cast) for (const row of PERSON_ROWS) for (const p of c[row.id]) add(c.name, row.label, p);
   for (const row of SCENE_ROWS) for (const p of r.scene[row.id]) add("Scene", row.label, p);

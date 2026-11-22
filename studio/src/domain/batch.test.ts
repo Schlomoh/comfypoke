@@ -32,4 +32,15 @@ describe("batch", () => {
     expect(r.count).toBe(1);
     expect(runCount(r)).toBe(1);
   });
+  it("renders a version that reads the same as the phrase or another version once", () => {
+    const r = {
+      ...EMPTY,
+      cast: [
+        { ...EMPTY.cast[0], wear: [phrase("a red coat", ["A red  coat", "a blue coat", "a Blue coat "])] },
+      ],
+    };
+    expect(runCount(r)).toBe(2);
+    const only = { ...EMPTY, cast: [{ ...EMPTY.cast[0], wear: [phrase("a red coat", ["a Red coat"])] }] };
+    expect(runCount(only)).toBe(1);
+  });
 });

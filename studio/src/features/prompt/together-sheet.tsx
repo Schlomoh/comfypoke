@@ -7,6 +7,7 @@ import { usePresets } from "@/data/db/presets";
 import { partnerOf, sayTogether, togetherLens } from "@/domain/cast";
 import { onto } from "@/domain/compose";
 import { phrase, type Interaction, type Recipe } from "@/domain/recipe";
+import { says } from "@/domain/versions";
 import { PhraseCard } from "@/features/prompt/phrase-card";
 import { PresetPicker } from "@/features/prompt/preset-picker";
 import { openAtom } from "@/features/prompt/state";
@@ -70,17 +71,13 @@ export function TogetherSheet() {
   const add = (t: string) => {
     if (target)
       edit((xs) =>
-        xs.map((x) =>
-          x.id !== target.id || t === x.t || x.versions.includes(t)
-            ? x
-            : { ...x, versions: [...x.versions, t] },
-        ),
+        xs.map((x) => (x.id !== target.id || says(x, t) ? x : { ...x, versions: [...x.versions, t] })),
       );
     else edit((xs) => (xs.some((x) => has(x, t)) ? xs : [...xs, { ...phrase(t), ...at }]));
   };
   const added = (t: string) => {
     if (!target) return items.find((x) => has(x, t))?.id;
-    return t === target.t || target.versions.includes(t) ? target.id : undefined;
+    return says(target, t) ? target.id : undefined;
   };
   const gender = recipe.cast.find((c) => c.id === at.from)?.gender ?? "person";
   const other = recipe.cast.find((c) => c.id === (target?.to ?? at.to))?.name ?? "";

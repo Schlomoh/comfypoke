@@ -4,6 +4,7 @@ import { useAtom } from "jotai";
 import type { Preset } from "@/data/db/schema";
 import { editPhrase, editRow, isPerson, ownerOf, rowDef, type RowRef } from "@/domain/cast";
 import { phrase, type Phrase } from "@/domain/recipe";
+import { says, sameText } from "@/domain/versions";
 import { PresetPicker } from "@/features/prompt/preset-picker";
 import { recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
@@ -26,13 +27,13 @@ export function RowPicker({ at, phrases, target, presets, onTarget }: Props) {
     if (target)
       setRecipe((r) =>
         editPhrase(r, { ...at, id: target.id }, (p) =>
-          t === p.t || p.versions.includes(t) ? p : { ...p, versions: [...p.versions, t] },
+          says(p, t) ? p : { ...p, versions: [...p.versions, t] },
         ),
       );
     else setRecipe((r) => editRow(r, at, (xs) => (xs.some((p) => p.t === t) ? xs : [...xs, phrase(t)])));
   };
   const has = (x: string) =>
-    (target ? [target].find((p) => p.t === x || p.versions.includes(x)) : phrases.find((p) => p.t === x))?.id;
+    (target ? [target].find((p) => says(p, x)) : phrases.find((p) => sameText(p.t, x)))?.id;
 
   return (
     <PresetPicker
