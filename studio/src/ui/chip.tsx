@@ -30,18 +30,22 @@ export function Chip({ tone, text, className, type = "button", ...props }: ChipP
   return <button type={type} {...props} className={cn(chip({ tone, text }), className)} />;
 }
 
-/** A tag that is not a button itself, holding its own remove button: the versions of a phrase. */
+const TAG = { warn: "border-warn bg-warn/10 text-warn", mask: "border-mask bg-mask/10 text-mask" } as const;
+
+/** A tag that is not a button itself, holding its own remove button: the versions of a phrase, an area of a mask. */
 export function Tag({
   children,
   onRemove,
   removeLabel,
+  tone = "warn",
 }: {
   children: ReactNode;
   onRemove: () => void;
   removeLabel: string;
+  tone?: keyof typeof TAG;
 }) {
   return (
-    <span className="inline-flex max-w-full items-center border border-warn bg-warn/10 text-warn">
+    <span className={cn("inline-flex max-w-full items-center border", TAG[tone])}>
       <span className="min-w-0 py-1.5 pl-2.5 text-xs break-words">{children}</span>
       <button
         type="button"

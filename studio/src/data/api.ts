@@ -1,6 +1,7 @@
 // The studio endpoint (comfy_modal/studio_api.py). Same origin, so the key cookie rides along.
 import type { Catalog } from "@/domain/catalog";
-import type { Lora, Params } from "@/domain/render";
+import type { Hold, Lora, Params } from "@/domain/render";
+import type { Pass } from "@/domain/setup";
 
 export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg" | "reference"> & {
   family: string | null;
@@ -28,15 +29,20 @@ export type UpscaleRequest = {
 export const UPSCALE_MEGAPIXELS = [2, 4, 8] as const; // as graphs.UPSCALE_MEGAPIXELS on the server
 export const FACE_FAMILIES: readonly string[] = ["krea2"]; // as graphs.HEADSWAP_FAMILIES: the head swap is a Krea 2 LoRA
 /** Repaint the masked part of an image with the settings it was made with (graphs.inpaint). */
-export type InpaintRequest = Pick<Params, "unet" | "prompt" | "negative" | "loras" | "steps" | "cfg"> & {
+export type InpaintRequest = Pick<Params, "unet" | "prompt" | "negative" | "loras"> & {
   family: string | null;
+  steps: number | null; // null: the model's default
+  cfg: number | null;
   seed: number | null;
   image: string; // base64 PNG
   mask: string; // base64 PNG of the image's size, white where to repaint
-  target: string; // also masked: what SAM finds by this name, "" for the painted mask alone
+  target: string; // what the mask was found as, recorded only; the mask is what is replaced
   reference?: string; // base64 face photo
   stop_after?: boolean;
+  dress?: DressRequest; // replace the clothes against the body's mesh (graphs.dress); prompt is the outfit
 };
+/** The passes of a dressing: Z-Image dresses the body held by its mesh, then optionally another model finishes it. */
+export type DressRequest = { hold: Hold; dresser: Pass; finish: (Pass & { denoise: number }) | null };
 
 export type GpuState = "cold" | "starting" | "warm" | "busy";
 export type Gpu = {
@@ -49,6 +55,7 @@ export type Gpu = {
   session_cost: number;
   credits: { used: number; left: number; monthly: number } | null;
   stop_after: boolean; // stops by itself once the queue is done
+  build: string; // the app the server serves now: its entry script, "" when unknown
 };
 export type Started = Params & { id: string };
 
@@ -89,6 +96,8 @@ export const api = {
   generate: (p: Request) => post<Started>("/api/generate", p),
   upscale: (u: UpscaleRequest) => post<Started>("/api/upscale", u),
   inpaint: (i: InpaintRequest) => post<Started>("/api/inpaint", i),
+  body: (image: string) => post<Started>("/api/body", { image }), // the fitted body drawn over the picture
+  mask: (image: string, text: string) => post<Started>("/api/mask", { image, text }), // what SAM finds by text, white on black
   cancel: (id: string) => post<unknown>(`/api/jobs/${id}/cancel`),
   // also cancels; keepalive so it survives a reload right after
   forget: (id: string) => call<unknown>(`/api/jobs/${id}`, { method: "DELETE", keepalive: true }),

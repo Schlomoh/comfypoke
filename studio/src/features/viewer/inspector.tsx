@@ -60,6 +60,16 @@ const copy = (text: string, what: string) =>
   );
 
 function facts(render: Render, bytes?: number): [string, ReactNode][] {
+  const file = bytes ? `PNG · ${(bytes / 1024 / 1024).toFixed(2)} MB` : "PNG";
+  if (render.uploaded)
+    // nothing rendered it: what it was made with is not a thing to show
+    return [
+      ["Added", new Date(render.createdAt).toLocaleString()],
+      ["Photo", render.uploaded],
+      ["Size", `${render.width} × ${render.height}`],
+      ["File", file],
+      ["Edits with", render.unet ? shortName(render.unet) : ""],
+    ];
   const rows: [string, ReactNode][] = [
     ["Created", new Date(render.createdAt).toLocaleString()],
     ["Took", `${render.seconds} s`],
@@ -86,14 +96,21 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
         ? render.loras.map((l) => `${shortName(l.name)} ${l.strength}`).join(", ")
         : "none",
     ],
-    ["File", bytes ? `PNG · ${(bytes / 1024 / 1024).toFixed(2)} MB` : "PNG"],
+    ["File", file],
   ];
   if (render.reference) rows.push(["Face", "swapped in from a face photo"]);
   const e = render.edit;
-  if (e)
+  if (e?.dress) {
+    const d = e.dress;
+    const finish = typeof d.finish === "string" ? d.finish : d.finish && "Krea 2";
+    rows.push([
+      "Outfit",
+      `"${e.prompt}" in place of ${e.target}, body held ${d.hold} · dressed by ${d.dresser ?? "Z-Image Turbo"}${finish ? ` · finished by ${finish}${d.strength ? ` at ${d.strength}` : ""}` : ""}${e.face ? ` · ${e.face}'s face` : ""}`,
+    ]);
+  } else if (e)
     rows.push([
       "Edit",
-      `repainted "${e.prompt}"${e.target ? ` where "${e.target}" was found` : ""}${e.face ? ` · ${e.face}'s face` : ""}`,
+      `repainted "${e.prompt}"${e.target ? ` where "${e.target}" was found` : ""}${e.setup ? ` · with ${e.setup}` : ""}${e.face ? ` · ${e.face}'s face` : ""}`,
     ]);
   const u = render.upscale;
   if (u)
@@ -102,6 +119,12 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
       `SeedVR2 ${u.megapixels} MP${u.prompt ? ` · touch-up "${u.prompt}" at ${u.denoise}` : ""}`,
     ]);
   return rows;
+}
+
+/** What a render made from another one is: a new outfit, an edit or an upscale. */
+function made(r: Render) {
+  if (r.edit?.dress) return "outfit";
+  return r.edit ? "edit" : "upscale";
 }
 
 function Linked({ render }: { render: Render }) {
@@ -127,7 +150,7 @@ function Linked({ render }: { render: Render }) {
           className="justify-start px-0"
           onClick={() => open(u.id)}
         >
-          → {u.edit ? "edit" : "upscale"}, {u.width} × {u.height}
+          → {made(u)}, {u.width} × {u.height}
         </Button>
       ))}
     </section>
@@ -187,18 +210,20 @@ export function Inspector({ render }: { render: Render }) {
         onCommit={(c) => edit({ characterName: c.trim() || undefined })}
       />
 
-      <section className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <Heading>Prompt</Heading>
-          <Button variant="text" onClick={() => copy(render.prompt, "Prompt")}>
-            copy
-          </Button>
-        </div>
-        <p className="font-mono leading-relaxed text-muted select-text">{render.prompt}</p>
-        {render.negative && (
-          <p className="font-mono leading-relaxed text-faint select-text">Negative: {render.negative}</p>
-        )}
-      </section>
+      {render.prompt && (
+        <section className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <Heading>Prompt</Heading>
+            <Button variant="text" onClick={() => copy(render.prompt, "Prompt")}>
+              copy
+            </Button>
+          </div>
+          <p className="font-mono leading-relaxed text-muted select-text">{render.prompt}</p>
+          {render.negative && (
+            <p className="font-mono leading-relaxed text-faint select-text">Negative: {render.negative}</p>
+          )}
+        </section>
+      )}
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 font-mono">
         {facts(render, bytes).map(([k, v]) => (

@@ -1,0 +1,84 @@
+// The mask over the stage's image, tinted, with the brush's ring where the finger or cursor is. Drawn at the
+// image's own size and stretched over it by CSS, so a deep zoom never asks for a giant canvas.
+import { useAtomValue } from "jotai";
+import { useEffect, useRef } from "react";
+
+import { drawOps, drawStroke, type Op } from "@/features/edit/mask";
+import { brushAtom } from "@/features/edit/state";
+import type { LayerHandle } from "@/features/edit/use-painter";
+
+const ALPHA = 0.55;
+
+const canvas2d = (w: number, h: number) => {
+  const c = new OffscreenCanvas(w, h);
+  const ctx = c.getContext("2d");
+  if (!ctx) throw new Error("This browser cannot draw the mask.");
+  return { c, ctx };
+};
+
+export function MaskLayer({
+  ops,
+  width,
+  height,
+  bind,
+}: {
+  ops: Op[];
+  width: number;
+  height: number;
+  bind: (h: LayerHandle | null) => void; // how the painter draws onto this layer
+}) {
+  const shown = useRef<HTMLCanvasElement>(null);
+  const brush = useAtomValue(brushAtom);
+  const size = useRef(brush); // read while drawing: a new size must not rebuild the mask
+  useEffect(() => {
+    size.current = brush;
+  }, [brush]);
+
+  useEffect(() => {
+    const el = shown.current;
+    const ctx = el?.getContext("2d");
+    if (!el || !ctx) return;
+    const tint = getComputedStyle(el).color; // the theme's mask color, from the class
+    const done = canvas2d(width, height); // the steps so far, tinted
+    done.ctx.fillStyle = done.ctx.strokeStyle = tint;
+    drawOps(done.ctx, ops, width, height);
+    done.ctx.globalCompositeOperation = "source-in"; // found areas arrive white: take the tint
+    done.ctx.fillRect(0, 0, width, height);
+    const work = canvas2d(width, height); // those plus the stroke under the finger
+
+    const redraw: LayerHandle["redraw"] = (live, hover) => {
+      work.ctx.clearRect(0, 0, width, height);
+      work.ctx.globalCompositeOperation = "source-over";
+      work.ctx.drawImage(done.c, 0, 0);
+      work.ctx.strokeStyle = tint;
+      if (live) drawStroke(work.ctx, live, width, height);
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalAlpha = ALPHA;
+      ctx.drawImage(work.c, 0, 0);
+      ctx.globalAlpha = 1;
+      if (!hover) return;
+      const px = width / el.clientWidth; // canvas pixels per screen pixel
+      ctx.beginPath();
+      ctx.arc(hover[0] * width, hover[1] * height, (size.current / 2) * px, 0, 2 * Math.PI);
+      ctx.lineWidth = 3 * px;
+      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.stroke();
+      ctx.lineWidth = 1.5 * px;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
+    };
+    bind({ redraw });
+    redraw(null, null);
+    return () => bind(null);
+  }, [ops, width, height, bind]);
+
+  return (
+    <canvas
+      ref={shown}
+      width={width}
+      height={height}
+      aria-hidden
+      className="absolute inset-0 size-full text-mask"
+    />
+  );
+}

@@ -53,7 +53,8 @@ function tone(p: Phrase) {
   return p.versions.length ? "varied" : "plain";
 }
 
-function Row({
+/** A row's phrases as chips and "+ add"; also the Edit tab's Wearing row. */
+export function Row({
   phrases,
   label,
   hint,

@@ -1,8 +1,8 @@
 """The studio app against a fake GPU worker: the real comfy_modal/studio_api.py, with the Worker, the
 worker's heartbeat, the models volume and the billing API replaced by stand-ins. No Modal calls and
 nothing billed. Renders are flat colors with a few seconds of fake progress; upscales are the image
-scaled up; an inpaint is the image with the mask tinted blue (with a target, the middle third too, where
-SAM would have found something). Starts the API and Vite (hot reload) together; Ctrl+C stops both.
+scaled up; an inpaint is the image with the mask tinted blue, a dressing the same in violet; SAM's find is a white
+ellipse in one of five bands, picked by the text; the body preview draws a stick figure. Starts the API and Vite (hot reload) together; Ctrl+C stops both.
 
     npm --prefix studio run dev:mock       the usual way in
     uv run --with fastapi --with uvicorn --with pillow tools/studio_mock.py [--port 8788] [--api-only]
@@ -25,7 +25,7 @@ os.environ["COMFY_ACCESS_KEY"] = "mock"
 sys.path.insert(0, str(ROOT))
 
 import modal  # noqa: E402
-from PIL import Image  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
 from comfy_modal import graphs, studio_api  # noqa: E402
 
@@ -43,19 +43,34 @@ async def run(payload):
     g, pid = payload["prompt"], payload["prompt_id"]
     msg = lambda kind, **d: ("json", {"type": kind, "data": {"prompt_id": pid, **d}})  # noqa: E731
     await asyncio.sleep(float(os.environ.get("MOCK_BOOT", "0")))
-    enc = g.get("4", {}).get("inputs", {})
+    enc = g.get("4", g.get("92", {})).get("inputs", {})  # 92: a dressing without the Krea finish
     text = enc.get("text") or enc.get("prompt") or ""  # a face reference encodes with ostris' node, whose input is "prompt"
     if "fail" in text.lower():
         yield msg("execution_error", exception_message="the mock was asked to fail")
         return
     out = None
-    if "52" in g:  # an inpaint: the source back, with what would be repainted tinted
+    if "39" in g and "52" not in g:  # SAM finding by text: a white blob on black, placed by the text so finds differ
+        src = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"])))
+        w, h = src.size
+        out = Image.new("RGB", (w, h))
+        k = sum(map(ord, g["38"]["inputs"]["text"])) % 5  # one of five bands, top to bottom
+        ImageDraw.Draw(out).ellipse((w // 4, h * k // 5, 3 * w // 4, h * (k + 1) // 5), fill=(255, 255, 255))
+        size, color = out.size, None
+    elif "84" in g and "52" not in g:  # the body preview: a stick figure over the picture
+        out = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"]))).convert("RGB")
+        w, h = out.size
+        d = ImageDraw.Draw(out)
+        x, line = w // 2, dict(fill=(140, 194, 224), width=max(3, w // 120))
+        d.ellipse((x - w // 16, h // 8, x + w // 16, h // 8 + w // 8), outline=line["fill"], width=line["width"])
+        for a, b in [((x, h // 4), (x, h * 3 // 5)), ((x - w // 6, h // 3), (x + w // 6, h // 3)), ((x, h * 3 // 5), (x - w // 8, h * 9 // 10)),
+                     ((x, h * 3 // 5), (x + w // 8, h * 9 // 10))]:
+            d.line((a, b), **line)
+        size, color = out.size, None
+    elif "52" in g:  # an inpaint or a dressing: the source back, with what would be repainted tinted
         src = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"]))).convert("RGB")
         mask = Image.open(io.BytesIO(base64.b64decode(g["35"]["inputs"]["data"]))).convert("L")
-        if "39" in g:
-            w, h = src.size
-            mask.paste(255, (w // 3, h // 3, 2 * w // 3, 2 * h // 3))
-        out = Image.composite(Image.new("RGB", src.size, (60, 140, 230)), src, mask.point(lambda v: v * 6 // 10))
+        tint = (150, 80, 220) if graphs.DRESSER in g else (60, 140, 230)
+        out = Image.composite(Image.new("RGB", src.size, tint), src, mask.point(lambda v: v * 6 // 10))
         size, color = src.size, None
     elif "30" in g:  # an upscale: the image comes with the prompt
         src = Image.open(io.BytesIO(base64.b64decode(g["30"]["inputs"]["data"])))
@@ -65,11 +80,16 @@ async def run(payload):
         size, color = (g["6"]["inputs"]["width"], g["6"]["inputs"]["height"]), (200, 120, 60)
     yield msg("executing", node="1" if "1" in g else "30")
     await asyncio.sleep(STEP_SECONDS)
-    if graphs.SAMPLER in g:
-        steps = g[graphs.SAMPLER]["inputs"]["steps"]
-        yield msg("executing", node=graphs.SAMPLER)
+    if "84" in g:
+        yield msg("executing", node="83")
+        await asyncio.sleep(STEP_SECONDS * 3)
+    for sampler in (graphs.DRESSER, graphs.SAMPLER):
+        if sampler not in g:
+            continue
+        steps = g[sampler]["inputs"]["steps"]
+        yield msg("executing", node=sampler)
         for i in range(1, steps + 1):
-            yield msg("progress", node=graphs.SAMPLER, value=i, max=steps)
+            yield msg("progress", node=sampler, value=i, max=steps)
             yield ("bytes", frame(1, (20 * i % 255, 80, 160), (max(8, size[0] // 8), max(8, size[1] // 8))))
             await asyncio.sleep(STEP_SECONDS)
     if graphs.UPSCALER in g:

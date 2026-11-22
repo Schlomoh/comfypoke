@@ -1,5 +1,6 @@
 // The keyboard: arrows and J/K browse, F opens, I shows info, Z and +/−/0 zoom, B marks best, U
-// upscales, S saves, R reuses, Delete deletes, H hides every image, ⌘↵ generates, ? lists them all.
+// upscales, S saves, R reuses, E edits, Delete deletes, H hides every image, ⌘↵ generates (or sends the edit),
+// ? lists them all. In the Edit tab X swaps brush and eraser, [ and ] size the brush, ⌘Z undoes a mask step.
 // Every key reads the store as it is at that moment, so a held arrow never acts on a stale image.
 import { useStore } from "jotai";
 import { useEffect, useRef } from "react";
@@ -8,6 +9,7 @@ import { wide } from "@/app/platform";
 import { toggleBest } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
 import { FIT } from "@/domain/view";
+import { BRUSH, brushAtom, eraseAtom, masksAtom } from "@/features/edit/state";
 import { saveImage } from "@/features/library/files";
 import { useImageActions } from "@/state/actions";
 import {
@@ -16,6 +18,7 @@ import {
   layerAtom,
   shownAtom,
   stageAtom,
+  tabAtom,
   veilAtom,
   viewAtom,
   viewerAtom,
@@ -49,12 +52,29 @@ export function useShortcuts(submit: () => void) {
       if (document.querySelector("dialog[open]:not([data-keys-through])")) return; // a layer over the studio: keys belong to it
       const { submit: send, actions: act } = latest.current;
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) return send();
+      const editing = store.get(tabAtom) === "edit" && !store.get(viewerAtom);
+      const shown = store.get(stageAtom).render;
+      if (
+        editing &&
+        shown &&
+        e.key.toLowerCase() === "z" &&
+        (e.metaKey || e.ctrlKey) &&
+        !typingIn(e.target)
+      ) {
+        e.preventDefault();
+        return store.set(masksAtom, (m) => ({ ...m, [shown.id]: (m[shown.id] ?? []).slice(0, -1) }));
+      }
       if (typingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "?") return store.set(layerAtom, "keys");
       if ((e.key === "Enter" || e.key === " ") && onControl(e.target)) return; // activates what has focus
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       const go = (n: number) => act.step(n) && e.preventDefault();
       const view = store.get(viewAtom);
+      const size = (f: number) =>
+        store.set(brushAtom, Math.round(Math.min(BRUSH.max, Math.max(BRUSH.min, store.get(brushAtom) * f))));
+      if (editing && k === "x") return store.set(eraseAtom, !store.get(eraseAtom));
+      if (editing && k === "[") return size(1 / 1.25);
+      if (editing && k === "]") return size(1.25);
       switch (k) {
         case "ArrowRight":
         case "j":
@@ -94,6 +114,7 @@ export function useShortcuts(submit: () => void) {
         store.set(infoAtom, open ? !store.get(infoAtom) : true);
         if (!open) store.set(viewerAtom, cur.id);
       } else if (k === "r") act.reuse(cur);
+      else if (k === "e") act.edit(cur);
       else if (k === "s") void saveImage(space, cur);
       else if (k === "b") void toggleBest(space, cur);
       else if (k === "u") void act.upscaleMany([cur]);

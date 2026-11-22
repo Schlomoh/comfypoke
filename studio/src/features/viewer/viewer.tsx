@@ -3,7 +3,7 @@
 // swipe down at fit closes it too. A render still in progress shows its live preview, so swiping
 // passes through the queue as if it were part of the library.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
@@ -11,7 +11,6 @@ import { describe } from "@/domain/format";
 import { status, type Job } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import { ActivityButton } from "@/features/activity/activity-button";
-import { InpaintSheet } from "@/features/inpaint/inpaint-sheet";
 import { BestButton } from "@/features/library/best-button";
 import { saveImage } from "@/features/library/files";
 import { ZoomBar } from "@/features/stage/zoom-bar";
@@ -31,9 +30,8 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
   const space = useSpace();
   const [info, setInfo] = useAtom(infoAtom);
   const [view, setView] = useAtom(viewAtom);
-  const { reuse, upscaleMany, remove, step } = useImageActions();
+  const { reuse, edit, upscaleMany, remove, step } = useImageActions();
   const url = useObjectUrl(useImage(render.id));
-  const [editing, setEditing] = useState(false);
   return (
     <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
@@ -82,14 +80,20 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
       )}
       <div className="grid shrink-0 grid-cols-[auto_1fr_1fr_1fr_1fr_1fr] gap-2 border-t border-line p-3 lg:border-t-0">
         <BestButton render={render} className="w-12" />
-        <Button onClick={() => reuse(render)}>Reuse</Button>
+        <Button
+          onClick={() => reuse(render)}
+          disabled={!!render.uploaded}
+          title={render.uploaded ? "A photo has no recipe to reuse" : undefined}
+        >
+          Reuse
+        </Button>
         <Button
           onClick={() => void upscaleMany([render])}
           title="Upscale with the settings in the Model tab (U)"
         >
           Upscale
         </Button>
-        <Button onClick={() => setEditing(true)} title="Repaint part of the image">
+        <Button onClick={() => edit(render)} title="Edit it on the stage: find, paint, dress or repaint (E)">
           Edit
         </Button>
         <Button onClick={() => void saveImage(space, render)}>Save</Button>
@@ -97,7 +101,6 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
           Delete
         </Button>
       </div>
-      <InpaintSheet render={render} open={editing} onClose={() => setEditing(false)} />
     </div>
   );
 }

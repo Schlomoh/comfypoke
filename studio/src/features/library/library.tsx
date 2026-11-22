@@ -3,8 +3,11 @@
 // what is shown (into a folder, or as a zip), and the library backup (characters, presets and
 // LoRA notes as one JSON file).
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { addPhoto } from "@/data/db/renders";
+import { useSpace } from "@/data/db/space";
+import { errorText } from "@/domain/format";
 import type { Render } from "@/domain/render";
 import { BackupSection } from "@/features/library/backup-section";
 import { DownloadSection } from "@/features/library/download-section";
@@ -25,7 +28,8 @@ import {
   viewerAtom,
 } from "@/state/studio";
 import { Button } from "@/ui/button";
-import { Select } from "@/ui/field";
+import { Input, Select } from "@/ui/field";
+import { notify } from "@/ui/notify";
 import { Segmented } from "@/ui/segmented";
 import { Heading } from "@/ui/text";
 
@@ -45,6 +49,8 @@ export function Library({ column = false }: { column?: boolean }) {
   const chosen = picked ? shown.filter((r) => picked.has(r.id)) : [];
   const target = picked ? chosen : shown; // Download works on the selection while there is one
   const out = useExport(target, !!picked);
+  const space = useSpace();
+  const file = useRef<HTMLInputElement>(null);
 
   const jobs = column ? live.filter((j) => j !== stage.job) : live;
   const focus = (stage.job ?? stage.render)?.id ?? null;
@@ -53,6 +59,15 @@ export function Library({ column = false }: { column?: boolean }) {
   // the stage still shows what it showed when the viewer closes
   const show = column ? setFocus : open;
   const showImage = column ? setFocus : setViewer;
+
+  /** A photo from the device joins the library as an image to repaint or dress, and opens. */
+  const upload = async (f: File) => {
+    try {
+      showImage((await addPhoto(space, f)).id);
+    } catch (e) {
+      notify(`Could not read that photo: ${errorText(e)}`, { bad: true });
+    }
+  };
 
   const toggle = (r: Render) =>
     setPicked((p) => {
@@ -89,6 +104,20 @@ export function Library({ column = false }: { column?: boolean }) {
             ))}
           </Select>
         )}
+        <Button onClick={() => file.current?.click()} title="Add a photo from this device to edit or dress">
+          Photo
+        </Button>
+        <Input
+          ref={file}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void upload(f);
+          }}
+        />
         <Button
           onClick={() => setPicked(picked ? null : new Set())}
           aria-pressed={!!picked}
@@ -108,7 +137,7 @@ export function Library({ column = false }: { column?: boolean }) {
         <p className="px-4 py-6 font-mono text-xs text-faint">
           {best
             ? "Nothing marked best here. Press B or ★ on an image to mark it."
-            : "Nothing here yet. Renders are kept on this device only."}
+            : "Nothing here yet. Renders, and photos you add to edit or dress, are kept on this device only."}
         </p>
       ) : (
         <div className="grid grid-cols-3 gap-px bg-line p-px sm:grid-cols-4 lg:grid-cols-2">

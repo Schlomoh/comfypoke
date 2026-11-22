@@ -18,8 +18,14 @@ export type Params = {
 };
 
 export type Upscale = { megapixels: number; prompt: string; denoise: number }; // prompt "" means no retouch
-/** A repaint of part of an image: what was masked by name (besides what was painted), what it became, and with whose face. */
-export type Edit = { target: string; prompt: string; face?: string };
+/** How a dressing holds the body still: its fitted mesh tight, loose, or not at all. */
+export type Hold = "tight" | "loose" | "off";
+/** A dressing as recorded: the hold, the setup that dressed it, and the one that finished it (a name, or from the first
+ * builds true for Krea 2 Turbo) at what strength. */
+export type Dress = { hold: Hold; dresser?: string; finish: string | boolean | null; strength?: number };
+/** A repaint of part of an image: what was masked by name (besides what was painted), what it became, and with whose
+ * face; with `dress`, the clothes were replaced by graphs.dress rather than repainted. */
+export type Edit = { target: string; prompt: string; face?: string; dress?: Dress; setup?: string }; // setup: a repaint's, when not the image's own
 
 export type Render = Params & {
   id: string;
@@ -34,9 +40,30 @@ export type Render = Params & {
   notes?: string;
   tags?: string[];
   source?: string; // an upscale or an edit: the render it was made from
+  uploaded?: string; // a photo brought in from the device, by its file name: its settings are the model edits run with
   upscale?: Upscale;
   edit?: Edit;
 };
+
+/** The model an uploaded photo is repainted and dressed with: there is no render behind it to take one from. */
+const UPLOAD_MODEL = { unet: "krea2_turbo_bf16.safetensors", family: "krea2", steps: 8, cfg: 1 };
+
+/** The record of a photo brought in from the device, so it can be edited, dressed and upscaled like a render. */
+export function uploadedRender(name: string, width: number, height: number): Render {
+  return {
+    ...UPLOAD_MODEL,
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    seconds: 0,
+    prompt: "",
+    negative: "",
+    width,
+    height,
+    seed: 0,
+    loras: [],
+    uploaded: name,
+  };
+}
 
 // What the server does not know about a job: the recipe behind a render, the render behind an upscale,
 // and whether a render should be upscaled as soon as it is stored.

@@ -1,4 +1,4 @@
-// This workspace's saved characters and scenes, with the shared presets and LoRA notes, as one JSON
+// This workspace's saved characters and scenes, with the shared presets, model setups and LoRA notes, as one JSON
 // file: the backup, and how a library moves between devices.
 import { unsealJson } from "@/data/crypto";
 import { putSaved } from "@/data/db/saved";
@@ -7,6 +7,7 @@ import type { Space } from "@/data/db/space";
 import { isRecord, isText, LEGACY_ROW } from "@/domain/parse";
 import { PRESET_ROWS, type PresetRow } from "@/domain/rows";
 import { toSaved, type Saved } from "@/domain/saved";
+import { BUILT_IN, parseSetup, type Setup } from "@/domain/setup";
 
 const savedOf = async (space: Space) => {
   const rows = await db.chars.where("ws").equals(space.id).toArray();
@@ -22,6 +23,7 @@ export async function exportLibrary(space: Space) {
     saved: (await savedOf(space)).map(faceless), // face photos stay on the device they were added on
     loraNotes: await db.loraNotes.toArray(),
     presets: await db.presets.toArray(),
+    setups: await db.setups.toArray(),
   };
   return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
 }
@@ -82,6 +84,12 @@ export async function importLibrary(space: Space, file: File) {
   }
   await db.loraNotes.bulkPut(notesIn(data.loraNotes));
   await addPresets(presetsIn(data.presets));
+  // a setup already here by that name stays as it is
+  const names = new Set([...BUILT_IN, ...(await db.setups.toArray())].map((s) => s.name));
+  const setups = list(data.setups)
+    .map(parseSetup)
+    .filter((s): s is Setup => s !== null && !names.has(s.name) && !!names.add(s.name));
+  await db.setups.bulkPut(setups.map((s) => ({ ...s, id: crypto.randomUUID() })));
   const skipped = raw.length - saved.length;
   return `Imported ${added} of ${saved.length} saved characters and scenes${skipped ? `, skipped ${skipped} malformed` : ""}.`;
 }

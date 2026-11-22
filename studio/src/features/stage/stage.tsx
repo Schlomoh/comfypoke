@@ -10,13 +10,16 @@ import { describe } from "@/domain/format";
 import { progress, running, status, type Job } from "@/domain/job";
 import { size } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
+import { EditCanvas } from "@/features/edit/edit-canvas";
+import { MaskTools } from "@/features/edit/mask-tools";
+import { masksAtom } from "@/features/edit/state";
 import { BestButton } from "@/features/library/best-button";
 import { download, saveImage } from "@/features/library/files";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
-import { recipeAtom, rendersAtom, stageAtom, viewAtom } from "@/state/studio";
+import { recipeAtom, rendersAtom, stageAtom, tabAtom, viewAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { Progress } from "@/ui/text";
 
@@ -37,6 +40,8 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
   const { open, step } = useImageActions();
   const recipe = useAtomValue(recipeAtom);
   const url = useObjectUrl(useImage(render?.id));
+  const editing = useAtomValue(tabAtom) === "edit";
+  if (!job && render && url && editing) return <EditCanvas render={render} url={url} />;
   if (!job && render && url)
     return (
       <ZoomView
@@ -137,8 +142,11 @@ function RenderBar({ render }: { render: Render }) {
 }
 
 function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: boolean }) {
+  const editing = useAtomValue(tabAtom) === "edit";
+  const steps = useAtomValue(masksAtom)[render?.id ?? ""]?.length ?? 0;
   if (job?.error) return <FailedBar job={job} />;
   if (job) return <RunningBar job={job} />;
+  if (render && editing) return <MaskTools id={render.id} steps={steps} />;
   if (render) return <RenderBar render={render} />;
   return <span className="text-faint">{loading ? "" : "Ready"}</span>;
 }

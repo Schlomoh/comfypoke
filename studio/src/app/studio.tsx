@@ -1,5 +1,5 @@
 // An open workspace. On a phone one column: the tab bar on top, the stage, the open tab, and the
-// generate bar fixed at the bottom. On a desktop three: editor, stage, library.
+// generate bar fixed at the bottom (the edit's action in the Edit tab). On a desktop three: editor, stage, library.
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 
@@ -7,10 +7,16 @@ import { GenerateBar } from "@/app/generate-bar";
 import { ShortcutsSheet } from "@/app/shortcuts-sheet";
 import { TabBar } from "@/app/tab-bar";
 import { useShortcuts } from "@/app/use-shortcuts";
+import { useUpdateNotice } from "@/app/use-update-notice";
 import { ActivitySheet } from "@/features/activity/activity-sheet";
+import { EditPanel } from "@/features/edit/edit-panel";
+import { useEdit } from "@/features/edit/use-edit";
 import { Library } from "@/features/library/library";
 import { ModelPanel } from "@/features/model/model-panel";
+import { LinkSheet } from "@/features/prompt/link-sheet";
 import { PromptPanel } from "@/features/prompt/prompt-panel";
+import { RowSheet } from "@/features/prompt/row-sheet";
+import { TogetherSheet } from "@/features/prompt/together-sheet";
 import { RenderSheet } from "@/features/renders/render-sheet";
 import { Stage } from "@/features/stage/stage";
 import { Viewer } from "@/features/viewer/viewer";
@@ -34,12 +40,20 @@ function Tabs() {
   const tab = useAtomValue(tabAtom);
   return (
     <div className="order-2 pb-32 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-0">
-      {/* all three stay mounted, so a sheet or a half-typed field survives a tab switch */}
-      <div className={cn(tab === "model" && "hidden", tab === "library" && "hidden lg:block")}>
+      {/* all of them stay mounted, so a half-typed field survives a tab switch */}
+      <div
+        className={cn(
+          (tab === "model" || tab === "edit") && "hidden",
+          tab === "library" && "hidden lg:block",
+        )}
+      >
         <PromptPanel />
       </div>
       <div className={cn(tab !== "model" && "hidden")}>
         <ModelPanel />
+      </div>
+      <div className={cn(tab !== "edit" && "hidden")}>
+        <EditPanel />
       </div>
       <div className={cn(tab === "library" ? "lg:hidden" : "hidden")}>
         <Library />
@@ -53,8 +67,11 @@ export function Studio({ onClose }: { onClose: () => void }) {
   useDraftAutosave();
   useRendersSync();
   useVeilClass();
+  useUpdateNotice();
   const generate = useGenerate();
-  useShortcuts(() => void generate.submit());
+  const edit = useEdit();
+  const editing = useAtomValue(tabAtom) === "edit";
+  useShortcuts(() => void (editing ? edit.submit() : generate.submit()));
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
@@ -63,7 +80,7 @@ export function Studio({ onClose }: { onClose: () => void }) {
         <aside className="contents lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-line">
           <TabBar />
           <Tabs />
-          <GenerateBar g={generate} />
+          <GenerateBar g={generate} edit={editing ? edit : undefined} />
         </aside>
         <main className="order-1 h-[56svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
           <Stage />
@@ -76,6 +93,10 @@ export function Studio({ onClose }: { onClose: () => void }) {
       <ActivitySheet />
       <RenderSheet />
       <WorkspaceMenu onSwitch={onClose} />
+      {/* the prompt's sheets: the Edit tab opens the Wearing row's too */}
+      <RowSheet />
+      <LinkSheet />
+      <TogetherSheet />
       <ShortcutsSheet />
     </div>
   );

@@ -5,7 +5,7 @@
 import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
-import { api, quietly, type Request, type Started } from "@/data/api";
+import { api, quietly, type DressRequest, type Request, type Started } from "@/data/api";
 import { addPending, dropPending, pendingIds, pendingMeta } from "@/data/db/pending";
 import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
@@ -13,6 +13,7 @@ import { errorText } from "@/domain/format";
 import type { Job } from "@/domain/job";
 import { legacyUnet } from "@/domain/recipe";
 import type { Edit, JobMeta, Params, Render, Upscale } from "@/domain/render";
+import { passOf, type Pass } from "@/domain/setup";
 import { focusAtom, jobsAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
@@ -45,9 +46,21 @@ function recordOf({ id, params, seconds, size }: Finished, meta: JobMeta): Rende
       seconds,
       ...size,
       source: from.id,
+      uploaded: meta.upscaleOf ? from.uploaded : undefined, // an upscale of a photo is still the photo; an edit is a render
       upscale: meta.upscale,
       edit: meta.edit,
-      ...(meta.editOf ? { reference: params.reference, seed: params.seed } : {}), // the edit's own, not its source's
+      // an edit's own: what it ran with, which need not be its source's model
+      ...(meta.editOf
+        ? (({ unet, family, steps, cfg, loras, reference, seed }) => ({
+            unet,
+            family,
+            steps,
+            cfg,
+            loras,
+            reference,
+            seed,
+          }))(params)
+        : {}),
       best: false,
       title: undefined,
       notes: undefined,
@@ -175,26 +188,36 @@ function createRunner(store: Store, space: Space) {
     return res;
   };
 
-  /** Repaints the masked part of a render with its own model and settings; the result links back to it. */
+  /** Repaints the masked part of a render with `o.pass` (its own model unless another is picked), or with `o.dress`
+   * puts new clothes on its body; the result links back to it. */
   const inpaint = async (
     r: Render,
     e: Edit,
-    { mask, face, stopAfter }: { mask: Blob; face?: Blob; stopAfter?: boolean },
+    o: {
+      mask: Blob;
+      face?: Blob;
+      stopAfter?: boolean;
+      pass?: Pass;
+      dress?: DressRequest;
+    },
   ): Promise<Started> => {
+    const { mask, face, stopAfter } = o;
+    const pass = o.pass ?? passOf(r);
     const res = await api.inpaint({
       image: await base64(await loadImage(space, r.id)),
       mask: await base64(mask),
       target: e.target,
       prompt: e.prompt,
-      unet: r.unet ?? legacyUnet(r.model),
-      family: r.family ?? null,
-      negative: r.negative ?? "",
-      loras: r.loras ?? [],
-      steps: r.steps,
-      cfg: r.cfg,
+      unet: pass.unet,
+      family: pass.family,
+      negative: pass.unet === (r.unet ?? legacyUnet(r.model)) ? (r.negative ?? "") : "", // another model, not its negative
+      loras: pass.loras,
+      steps: pass.steps,
+      cfg: pass.cfg,
       seed: null, // a new one each time: Repaint again is how to get another take
       reference: face && (await base64(face)),
       stop_after: stopAfter,
+      ...(o.dress ? { dress: o.dress } : {}),
     });
     await addPending(space, res.id, { editOf: r, edit: e });
     attach(res.id);

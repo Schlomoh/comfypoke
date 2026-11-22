@@ -67,9 +67,16 @@ explains where things are and how to change them without breaking the deployment
   `ws`, never in the clear or in localStorage. WebCrypto cannot run inside a Dexie upgrade, so
   moving data between tables is a function like `migrate()`, run before the start screen.
   Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
-  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Edits are `graphs.inpaint`
-  (workflow 09's chain: a mask painted on the phone plus SAM by name, crop and stitch, LanPaint), the
-  mask arriving the same way. A person's face photo (`data/db/faces.ts`, sealed) rides along as
+  image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Edits happen in the Edit tab
+  (`studio/src/features/edit`) on the image the stage shows. The mask is built on the phone as steps
+  (`edit/mask.ts`): areas SAM 3.1 found by text through `/api/mask` (`graphs.mask`, white on black), brush and
+  eraser strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own at edit time.
+  Repaints are `graphs.inpaint` (workflow 09's chain: crop and stitch, LanPaint) with a picked setup. Dressing is
+  `graphs.dress`, sent through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as
+  depth into Z-Image's Fun Controlnet) with a Z-Image setup, and optionally a light LanPaint finish with any
+  setup; its outfits are a person's Wearing row of the Prompt tab, one job per version. `/api/mask` and
+  `/api/body` (the fitted mesh) run outside stop-after. Model setups (`domain/setup.ts`, Dexie table `setups`) are the Model tab saved
+  under a name, shared by all workspaces, and picked per pass. A person's face photo (`data/db/faces.ts`, sealed) rides along as
   `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
   through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with
   `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it

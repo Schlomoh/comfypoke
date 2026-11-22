@@ -58,6 +58,10 @@ export function useImageActions() {
 
   /** Loads a render's settings back into the editor. A render from before recipes were kept comes back as its prompt, verbatim, in the scene's Extra row. */
   const reuse = (r: Render) => {
+    if (!r.recipe && !r.prompt.trim()) {
+      notify("Nothing to reuse: this image has no prompt behind it.");
+      return;
+    }
     const base: Recipe = r.recipe
       ? parseRecipe(r.recipe)
       : { ...EMPTY, scene: { ...EMPTY.scene, extra: [phrase(r.prompt)] }, ...fromSize(r.width, r.height) };
@@ -69,6 +73,13 @@ export function useImageActions() {
     setRecipe({ ...base, unet, family, seed: r.seed, count: 1 });
     store.set(viewerAtom, null);
     setTab("prompt");
+  };
+
+  /** Puts a render on the stage with the Edit tab open beside it. */
+  const edit = (r: Render) => {
+    store.set(focusAtom, r.id);
+    store.set(viewerAtom, null);
+    setTab("edit");
   };
 
   /** Upscales with the Model tab's settings, one job each; the results land in the library as new images. */
@@ -140,5 +151,5 @@ export function useImageActions() {
     store.set(viewerAtom, id);
   };
 
-  return { reuse, upscaleMany, removeMany, remove, step, open };
+  return { reuse, edit, upscaleMany, removeMany, remove, step, open };
 }

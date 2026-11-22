@@ -7,12 +7,9 @@ import { placeholderName, type Key } from "@/domain/cast";
 import { newPerson } from "@/domain/recipe";
 import { CastTabs } from "@/features/prompt/cast-tabs";
 import { flash } from "@/features/prompt/flash";
-import { LinkSheet } from "@/features/prompt/link-sheet";
 import { PromptPreview } from "@/features/prompt/prompt-preview";
-import { RowSheet } from "@/features/prompt/row-sheet";
 import { Rows } from "@/features/prompt/rows";
 import { castTabAtom, openAtom } from "@/features/prompt/state";
-import { TogetherSheet } from "@/features/prompt/together-sheet";
 import { recipeAtom } from "@/state/studio";
 
 export function PromptPanel() {
@@ -53,9 +50,6 @@ export function PromptPanel() {
         }}
       />
       <PromptPreview />
-      <RowSheet />
-      <LinkSheet />
-      <TogetherSheet />
     </div>
   );
 }

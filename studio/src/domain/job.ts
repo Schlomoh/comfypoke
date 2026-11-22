@@ -29,6 +29,10 @@ export function status(job: Job, booted?: boolean) {
       return "Upscaling";
     case "masking":
       return "Finding the area";
+    case "fitting":
+      return "Fitting the body";
+    case "dressing":
+      return "Dressing";
     case "swapping":
       return job.steps ? `Swapping the face ${job.step}/${job.steps}` : "Swapping the face";
     case "decoding":

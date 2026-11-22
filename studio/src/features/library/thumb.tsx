@@ -51,12 +51,20 @@ export function Thumb({
           ↑{render.upscale.megapixels}MP
         </span>
       )}
+      {render.uploaded && (
+        <span
+          className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
+          aria-hidden
+        >
+          photo
+        </span>
+      )}
       {render.edit && (
         <span
           className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
           aria-hidden
         >
-          edit
+          {render.edit.dress ? "outfit" : "edit"}
         </span>
       )}
       {picking && (
