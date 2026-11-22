@@ -4,7 +4,6 @@ import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
-import { useSpace } from "@/data/db/space";
 import { useGpu } from "@/data/queries";
 import { describe } from "@/domain/format";
 import { progress, running, status, type Job } from "@/domain/job";
@@ -13,9 +12,8 @@ import type { Render } from "@/domain/render";
 import { EditCanvas } from "@/features/edit/edit-canvas";
 import { MaskTools } from "@/features/edit/mask-tools";
 import { masksAtom } from "@/features/edit/state";
-import { BestButton } from "@/features/library/best-button";
-import { DraftButtons } from "@/features/library/draft-buttons";
-import { download, saveImage } from "@/features/library/files";
+import { download } from "@/features/library/files";
+import { ImageActions } from "@/features/library/image-actions";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { useImageActions } from "@/state/actions";
@@ -109,39 +107,19 @@ function RunningBar({ job }: { job: Job }) {
 }
 
 function RenderBar({ render }: { render: Render }) {
-  const space = useSpace();
-  const { reuse, upscaleMany, remove } = useImageActions();
   return (
     <>
       <div className="hidden sm:block">
         <ZoomBar />
       </div>
-      {/* on a phone the settings are a tap away in the viewer; the bar keeps room for the buttons */}
+      {/* on a phone the settings are in More; the bar keeps room for the buttons */}
       <span className="min-w-0 flex-1 truncate text-faint max-sm:hidden" title={describe(render)}>
         {render.characterName && <span className="text-muted">{render.characterName} · </span>}
         {describe(render)} · {render.seconds}s
       </span>
-      <BestButton render={render} className="max-sm:w-14" />
-      <Button onClick={() => reuse(render)} title="Load these settings" className="max-sm:flex-1">
-        Reuse
-      </Button>
-      <Button onClick={() => void saveImage(space, render)} className="max-sm:flex-1">
-        Save
-      </Button>
-      {render.draft ? (
-        <DraftButtons render={render} className="max-sm:flex-1" />
-      ) : (
-        <Button
-          onClick={() => void upscaleMany([render])}
-          title="Upscale with the dock's upscale settings (U)"
-          className="max-sm:hidden"
-        >
-          Upscale
-        </Button>
-      )}
-      <Button variant="danger" onClick={() => void remove(render)}>
-        Delete
-      </Button>
+      <div className="flex gap-2 max-sm:min-w-0 max-sm:flex-1">
+        <ImageActions render={render} fill />
+      </div>
     </>
   );
 }
@@ -164,7 +142,7 @@ export function Stage() {
       <div className="flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
         <Canvas job={job} render={render} loading={loading} />
       </div>
-      <div className="flex min-h-12 items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs [scrollbar-width:none]">
+      <div className="flex min-h-12 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs">
         <Bar job={job} render={render} loading={loading} />
       </div>
     </div>

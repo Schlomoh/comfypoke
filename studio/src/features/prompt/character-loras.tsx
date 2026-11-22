@@ -17,7 +17,12 @@ import { Heading, Note } from "@/ui/text";
 import { Tip } from "@/ui/tip";
 
 /** The family's list changed by `change`, applied to what is stored. */
-const saveLoras = (space: Space, id: string, family: string, change: (list: CharacterLora[]) => CharacterLora[]) =>
+const saveLoras = (
+  space: Space,
+  id: string,
+  family: string,
+  change: (list: CharacterLora[]) => CharacterLora[],
+) =>
   updateSaved(space, id, (s) => ({
     ...s,
     loras: { ...s.loras, [family]: change(s.loras?.[family] ?? []) },
@@ -35,7 +40,8 @@ export function CharacterLoras({ person }: { person: Person }) {
   const own = saved.loras?.[family.id] ?? [];
   const elsewhere = Object.entries(saved.loras ?? {}).filter(([f, ls]) => f !== family.id && ls.length);
 
-  const write = (change: (list: CharacterLora[]) => CharacterLora[]) => void saveLoras(space, saved.id, family.id, change);
+  const write = (change: (list: CharacterLora[]) => CharacterLora[]) =>
+    void saveLoras(space, saved.id, family.id, change);
   const setStrength = (name: string, strength: number) => {
     write((list) => list.map((x) => (x.name === name ? { ...x, strength } : x)));
     // the stack follows a strength set here; a LoRA added or removed is synced by state/recipe.ts
@@ -80,7 +86,8 @@ export function CharacterLoras({ person }: { person: Person }) {
         aria-label={`Add a LoRA to ${saved.name} for ${family.label}`}
         onChange={(e) => {
           const name = e.target.value;
-          if (name) write((list) => (list.some((x) => x.name === name) ? list : [...list, { name, strength: 1 }]));
+          if (name)
+            write((list) => (list.some((x) => x.name === name) ? list : [...list, { name, strength: 1 }]));
         }}
         className="text-muted"
       >

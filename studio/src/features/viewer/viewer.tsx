@@ -6,14 +6,11 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useRef } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
-import { useSpace } from "@/data/db/space";
 import { describe } from "@/domain/format";
 import { status, type Job } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import { ActivityButton } from "@/features/activity/activity-button";
-import { BestButton } from "@/features/library/best-button";
-import { DraftButtons } from "@/features/library/draft-buttons";
-import { saveImage } from "@/features/library/files";
+import { ImageActions } from "@/features/library/image-actions";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { Inspector } from "@/features/viewer/inspector";
@@ -29,10 +26,9 @@ const MARK = "studioViewer"; // our entry in history.state
 const ours = () => !!(history.state as Record<string, unknown> | null)?.[MARK];
 
 function RenderView({ render, onClose }: { render: Render; onClose: () => void }) {
-  const space = useSpace();
   const [info, setInfo] = useAtom(infoAtom);
   const [view, setView] = useAtom(viewAtom);
-  const { reuse, edit, upscaleMany, remove, step } = useImageActions();
+  const { step } = useImageActions();
   const url = useObjectUrl(useImage(render.id));
   return (
     <div className="flex h-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
@@ -81,32 +77,8 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
           {render.prompt}
         </p>
       )}
-      <div className="flex shrink-0 gap-2 border-t border-line p-3 lg:border-t-0 [&>*:not(:first-child)]:min-w-0 [&>*:not(:first-child)]:flex-1">
-        <BestButton render={render} className="w-12" />
-        <Button
-          onClick={() => reuse(render)}
-          disabled={!!render.uploaded}
-          title={render.uploaded ? "A photo has no recipe to reuse" : undefined}
-        >
-          Reuse
-        </Button>
-        {render.draft ? (
-          <DraftButtons render={render} />
-        ) : (
-          <Button
-            onClick={() => void upscaleMany([render])}
-            title="Upscale with the dock's upscale settings (U)"
-          >
-            Upscale
-          </Button>
-        )}
-        <Button onClick={() => edit(render)} title="Edit it on the stage: find, paint, dress or repaint (E)">
-          Edit
-        </Button>
-        <Button onClick={() => void saveImage(space, render)}>Save</Button>
-        <Button variant="danger" onClick={() => void remove(render)}>
-          Delete
-        </Button>
+      <div className="flex shrink-0 gap-2 border-t border-line p-3 lg:border-t-0">
+        <ImageActions render={render} fill />
       </div>
     </div>
   );

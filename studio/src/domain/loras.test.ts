@@ -60,7 +60,10 @@ describe("runnable", () => {
       { name: "mia_v3", strength: 1, on: true },
     ];
     expect(runnable(twice, [], "krea2")).toEqual([{ name: "mia_v3", strength: 0.9 }]);
-    expect(triggersOf(twice, [{ name: "mia_v3", trigger: "m1a" }])).toEqual({ lead: [], of: { mia: ["m1a"] } });
+    expect(triggersOf(twice, [{ name: "mia_v3", trigger: "m1a" }])).toEqual({
+      lead: [],
+      of: { mia: ["m1a"] },
+    });
   });
 });
 
