@@ -61,8 +61,8 @@ explains where things are and how to change them without breaking the deployment
   definitions in `tests/object_info.json`; after adding a node type or pack, deploy and refresh that file with
   `uv run tools/object_info_snapshot.py`. `npm --prefix studio test` runs vitest on the pure domain code. CI runs both.
 - Studio app layers, each importing only from the ones below it (lint enforces it): `src/ui` (the
-  primitives: Button, Chip, Segmented, Checkbox, fields, Modal and Sheet, Note; the only place a raw
-  `<button>`, `<input>` or `<dialog>` may appear), `src/domain` (plain TypeScript: the recipe, its
+  primitives: Button, Chip, Segmented, Checkbox, fields, Modal and Sheet, Popover and Tip on the native Popover
+  API, Note; the only place a raw `<button>`, `<input>` or `<dialog>` may appear), `src/domain` (plain TypeScript: the recipe, its
   rows and presets in `rows.ts`, `compose.ts`, versions, `batch.ts` that turns versions and seeds into
   one job each, parsing of stored data), `src/data` (the API client, TanStack Query in `queries.ts`,
   IndexedDB in `db/`), `src/state` (Jotai atoms, one store per open workspace; the jobs runner;
@@ -77,15 +77,28 @@ explains where things are and how to change them without breaking the deployment
   moving data between tables is a function like `migrate()`, run before the start screen.
   Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
   image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Edits happen in the Edit tab
-  (`studio/src/features/edit`) on the image the stage shows. The mask is built on the phone as steps
-  (`edit/mask.ts`): areas SAM 3.1 found by text through `/api/mask` (`graphs.mask`, white on black), brush and
-  eraser strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own at edit time.
-  Repaints are `graphs.inpaint` (workflow 09's chain: crop and stitch, LanPaint) with a picked setup. Dressing is
-  `graphs.dress`, sent through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as
-  depth into Z-Image's Fun Controlnet) with a Z-Image setup, and optionally a light LanPaint finish with any
-  setup; its outfits are a person's Wearing row of the Prompt tab, one job per version. `/api/mask` and
-  `/api/body` (the fitted mesh) run outside stop-after. Model setups (`domain/setup.ts`, Dexie table `setups`) are the Model tab saved
-  under a name, shared by all workspaces, and picked per pass. A person's face photo (`data/db/faces.ts`, sealed) rides along as
+  (`studio/src/features/edit`) on the image the stage shows. The mask is made from the bar under the stage
+  (`mask-tools.tsx`: brush, eraser, tap, find…, body, invert and clear) and built on the phone as steps
+  (`edit/mask.ts`, listed and removable in `mask-summary.tsx`): areas SAM 3.1 found through `/api/mask`
+  (`graphs.mask`, white on black) by words (`use-find.ts`) or by tapped points (`use-taps.ts`), brush and eraser
+  strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own at edit time. The
+  fitted body (`/api/body`) shows as a half-strength layer under the mask, with every tool still working. One
+  switch, "Keep the body's shape" (`editAtom.mode`), picks the chain: off is a repaint, `graphs.inpaint`
+  (workflow 09's chain: crop and stitch, LanPaint) with a picked look; on is dressing, `graphs.dress`, sent
+  through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as depth into Z-Image's
+  Fun Controlnet) with a Z-Image look, and optionally a light LanPaint finish with any look. Its outfits are a
+  person's Wearing row of the Prompt tab, spelled out per render (`domain/outfits.ts`): switched-on chips are
+  worn together, each version is another job. The passes are chips (`edit/passes.tsx`). `/api/mask` and
+  `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
+  Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,
+  managed from the Look tab's head (`model/look-sheet.tsx`) and picked per pass. A LoRA in the stack belongs to
+  the look or to a saved character in the cast (`StackLora.from`, the character's `loras[family]`); its row's tag
+  gives it to another in its place (`reassign` in `domain/loras.ts`, applied by `useCastLoras` once the
+  characters are written). The library shows stacks, an image and everything made from it
+  (`domain/lineage.ts`), grouped by the Generate that made them. A die on a Prompt row adds a preset as a
+  version, a pin keeps the row out of Surprise me, which sends renders that each change one row to a preset
+  (`domain/shuffle.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
+  `features/library`. A person's face photo (`data/db/faces.ts`, sealed) rides along as
   `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
   through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with
   `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it
