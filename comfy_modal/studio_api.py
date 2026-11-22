@@ -494,21 +494,33 @@ def _dress(body: dict, b64: str, mask: str, seed: int, size: tuple[int, int], ta
 
 @api.post("/api/mask")
 async def mask_preview(request: Request):
-    """What SAM 3.1 finds by `text` in a picture, as a white-on-black mask (graphs.mask), for the phone to add to the
-    mask it paints. Runs outside stop-after, like the body preview."""
+    """What SAM 3.1 finds in a picture by `text`, by tapped `points` or by both, as a white-on-black mask
+    (graphs.mask), for the phone to add to the mask it paints. Runs outside stop-after, like the body preview."""
     body = await _json(request)
     b64, text = str(body.get("image", "")), str(body.get("text", "")).strip()
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
-    if not text or len(text) > 200:
-        raise HTTPException(400, "say what to find, in up to 200 characters")
     try:
         w, h = _png_size(base64.b64decode(b64[:64]))
-    except ValueError as e:
-        raise HTTPException(400, f"malformed image: {e}")
+        points = _points(body.get("points") or {}, w, h)
+    except (ValueError, TypeError, KeyError) as e:
+        raise HTTPException(400, f"malformed image or points: {e}")
+    if len(text) > 200 or not (text or points.get("positive")):
+        raise HTTPException(400, "say what to find in up to 200 characters, or tap on it")
     params = {"kind": "mask", "unet": "sam3.1_multiplex_fp16.safetensors", "family": "sam", "prompt": text, "negative": "",
               "width": w, "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
-    return _start(body, params, graphs.mask(b64, text), queued=False)
+    return _start(body, params, graphs.mask(b64, text, points), queued=False)
+
+
+def _points(raw: dict, w: int, h: int) -> dict:
+    """Tapped points as SAM takes them: up to 16 of each kind, whole pixels inside the image."""
+    out = {}
+    for kind in ("positive", "negative"):
+        pts = [{"x": int(p["x"]), "y": int(p["y"])} for p in (raw.get(kind) or [])[:16]]
+        if any(not (0 <= p["x"] < w and 0 <= p["y"] < h) for p in pts):
+            raise ValueError("a point lies outside the image")
+        out[kind] = pts
+    return out
 
 
 @api.post("/api/body")

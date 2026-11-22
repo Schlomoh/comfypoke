@@ -43,5 +43,7 @@ def samples() -> dict[str, dict]:
         "dress off": graphs.dress(IMG, IMG, "a red dress", 1, "off", zimage, None),
         "dress finish face": graphs.dress(IMG, IMG, "a red dress", 1, "loose", zimage, {**krea, "denoise": 0.35}, IMG),
         "mask": graphs.mask(IMG, "shirt"),
+        "mask taps": graphs.mask(IMG, points={"positive": [{"x": 10, "y": 20}], "negative": [{"x": 3, "y": 4}]}),
+        "mask text and taps": graphs.mask(IMG, "shoe", {"positive": [{"x": 10, "y": 20}]}),
         "body": graphs.body(IMG),
     }

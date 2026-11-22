@@ -8,6 +8,7 @@ model loader and the rest. Every graph ends in SaveImageWebsocket: the PNG goes 
 instead of onto the io volume, so a studio render leaves no file behind. The negative prompt is used only when
 CFG is above 1; at 1 a distilled model ignores it anyway. Node ids come from graph.G; what the studio watches
 is marked with a stage or a role there, never by a number."""
+import json
 import os
 import re
 from typing import NamedTuple
@@ -37,7 +38,7 @@ NO_FAMILY = ("rt_detr", "seedvr2", "flux-2")
 # node pack in catalog.NODE_PACKS; the studio's listing and validation read the extensions from here.
 LOADERS = {
     ".safetensors": ("UNETLoader", {"weight_dtype": "default"}),
-    ".gguf": ("UnetLoaderGGUF", {}),  # ComfyUI-GGUF
+    ".gguf": ("UnetLoaderGGUF", {}),  # comfyui-gguf-reboot (catalog.NODE_PACKS)
 }
 MODEL_EXTENSIONS = tuple(LOADERS)
 UPSCALE_MEGAPIXELS = (2, 4, 8)  # 4 MP is 2048 square; 8 is about 2.8K; SeedVR2 7B fits all three on an L40S with tiled VAE
@@ -126,11 +127,15 @@ CROP = {"downscale_algorithm": "bilinear", "upscale_algorithm": "lanczos", "prer
         "output_target_width": 1024, "output_target_height": 1024, "output_padding": "32", "device_mode": "gpu (much faster)"}
 
 
-def _sam(g: G, image: Ref, text: str, threshold: float, expand: int) -> Ref:
-    """What SAM 3.1 finds by `text`, grown a little past its edge."""
+def _sam(g: G, image: Ref, text: str, threshold: float, expand: int, points: dict | None = None) -> Ref:
+    """What SAM 3.1 finds by `text`, by tapped `points` ({"positive": [{"x", "y"}], "negative": [...]}, in pixels)
+    or by both, grown a little past its edge."""
     sam = g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
+    more = {f"{k}_coords": json.dumps(v) for k, v in (points or {}).items() if v}
+    if text:
+        more["conditioning"] = g.add("CLIPTextEncode", text=text, clip=sam.out(1))
     found = g.add("SAM3_Detect", threshold=threshold, refine_iterations=2, individual_masks=False, model=sam, image=image,
-                  conditioning=g.add("CLIPTextEncode", text=text, clip=sam.out(1)), stage="masking")
+                  stage="masking", **more)
     return g.add("GrowMask", expand=expand, tapered_corners=True, mask=found, stage="masking")
 
 
@@ -219,10 +224,11 @@ def _masked(g: G, image_b64: str, mask_b64: str) -> tuple[Ref, Ref, Ref]:
     return image, mask, g.add("InpaintCropImproved", CROP, image=image, mask=mask, stage="masking")
 
 
-def mask(image_b64: str, text: str) -> dict:
-    """What SAM 3.1 finds in the image by `text`, as white on black: the phone adds it to the mask it paints."""
+def mask(image_b64: str, text: str = "", points: dict | None = None) -> dict:
+    """What SAM 3.1 finds in the image by `text` or tapped `points`, as white on black: the phone adds it to the mask
+    it paints."""
     g = G()
-    _save(g, g.add("MaskToImage", mask=_sam(g, _image(g, image_b64), text, 0.4, 12)))
+    _save(g, g.add("MaskToImage", mask=_sam(g, _image(g, image_b64), text, 0.4, 12, points)))
     return g.prompt()
 
 

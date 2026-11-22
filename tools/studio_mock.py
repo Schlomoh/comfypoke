@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import base64
 import io
+import json
 import os
 import subprocess
 import sys
@@ -62,8 +63,12 @@ async def run(payload):
     if _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
         w, h = images[0].size
         out = Image.new("RGB", (w, h))
-        k = sum(map(ord, texts[0])) % 5  # one of five bands, top to bottom
-        ImageDraw.Draw(out).ellipse((w // 4, h * k // 5, 3 * w // 4, h * (k + 1) // 5), fill=(255, 255, 255))
+        taps = json.loads(_nodes(g, "SAM3_Detect")[0]["inputs"].get("positive_coords", "[]"))
+        for p in taps:  # a tap: a blob around the point
+            ImageDraw.Draw(out).ellipse((p["x"] - w // 8, p["y"] - h // 10, p["x"] + w // 8, p["y"] + h // 10), fill=(255, 255, 255))
+        if texts:  # by text: one of five bands, top to bottom
+            k = sum(map(ord, texts[0])) % 5
+            ImageDraw.Draw(out).ellipse((w // 4, h * k // 5, 3 * w // 4, h * (k + 1) // 5), fill=(255, 255, 255))
     elif _nodes(g, "SAM3DBody_Render") and not cropped:  # the body preview: a stick figure over the picture
         out = images[0].convert("RGB")
         w, h = out.size
