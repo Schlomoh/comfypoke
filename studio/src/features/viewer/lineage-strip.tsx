@@ -6,7 +6,7 @@ import { useThumb } from "@/data/db/renders";
 import { kindOf, lineage } from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 import { useImageActions } from "@/state/actions";
-import { familyAtom, pickAtom, rendersAtom, tabAtom, viewerAtom } from "@/state/studio";
+import { pickAtom, rendersAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
@@ -34,9 +34,6 @@ function Step({ r, current, onOpen }: { r: Render; current: boolean; onOpen: () 
 export function LineageStrip({ render }: { render: Render }) {
   const all = useAtomValue(rendersAtom) ?? [];
   const { open } = useImageActions();
-  const setFamily = useSetAtom(familyAtom);
-  const setViewer = useSetAtom(viewerAtom);
-  const setTab = useSetAtom(tabAtom);
   const setPick = useSetAtom(pickAtom);
   const { chain, children, cut } = lineage(all, render.id);
   const batch = render.batch ? all.filter((r) => r.batch === render.batch) : [];
@@ -73,19 +70,6 @@ export function LineageStrip({ render }: { render: Render }) {
           pick of {batch.length}
         </Button>
       )}
-      <Button
-        variant="text"
-        size="inline"
-        className={batch.length > 1 ? "shrink-0" : "ml-auto shrink-0"}
-        title="Show this image's whole family in the library"
-        onClick={() => {
-          setFamily(render.id);
-          setViewer(null);
-          setTab("library");
-        }}
-      >
-        family
-      </Button>
     </div>
   );
 }

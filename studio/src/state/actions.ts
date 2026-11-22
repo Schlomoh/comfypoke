@@ -13,13 +13,12 @@ import { withUpscales, type Render } from "@/domain/render";
 import { upscaleOf } from "@/state/generate";
 import { useJobs } from "@/state/jobs";
 import {
-  cursorAtom,
+  stepFromAtom,
   focusAtom,
   jobsAtom,
   recipeAtom,
   rendersAtom,
   sequenceAtom,
-  shownAtom,
   tabAtom,
   viewerAtom,
 } from "@/state/studio";
@@ -121,24 +120,28 @@ export function useImageActions() {
 
   /** Deletes one image (and its upscales), then shows the next one where it was. */
   const remove = async (r: Render) => {
-    const shown = store.get(shownAtom);
+    const items = store.get(sequenceAtom); // the covers on screen, as browsing goes
+    const from = store.get(stepFromAtom);
     const gone = await removeMany([r]);
     if (!gone) return;
-    const at = shown.findIndex((x) => x.id === r.id);
-    const left = (from: number, dir: 1 | -1) => {
-      for (let i = from; i >= 0 && i < shown.length; i += dir) if (!gone.has(shown[i].id)) return shown[i];
+    const at = items.indexOf(from ?? r.id);
+    const left = (start: number, dir: 1 | -1) => {
+      for (let i = start; i >= 0 && i < items.length; i += dir) if (!gone.has(items[i])) return items[i];
     };
-    const after = left(at + 1, 1) ?? left(at - 1, -1); // its upscales sit next to it and went with it
-    store.set(focusAtom, after?.id ?? null);
-    if (store.get(viewerAtom)) store.set(viewerAtom, after?.id ?? null);
+    // an image inside a stack that is still there: its cover; otherwise the next stack, or the one before
+    const stays = from && from !== r.id && !gone.has(from) ? from : undefined;
+    const after = stays ?? left(at + 1, 1) ?? left(at - 1, -1);
+    store.set(focusAtom, after ?? null);
+    if (store.get(viewerAtom)) store.set(viewerAtom, after ?? null);
   };
 
   /** Moves through the queue and the library by n images. The zoom stays as it is. */
   const step = (n: number) => {
     const items = store.get(sequenceAtom);
-    const at = items.indexOf(store.get(cursorAtom) ?? "");
-    const next = items[Math.min(items.length - 1, Math.max(0, at + n))];
-    if (!next || next === store.get(cursorAtom)) return false;
+    const at = items.indexOf(store.get(stepFromAtom) ?? "");
+    const to = Math.min(items.length - 1, Math.max(0, at + n));
+    const next = items[to];
+    if (!next || to === at) return false; // at an end: stay, even on an image inside the stack
     if (store.get(viewerAtom)) store.set(viewerAtom, next);
     store.set(focusAtom, next);
     revealThumb(next);

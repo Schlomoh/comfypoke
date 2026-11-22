@@ -39,6 +39,8 @@ export function closeSpace() {
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 
+const SKIP = Symbol("unreadable");
+
 /** Rows of this workspace, decrypted; undefined until they are. */
 export function useUnsealed(rows: Row[] | undefined): unknown[] | undefined {
   const space = useSpace();
@@ -55,10 +57,10 @@ export function useUnsealed(rows: Row[] | undefined): unknown[] | undefined {
       if (gen === generation) unsealed.set(row.id, { iv, value });
       return value;
     };
-    Promise.all(rows.map(read)).then(
-      (v) => live && setOut(v),
-      () => {}, // a row rewritten while it was read: the live query brings the new one
-    );
+    // one row that cannot be read (rewritten mid-read, or sealed with another key) must not hold back the rest:
+    // it is left out, and a rewritten one comes back with the live query's next run
+    const tolerant = (row: Row) => read(row).catch(() => SKIP);
+    void Promise.all(rows.map(tolerant)).then((v) => live && setOut(v.filter((x) => x !== SKIP)));
     return () => {
       live = false;
     };

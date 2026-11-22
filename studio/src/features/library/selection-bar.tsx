@@ -16,12 +16,12 @@ const upscaleLabel = ({ upscale: { megapixels, prompt } }: Recipe) =>
   `Upscale to ${megapixels} MP${prompt.trim() ? `, touch-up "${prompt.trim()}"` : ""}, set in the dock`;
 
 export function SelectionBar({
-  shown,
+  visible,
   chosen,
   setPicked,
   out,
 }: {
-  shown: Render[];
+  visible: Render[]; // what "all" selects: the covers on screen, not the images inside closed or folded stacks
   chosen: Render[];
   setPicked: (p: Set<string> | null) => void;
   out: Export;
@@ -34,7 +34,8 @@ export function SelectionBar({
 
   const bulkBest = async () => {
     const on = chosen.some((r) => !r.best); // mixed or none: mark all; all marked: unmark all
-    for (const r of chosen) await updateRender(space, r.id, (s) => ({ ...s, best: on }));
+    for (const r of chosen)
+      await updateRender(space, r.id, (s) => ({ ...s, best: on, passed: on ? undefined : s.passed }));
     notify(`${on ? "Marked" : "Unmarked"} ${chosen.length} as best`);
   };
 
@@ -42,8 +43,8 @@ export function SelectionBar({
     <div className="sticky top-[calc(5.75rem+env(safe-area-inset-top))] z-10 flex flex-col gap-2 border-b border-line bg-panel px-4 py-3 lg:top-0">
       <div className="flex items-center gap-3 font-mono text-xs">
         <span className="flex-1 text-ink tabular-nums">{chosen.length} selected</span>
-        <Button variant="quiet" size="inline" onClick={() => setPicked(new Set(shown.map((r) => r.id)))}>
-          all {shown.length}
+        <Button variant="quiet" size="inline" onClick={() => setPicked(new Set(visible.map((r) => r.id)))}>
+          all {visible.length}
         </Button>
         <Button variant="quiet" size="inline" onClick={() => setPicked(new Set())}>
           none

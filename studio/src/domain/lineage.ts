@@ -45,3 +45,71 @@ export function childCounts(all: Render[]) {
   for (const r of all) if (r.source) counts.set(r.source, (counts.get(r.source) ?? 0) + 1);
   return counts;
 }
+
+/** One idea in the library: an image and everything made from it, shown as one tile. `members`: the root first, then
+ * the rest oldest first. `cover`: the newest marked best, else the newest. */
+export type Stack = { root: Render; members: Render[]; cover: Render; latest: number };
+
+const newest = (xs: Render[]) => xs.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+
+/** The renders as stacks, the one with the newest member first. An image whose source is not among them starts a
+ * stack of its own, so a filtered list still stacks what it holds. */
+export function stacks(rs: Render[]): Stack[] {
+  const byId = new Map(rs.map((r) => [r.id, r]));
+  const rootOf = (r: Render) => {
+    const seen = new Set<string>();
+    let at = r;
+    while (at.source && byId.has(at.source) && !seen.has(at.id)) {
+      seen.add(at.id);
+      at = byId.get(at.source) as Render;
+    }
+    return at;
+  };
+  const by = new Map<string, Render[]>();
+  for (const r of rs) {
+    const root = rootOf(r);
+    by.set(root.id, [...(by.get(root.id) ?? []), r]);
+  }
+  return [...by.entries()]
+    .map(([id, ms]) => {
+      const root = byId.get(id) as Render;
+      const members = [root, ...ms.filter((m) => m !== root).toSorted((a, b) => a.createdAt - b.createdAt)];
+      const best = members.filter((m) => m.best);
+      return {
+        root,
+        members,
+        cover: newest(best.length ? best : members),
+        latest: newest(members).createdAt,
+      };
+    })
+    .toSorted((a, b) => b.latest - a.latest);
+}
+
+/** Stacks whose first images came from one Generate together (`batch`), in the order of their first stack; a stack
+ * from no batch, or alone in one, is a group of one. */
+export function groups(ss: Stack[]): { batch?: string; stacks: Stack[] }[] {
+  const out: { batch?: string; stacks: Stack[] }[] = [];
+  const at = new Map<string, number>();
+  for (const s of ss) {
+    const b = s.root.batch;
+    const i = b === undefined ? undefined : at.get(b);
+    if (i !== undefined) out[i].stacks.push(s);
+    else {
+      if (b !== undefined) at.set(b, out.length);
+      out.push({ batch: b, stacks: [s] });
+    }
+  }
+  return out;
+}
+
+/** Picked over in a Pick and not marked best since: folded away in its batch. */
+export const pickedOver = (s: Stack) => !!s.cover.passed && !s.cover.best;
+
+/** The stacks a library shows: in a batch of several, the picked-over ones fold away unless the batch is unfolded. */
+export function visible(ss: Stack[], unfolded: ReadonlySet<string>) {
+  return groups(ss).flatMap((g) =>
+    g.batch !== undefined && g.stacks.length > 1 && !unfolded.has(g.batch)
+      ? g.stacks.filter((s) => !pickedOver(s))
+      : g.stacks,
+  );
+}

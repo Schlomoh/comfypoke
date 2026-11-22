@@ -14,13 +14,11 @@ export function Thumb({
   active,
   selected,
   onSelect,
-  made = 0,
 }: {
   render: Render;
   active: boolean;
   selected?: boolean; // undefined: not selecting
   onSelect: (r: Render) => void;
-  made?: number; // images made from this one
 }) {
   const url = useThumb(render.id);
   const picking = selected !== undefined;
@@ -56,14 +54,6 @@ export function Thumb({
           aria-hidden
         >
           ↑{render.upscale.megapixels}MP
-        </span>
-      )}
-      {made > 0 && (
-        <span
-          className="absolute top-0 right-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
-          title={`${made} made from it`}
-        >
-          +{made}
         </span>
       )}
       {kindOf(render) && (

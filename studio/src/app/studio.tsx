@@ -74,7 +74,7 @@ export function Studio({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
-      <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[400px_minmax(0,1fr)_300px]">
+      <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[400px_minmax(0,1fr)_360px]">
         {/* on a phone the aside's parts join the page column: the tab bar first, then the stage */}
         <aside className="contents lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-line">
           <TabBar />
@@ -84,7 +84,7 @@ export function Studio({ onClose }: { onClose: () => void }) {
         <main className="order-1 h-[56svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
           <Stage />
         </main>
-        <aside className="hidden lg:block lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-line">
+        <aside className="hidden lg:block lg:min-h-0 lg:[scrollbar-gutter:stable] lg:overflow-y-auto lg:border-l lg:border-line">
           <Library column />
         </aside>
       </div>

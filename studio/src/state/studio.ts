@@ -5,7 +5,7 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 import type { Job } from "@/domain/job";
-import { family } from "@/domain/lineage";
+import { stacks, visible } from "@/domain/lineage";
 import { EMPTY, type Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { FIT, type View } from "@/domain/view";
@@ -26,8 +26,6 @@ export const infoAtom = atom(false); // the viewer's info panel
 export const viewAtom = atom<View>(FIT);
 export const characterFilterAtom = atom("");
 export const bestOnlyAtom = atom(false);
-/** The library shows only this image's family (domain/lineage.ts): what it was made from and into. null: all. */
-export const familyAtom = atom<string | null>(null);
 /** The renders being picked among (features/pick); null when not picking. */
 export const pickAtom = atom<string[] | null>(null);
 /** Every image blanked to a plain tile, for working where others can see the screen. Kept across reloads. */
@@ -63,10 +61,18 @@ const ofCharacterAtom = atom((get) => {
 /** What the library shows, in its order. */
 export const shownAtom = atom((get) => {
   const best = get(bestOnlyAtom);
-  const of = get(familyAtom);
-  const kin = of ? family(get(allRendersAtom), of) : null;
-  return get(ofCharacterAtom).filter((r) => (!best || r.best) && (!kin || kin.has(r.id)));
+  return get(ofCharacterAtom).filter((r) => !best || r.best);
 });
+/** What the library shows as stacks (domain/lineage.ts): one tile per image and everything made from it. */
+export const stacksAtom = atom((get) => stacks(get(shownAtom)));
+/** Batches showing the stacks picked over in them, which otherwise fold away. */
+export const unfoldedAtom = atom<ReadonlySet<string>>(new Set<string>());
+/** The stacks on screen: picked-over ones in a folded batch are not. Browsing and "select all" go by these. */
+export const visibleStacksAtom = atom((get) => visible(get(stacksAtom), get(unfoldedAtom)));
+/** Each shown image's stack cover: where browsing goes on from an image inside a stack. */
+const coverOfAtom = atom(
+  (get) => new Map(get(stacksAtom).flatMap((s) => s.members.map((m) => [m.id, s.cover.id]))),
+);
 export const bestCountAtom = atom((get) => get(ofCharacterAtom).filter((r) => r.best).length);
 export const libraryFilterAtom = atom((get) => ({
   character: get(activeCharacterAtom),
@@ -99,8 +105,14 @@ export const cursorAtom = atom((get) => {
   return (render ?? job ?? stage.job ?? stage.render)?.id ?? null;
 });
 
-/** Queue and library in the order the library lists them, for stepping through with arrows and swipes. */
+/** Queue and library in the order the library lists them, for stepping through with arrows and swipes: one step per
+ * stack, by its cover (the viewer's lineage strip goes within a stack). */
 export const sequenceAtom = atom((get) => [
   ...get(liveJobsAtom).map((j) => j.id),
-  ...get(shownAtom).map((r) => r.id),
+  ...get(visibleStacksAtom).map((s) => s.cover.id),
 ]);
+/** Where stepping starts from an image: its stack's cover, which is in the sequence. */
+export const stepFromAtom = atom((get) => {
+  const at = get(cursorAtom);
+  return at ? (get(coverOfAtom).get(at) ?? at) : null;
+});

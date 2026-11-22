@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { childCounts, family, kindOf, lineage } from "@/domain/lineage";
+import { childCounts, family, groups, kindOf, lineage, stacks, visible } from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 
 const r = (id: string, source?: string, more: Partial<Render> = {}): Render => ({
@@ -49,4 +49,40 @@ describe("lineage", () => {
   });
   it("survives a loop in the records", () =>
     expect(lineage([r("x", "y"), r("y", "x")], "x").chain).toHaveLength(2));
+});
+
+describe("stacks", () => {
+  it("puts a root and everything made from it in one stack, newest member first", () => {
+    const ss = stacks(all);
+    const ofA = ss.find((s) => s.root.id === "a");
+    expect(ofA?.members.map((m) => m.id)).toEqual(["a", "b", "c", "d"]);
+    expect(ofA?.cover.id).toBe("d");
+    expect(ss.map((s) => s.root.id)).toEqual(["f", "e", "a"]);
+  });
+  it("covers with the newest best", () => {
+    const ss = stacks([r("a"), r("b", "a", { best: true }), r("c", "a")]);
+    expect(ss[0].cover.id).toBe("b");
+  });
+  it("starts a stack at an image whose source is filtered out", () => {
+    expect(stacks([r("b", "a"), r("c", "b")]).map((s) => s.root.id)).toEqual(["b"]);
+  });
+});
+
+describe("groups", () => {
+  it("groups stacks from one Generate in the order of their first", () => {
+    const ss = stacks([r("a", undefined, { batch: "x" }), r("b"), r("c", undefined, { batch: "x" })]);
+    expect(groups(ss).map((g) => g.stacks.map((s) => s.root.id))).toEqual([["c", "a"], ["b"]]);
+  });
+});
+
+describe("visible", () => {
+  const batch = [
+    r("a", undefined, { batch: "x", best: true }),
+    r("b", undefined, { batch: "x", passed: true }),
+    r("c", undefined, { batch: "x", passed: true }),
+  ];
+  it("folds the picked-over stacks of a batch until it is unfolded", () => {
+    expect(visible(stacks(batch), new Set()).map((s) => s.root.id)).toEqual(["a"]);
+    expect(visible(stacks(batch), new Set(["x"]))).toHaveLength(3);
+  });
 });
