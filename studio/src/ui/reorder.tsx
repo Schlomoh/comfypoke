@@ -11,11 +11,12 @@ export function useReorder(onMove: (from: number, to: number) => void) {
   const live = useRef<{ from: number; dy: number } | null>(null); // the drop reads this: state may lag a fast flick
   const start = useRef({ y: 0, mids: [] as number[] });
 
-  /** Where the dragged row lands: before the first other row whose middle is below the dragged row's middle. */
+  /** Where the dragged row lands: before the first other row whose middle is below the finger, so a tall row moves
+   * as soon as the finger passes another's middle. */
   const target = (from: number, dy: number) => {
-    const { mids } = start.current;
+    const { mids, y } = start.current;
     const others = mids.filter((_, i) => i !== from);
-    const before = others.findIndex((m) => mids[from] + dy < m);
+    const before = others.findIndex((m) => y + dy < m);
     return before === -1 ? others.length : before;
   };
 

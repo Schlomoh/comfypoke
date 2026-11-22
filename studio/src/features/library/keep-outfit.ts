@@ -4,14 +4,15 @@ import { addPreset } from "@/data/db/presets";
 import { updateSaved } from "@/data/db/saved";
 import { db } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
-import { isBuiltIn } from "@/domain/presets";
+import { isOffered } from "@/domain/presets";
 import { GENDERS } from "@/domain/presets/gender";
 import { phrase, type Phrase } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { notify } from "@/ui/notify";
 
 /** The outfit a dressed image wears, or null for anything else. */
-export const outfitOf = (r: Render) => (r.edit?.dress && r.edit.prompt.trim()) || null;
+export const outfitOf = (r: Render) =>
+  (r.edit?.dress && (r.edit.dress.pieces?.join(", ") || r.edit.prompt.trim())) || null; // the prompt may describe them too
 
 /** Whether a Wearing row has every piece already, as a chip or one of its versions. */
 const owns = (row: Phrase[], pieces: string[]) =>
@@ -20,14 +21,9 @@ const owns = (row: Phrase[], pieces: string[]) =>
 export async function keepOutfit(space: Space, r: Render) {
   const outfit = outfitOf(r);
   if (!outfit) return;
-  const offered =
-    GENDERS.some((g) => isBuiltIn("wear", g, outfit)) ||
-    (await db.presets
-      .where("block")
-      .equals("wear")
-      .filter((p) => p.text === outfit)
-      .count()) > 0;
-  if (!offered) await addPreset("wear", outfit);
+  const mine = await db.presets.where("block").equals("wear").toArray();
+  const offered = GENDERS.some((g) => isOffered("wear", g, outfit, mine));
+  if (!offered) await addPreset("wear", outfit, "Outfits");
   const who = r.edit?.dress?.who; // recorded when it was dressed: the recipe may hold others
   const pieces = r.edit?.dress?.pieces ?? [outfit];
   const closet = { of: "" }; // whose, once written

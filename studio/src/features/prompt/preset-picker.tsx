@@ -1,13 +1,13 @@
 // The footer of a row's sheet (and of Together): the subcategories of presets, their chips, and a field
 // to type one. What a pick does is the sheet's: a phrase in the row, or a version of the one picked. Nothing here moves on its own:
-// the subcategory changes only when another one is tapped, and the first line never wraps.
+// the subcategory changes only when another one is tapped, and the subcategories are one line of tabs that scrolls.
 import { useAtom } from "jotai";
 import { useState, type ReactNode } from "react";
 
 import { addPreset, deletePreset, restorePreset } from "@/data/db/presets";
 import type { Preset } from "@/data/db/schema";
 import type { Gender } from "@/domain/presets/gender";
-import { isBuiltIn, presetGroups } from "@/domain/presets/index";
+import { isBuiltIn, isOffered, presetGroups } from "@/domain/presets/index";
 import type { PresetRow } from "@/domain/rows";
 import { flash } from "@/features/prompt/flash";
 import { keepTypedAtom, subcategoryAtom } from "@/features/prompt/state";
@@ -17,21 +17,45 @@ import { Checkbox } from "@/ui/checkbox";
 import { Chip, ChipRow } from "@/ui/chip";
 import { Input } from "@/ui/field";
 import { notify } from "@/ui/notify";
+import { Tabs } from "@/ui/tabs";
 
-function Removable({ preset, last, onLast }: { preset: Preset; last: boolean; onLast: () => void }) {
+/**
+ * A preset taken out of its subcategory: the ones you added with its text are deleted, and a built-in one is hidden.
+ * Undo brings it back. `onLast` runs when it was the last one there.
+ */
+function Removable({
+  row,
+  text,
+  sub,
+  own,
+  builtIn,
+  onLast,
+}: {
+  row: PresetRow;
+  text: string;
+  sub: string | undefined;
+  own: Preset[];
+  builtIn: boolean;
+  onLast?: () => void;
+}) {
   const guard = useTapGuard();
+  const remove = async () => {
+    await Promise.all(own.map((p) => deletePreset(p.id)));
+    const hid = builtIn ? await addPreset(row, text, sub, true) : undefined;
+    onLast?.();
+    notify(`Removed the preset “${text}”`, {
+      action: {
+        label: "Undo",
+        run: () => {
+          for (const p of own) void restorePreset(p);
+          if (hid) void deletePreset(hid);
+        },
+      },
+    });
+  };
   return (
-    <Chip
-      tone="removing"
-      onClick={guard(() => {
-        void deletePreset(preset.id);
-        if (last) onLast();
-        notify(`Removed the preset “${preset.text}”`, {
-          action: { label: "Undo", run: () => void restorePreset(preset) },
-        });
-      })}
-    >
-      {preset.text} ×
+    <Chip tone="removing" onClick={guard(() => void remove())}>
+      {text} ×
     </Chip>
   );
 }
@@ -68,23 +92,28 @@ export function PresetPicker({
   const [typed, setTyped] = useState("");
 
   const mine = presets.filter((p) => p.block === row);
-  const groups = presetGroups(
-    row,
-    gender,
-    mine.map((p) => p.text),
-  );
-  const sub =
-    groups.find(([g]) => g === subs[row])?.[0] ?? groups.find(([g]) => g !== "Yours")?.[0] ?? groups[0]?.[0];
+  const groups = presetGroups(row, gender, mine);
+  const sub = groups.find(([g]) => g === subs[row])?.[0] ?? groups[0]?.[0];
   const items = groups.find(([g]) => g === sub)?.[1] ?? [];
+  const removed = mine.filter((p) => p.hidden && p.group === sub); // built-in ones taken out of this subcategory
   const add = (text: string) => {
     const t = text.trim();
     if (t) onAdd(t);
   };
 
   const chips = items.map((x) => {
-    const preset = removing && sub === "Yours" ? mine.find((m) => m.text === x) : undefined;
-    if (preset)
-      return <Removable key={x} preset={preset} last={mine.length === 1} onLast={() => setRemoving(false)} />;
+    if (removing)
+      return (
+        <Removable
+          key={x}
+          row={row}
+          text={x}
+          sub={sub}
+          own={mine.filter((m) => m.text === x && !m.hidden)}
+          builtIn={isBuiltIn(row, gender, x)}
+          onLast={items.length === 1 ? () => setRemoving(false) : undefined}
+        />
+      );
     const there = has(x);
     return there ? (
       <Chip key={x} tone="picked" onClick={() => flash(there)} title="Already added">
@@ -101,29 +130,37 @@ export function PresetPicker({
     <>
       <div className="flex h-11 items-center gap-2 text-[13px] text-warn fine:h-8">{header}</div>
       {groups.length > 0 && (
-        <ChipRow>
-          {groups.map(([g]) => (
-            <Chip
-              key={g}
-              text="mono"
-              tone={g === sub ? "picked" : "quiet"}
-              aria-pressed={g === sub}
-              onClick={() => {
-                setSubs((m) => ({ ...m, [row]: g }));
-                setRemoving(false);
-              }}
-            >
-              {g}
-            </Chip>
-          ))}
-        </ChipRow>
+        <Tabs
+          className="-mx-4 pl-4"
+          label="Subcategories"
+          value={sub}
+          options={groups.map(([g]) => g)}
+          onChange={(g) => {
+            setSubs((m) => ({ ...m, [row]: g }));
+            setRemoving(false);
+          }}
+        />
       )}
-      {items.length > 0 && (
+      {(items.length > 0 || removed.length > 0) && (
         <ChipRow>
           {chips}
-          {sub === "Yours" && (
+          {items.length > 0 && (
             <Button variant="link" size="inline" onClick={() => setRemoving(!removing)}>
-              {removing ? "done removing" : "remove some of yours"}
+              {removing ? "done removing" : "remove some"}
+            </Button>
+          )}
+          {removed.length > 0 && !removing && (
+            <Button
+              variant="link"
+              size="inline"
+              onClick={() => {
+                for (const p of removed) void deletePreset(p.id);
+                notify(`Brought back ${removed.length} removed`, {
+                  action: { label: "Undo", run: () => removed.forEach((p) => void restorePreset(p)) },
+                });
+              }}
+            >
+              bring back {removed.length} removed
             </Button>
           )}
         </ChipRow>
@@ -135,7 +172,12 @@ export function PresetPicker({
           const t = typed.trim();
           if (!t) return;
           add(t);
-          if (keep && !mine.some((p) => p.text === t) && !isBuiltIn(row, gender, t)) void addPreset(row, t);
+          if (keep) {
+            // a removed built-in one comes back; anything else not offered yet goes into the open subcategory
+            const hidden = mine.find((p) => p.hidden && p.text === t);
+            if (hidden) void deletePreset(hidden.id);
+            else if (!isOffered(row, gender, t, mine)) void addPreset(row, t, sub);
+          }
           setTyped("");
         }}
       >
@@ -155,7 +197,7 @@ export function PresetPicker({
         onChange={setKeep}
         label={
           <span className="text-xs text-muted">
-            Keep what I type as a preset (under Yours, in every workspace)
+            Keep what I type as a preset{sub ? ` in ${sub}` : ""}, in every workspace
           </span>
         }
       />

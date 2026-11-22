@@ -4,6 +4,7 @@ import { loadImage } from "@/data/db/renders";
 import type { Space } from "@/data/db/space";
 import { shortName } from "@/domain/format";
 import type { Render } from "@/domain/render";
+import { outfitOf } from "@/features/library/keep-outfit";
 
 const CELL = { w: 480, h: 600, caption: 64, gap: 16 } as const; // a 4:5 box; others fit inside it
 export const LOOKBOOK_MAX = 48;
@@ -18,8 +19,9 @@ function fit(ctx: OffscreenCanvasRenderingContext2D, text: string, width: number
   return `${t.trimEnd()}…`;
 }
 
-// a photo from the device was not made with a model or seed; an edit says what it changed
-const caption = (r: Render) => r.title ?? r.edit?.prompt ?? (r.uploaded ? `photo ${r.uploaded}` : r.prompt);
+// a photo from the device was not made with a model or seed; an edit says what it changed, a dress its outfit
+const caption = (r: Render) =>
+  r.title ?? outfitOf(r) ?? r.edit?.prompt ?? (r.uploaded ? `photo ${r.uploaded}` : r.prompt);
 const detail = (r: Render) =>
   (r.uploaded && !r.edit
     ? [`${r.width}×${r.height}`]

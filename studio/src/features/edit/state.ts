@@ -31,7 +31,8 @@ export const showBodyAtom = atom<string | null>(null);
 export type PassChoice = string;
 export type EditChoice = {
   mode: "dress" | "repaint";
-  person: string | null; // whose Wearing row dresses; null is the first person
+  person: string | null; // who is edited: whose Wearing row dresses, whose rows describe them; null is the first
+  portrait: boolean; // the person's Who, Look and Wearing go into the prompt (compose.ts portrait)
   hold: Hold;
   dresser: PassChoice;
   finish: PassChoice; // or "off": no finish
@@ -44,6 +45,7 @@ export type EditChoice = {
 export const editAtom = atom<EditChoice>({
   mode: "dress",
   person: null,
+  portrait: true,
   hold: "tight",
   dresser: "zimage-turbo",
   finish: "own",

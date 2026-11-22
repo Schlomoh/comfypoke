@@ -13,7 +13,16 @@ import type { Setup } from "@/domain/setup";
 /** What is known about a LoRA file, shared by all workspaces: its trigger words, and the model family it was trained
  * for, when said (a LoRA for another family is skipped when sent). */
 export type LoraNote = { name: string; trigger: string; family?: string };
-export type Preset = { id: string; block: PresetRow; text: string; label?: string; at: number }; // block: the row it is offered in
+// block: the row it is offered in; group: its subcategory there (none: More); hidden: a built-in one removed
+export type Preset = {
+  id: string;
+  block: PresetRow;
+  text: string;
+  label?: string;
+  at: number;
+  group?: string;
+  hidden?: boolean;
+};
 // Names are in the clear so the start screen can list them; `key` is the raw data key of a workspace without a password.
 export type Workspace = {
   id: string;

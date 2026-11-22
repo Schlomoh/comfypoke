@@ -1,6 +1,6 @@
 // Shuffling from the presets: a die on a row adds one of its presets as a version (another render), and Surprise me
 // makes renders that each change one row to a preset, leaving the pinned rows alone.
-import { presetGroups } from "@/domain/presets";
+import { presetGroups, type Own } from "@/domain/presets";
 import type { Gender } from "@/domain/presets/gender";
 import { phrase, type Phrase, type Recipe } from "@/domain/recipe";
 import { PERSON_ROWS, SCENE_ROWS, type RowId } from "@/domain/rows";
@@ -10,12 +10,13 @@ import { sameText, says } from "@/domain/versions";
 export const rowKey = (owner: string, row: RowId) => `${owner}:${row}`;
 export const SCENE = "scene";
 
-/** Your own presets for the row, then the built-in ones for this gender: everything its picker offers. */
-export const offered = (row: RowId, gender: Gender, mine: { block: string; text: string }[]) =>
+/** Everything the row's picker offers this gender: the built-in presets less those removed, with those added. */
+type Preset = Own & { block: string };
+export const offered = (row: RowId, gender: Gender, mine: readonly Preset[]) =>
   presetGroups(
     row,
     gender,
-    mine.filter((p) => p.block === row).map((p) => p.text),
+    mine.filter((p) => p.block === row),
   ).flatMap(([, items]) => items);
 
 /** The presets a row could still take: not already one of its phrases or versions. */
@@ -67,7 +68,7 @@ const plain = (r: Recipe): Recipe => {
  */
 export function surprises(
   r: Recipe,
-  presets: { block: string; text: string }[],
+  presets: readonly Preset[],
   n: number,
   rand: () => number = Math.random,
 ): { recipe: Recipe; label: string }[] {

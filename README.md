@@ -152,10 +152,11 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
 - The prompt is the people in the picture (one to five tabs) and its scene. A person has the rows
   Who, Look, Wearing and Doing, plus Side and Depth once there are two or more; the scene has
   Where, Shot, Style and Extra (verbatim). A row holds phrases, one idea each, and tapping a phrase
-  or "+ add" opens that row's sheet: every phrase as a card (switch it off, edit it, remove it),
-  and a picker pinned at the bottom with the presets in subcategories (women, real-life scenes,
-  underwear and lingerie campaigns) and a field to type your own, which can be kept as presets
-  under Yours. The prompt sent is shown underneath, in sentences, since Krea 2's text encoder
+  or "+ add" opens that row's sheet: every phrase as a card (switch it off, edit it, remove it,
+  drag it by its handle: the prompt says them in that order), and a picker pinned at the bottom
+  with the presets in subcategories (women, real-life scenes, underwear and lingerie campaigns)
+  and a field to type your own, which can be kept as a preset in the subcategory that is open.
+  Any preset, built in or yours, can be removed from its subcategory. The prompt sent is shown underneath, in sentences, since Krea 2's text encoder
   reads sentences better than tags; names never go into it.
 - Versions: "+ versions to compare" on a phrase adds alternatives (other bras for a bra). Every
   combination of versions is a separate render, once per seed, with the same seeds for every

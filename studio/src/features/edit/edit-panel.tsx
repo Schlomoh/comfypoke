@@ -1,9 +1,11 @@
 // The Edit tab: edit the image on the stage. The mask (made from the bar under the image, listed here), then what
 // goes in: with the body's shape kept, a person's Wearing row from the Prompt tab, one render per outfit; without,
-// a few words repainted into the mask. Then the passes and what they run with. The bar at the bottom sends it.
+// a few words repainted into the mask; and, unless switched off, the person as the Prompt tab writes them. Then the passes and what they run with. The bar at the bottom sends it.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 
+import { portrait } from "@/domain/compose";
 import { outfitPieces } from "@/domain/outfits";
+import type { Person } from "@/domain/recipe";
 import { MaskSummary } from "@/features/edit/mask-summary";
 import { Passes } from "@/features/edit/passes";
 import { editAtom } from "@/features/edit/state";
@@ -24,12 +26,14 @@ const HOLDS = [
   { value: "off", label: "free" },
 ] as const;
 
-function Wearing() {
+/** Who is edited, when there is more than one, and whether the prompt keeps them as the Prompt tab writes them. */
+function Who({ person }: { person: Person }) {
   const recipe = useAtomValue(recipeAtom);
   const [c, setC] = useAtom(editAtom);
-  const setOpen = useSetAtom(openAtom);
-  const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
-  const renders = outfitPieces(person);
+  const dress = c.mode === "dress";
+  const name = person.name || "them";
+  // dressing sends each outfit in place of the Wearing row, so the line shows it without
+  const kept = portrait(person, dress ? [] : undefined);
   return (
     <>
       {recipe.cast.length > 1 && (
@@ -45,6 +49,34 @@ function Wearing() {
           ))}
         </ChipRow>
       )}
+      <div className="flex items-center gap-2">
+        <Checkbox
+          on={c.portrait}
+          onChange={(on) => setC((x) => ({ ...x, portrait: on }))}
+          label={<span className="text-[13px]">Keep {name} as written</span>}
+        />
+        <Tip label="About keeping them">
+          Who, Look{dress ? "" : " and Wearing"} from {name}&apos;s rows in the Prompt tab go into the prompt
+          {dress ? " with each outfit" : " after your words"}, so a large area repainted still looks like{" "}
+          {name}. Doing stays out: the pose is the image&apos;s. Switch it off for an edit away from {name},
+          like the background.
+        </Tip>
+      </div>
+      {c.portrait && (
+        <p className="font-mono text-[11px] break-words text-muted">
+          {kept || <span className="text-faint">Nothing written for {name} yet.</span>}
+        </p>
+      )}
+    </>
+  );
+}
+
+function Wearing({ person }: { person: Person }) {
+  const [c, setC] = useAtom(editAtom);
+  const setOpen = useSetAtom(openAtom);
+  const renders = outfitPieces(person);
+  return (
+    <>
       <Row
         phrases={person.wear}
         label={`What ${person.name || "they"} wear`}
@@ -85,8 +117,10 @@ function Wearing() {
 
 export function EditPanel() {
   const { render, job } = useAtomValue(stageAtom);
+  const recipe = useAtomValue(recipeAtom);
   const [c, setC] = useAtom(editAtom);
   const dress = c.mode === "dress";
+  const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
   return (
     <div>
       {render ? (
@@ -105,15 +139,15 @@ export function EditPanel() {
           onChange={(on) => setC((x) => ({ ...x, mode: on ? "dress" : "repaint" }))}
           label={<span className="text-[13px]">Keep the body&apos;s shape</span>}
         />
-        {dress ? (
-          <Wearing />
-        ) : (
+        {dress && person && <Wearing person={person} />}
+        {!dress && (
           <Textarea
             value={c.repaint}
             onChange={(e) => setC((x) => ({ ...x, repaint: e.target.value }))}
-            placeholder="only what goes inside the mask: a red silk scarf"
+            placeholder="what goes inside the mask: a red silk scarf"
           />
         )}
+        {person && <Who person={person} />}
       </Section>
       <Passes />
     </div>

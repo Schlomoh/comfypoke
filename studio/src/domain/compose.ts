@@ -50,6 +50,29 @@ export const onto = (text: string, b: string) =>
 
 const verbatim = (t: string) => t.trim().replace(/[\s.,;]+$/, ""); // case can matter to a LoRA
 
+/** "woman, in her thirties with red hair, wearing a coat": the gender said once, unless a phrase says it. */
+function person(gender: Gender, who: string[], look: string[], wear: string[]) {
+  const all = who.some((t) => GENDER_WORD.test(t)) ? who : [noun(gender), ...who];
+  const hair = look.length ? ` with ${and(look)}` : "";
+  return [all.join(", ") + hair, wear.length && `wearing ${and(wear)}`].filter(Boolean).join(", ");
+}
+
+const clean = (ps: Phrase[]) =>
+  ps
+    .filter((p) => p.on && p.t.trim())
+    .map((p) => verbatim(p.t))
+    .filter(Boolean);
+
+/**
+ * A person as an edit keeps them: Who, Look and Wearing, never Doing (the pose is the image's). `wear` stands in for
+ * the Wearing row when given (an outfit being dressed). Empty when nothing is written.
+ */
+export function portrait(p: Person, wear?: string[]) {
+  const [who, look, worn] = [clean(p.who), clean(p.look), wear ?? clean(p.wear)];
+  if (!who.length && !look.length && !worn.length) return "";
+  return cap(article(person(p.gender, who, look, worn))) + ".";
+}
+
 /** The prompt sent. pick gives the text for a phrase: its own, or one of its versions. The stack's own trigger words
  * lead it; a character's start that person's description. */
 export function compose(r: Recipe, triggers: Triggers, pick: (p: Phrase) => string = (p) => p.t) {
@@ -71,13 +94,8 @@ export function compose(r: Recipe, triggers: Triggers, pick: (p: Phrase) => stri
   const many = described.length > 1;
   const people = described.map((c) => {
     const own = c.savedId ? (triggers.of[c.savedId] ?? []).map(verbatim) : [];
-    const parts = [[...own, ...on(c.who)], on(c.look), on(c.wear), on(c.doing)];
-    // the gender is said once, unless a phrase already says it ("woman in her thirties")
-    const who = parts[0].some((t) => GENDER_WORD.test(t)) ? parts[0] : [noun(c.gender), ...parts[0]];
-    const look = parts[1].length ? ` with ${and(parts[1])}` : "";
-    const body = [who.join(", ") + look, parts[2].length && `wearing ${and(parts[2])}`, parts[3].join(", ")]
-      .filter(Boolean)
-      .join(", ");
+    const doing = on(c.doing).filter(Boolean); // a version of only punctuation says nothing
+    const body = [person(c.gender, [...own, ...on(c.who)], on(c.look), on(c.wear)), ...doing].join(", ");
     const where = many ? place(c) : "";
     return cap(where ? `${where}, ${article(body)}` : article(body)) + ".";
   });
