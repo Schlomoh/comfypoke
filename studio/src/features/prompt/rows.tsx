@@ -1,15 +1,20 @@
 // A tab's body: a person's gender, where they stand (with more than one), and each row's phrases as
 // chips; the scene's tab also holds what the people do together. A chip or "+ add" opens the row's
-// sheet; the chip's card is brought into view there.
+// sheet; the chip's card is brought into view there. Beside a row's name, the die adds one of its presets as a
+// version, and the pin keeps the row out of Surprise me (domain/shuffle.ts).
 import { useAtomValue, useSetAtom } from "jotai";
+import type { ReactNode } from "react";
 
+import { usePresets } from "@/data/db/presets";
 import { sayTogether, setGender, withPerson, type Key } from "@/domain/cast";
-import { GENDERS } from "@/domain/presets/gender";
+import { GENDERS, type Gender } from "@/domain/presets/gender";
 import { SIDES, type Depth, type Person, type Phrase } from "@/domain/recipe";
 import { PERSON_ROWS, SCENE_ROWS, TOGETHER, type RowId } from "@/domain/rows";
+import { fresh, offered, rowKey, SCENE, withVersion } from "@/domain/shuffle";
 import { CharacterLoras } from "@/features/prompt/character-loras";
 import { FaceRow } from "@/features/prompt/face-row";
 import { recipeAtom } from "@/state/studio";
+import { Button } from "@/ui/button";
 import { Chip, ChipRow } from "@/ui/chip";
 import { Segmented, Toggles } from "@/ui/segmented";
 import { Heading, Note } from "@/ui/text";
@@ -54,6 +59,64 @@ function tone(p: Phrase) {
   return p.versions.length ? "varied" : "plain";
 }
 
+/** The die and the pin of one row: a person's (owner is their id) or the scene's. */
+function RowTools({
+  owner,
+  row,
+  phrases,
+  gender = "person",
+}: {
+  owner: string;
+  row: RowId;
+  phrases: Phrase[];
+  gender?: Gender;
+}) {
+  const setRecipe = useSetAtom(recipeAtom);
+  const pinned = useAtomValue(recipeAtom).pinned.includes(rowKey(owner, row));
+  const options = fresh(phrases, offered(row, gender, usePresets() ?? []));
+  const roll = () => {
+    const t = options[Math.floor(Math.random() * options.length)];
+    setRecipe((r) =>
+      owner === SCENE
+        ? {
+            ...r,
+            scene: { ...r.scene, [row]: withVersion(r.scene[row as keyof typeof r.scene] as Phrase[], t) },
+          }
+        : withPerson(r, owner, (p) => ({ ...p, [row]: withVersion(p[row as keyof Person] as Phrase[], t) })),
+    );
+  };
+  const key = rowKey(owner, row);
+  return (
+    <>
+      <Button
+        variant="text"
+        size="inline"
+        disabled={!options.length}
+        onClick={roll}
+        title={
+          options.length ? "Add one of its presets as a version: another render" : "No presets left to add"
+        }
+      >
+        dice
+      </Button>
+      <Button
+        variant="text"
+        size="inline"
+        aria-pressed={pinned}
+        onClick={() =>
+          setRecipe((r) => ({
+            ...r,
+            pinned: pinned ? r.pinned.filter((k) => k !== key) : [...r.pinned, key],
+          }))
+        }
+        title="Pinned: Surprise me leaves this row as it is"
+      >
+        {pinned ? "pinned" : "pin"}
+      </Button>
+    </>
+  );
+}
+
 /** A row's phrases as chips and "+ add"; also the Edit tab's Wearing row. */
 export function Row({
   phrases,
@@ -61,8 +124,10 @@ export function Row({
   hint,
   onOpen,
   say = text,
+  tools,
 }: {
   phrases: Phrase[];
+  tools?: ReactNode; // beside the row's name
   /** A chip's text, when it reads otherwise than the phrase. */
   say?: (p: Phrase) => string;
   label: string;
@@ -71,7 +136,10 @@ export function Row({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Heading>{label}</Heading>
+      <div className="flex min-h-6 items-center gap-1">
+        <Heading className="flex-1">{label}</Heading>
+        {tools}
+      </div>
       <ChipRow>
         {phrases
           .filter((p) => p.t.trim())
@@ -122,6 +190,9 @@ export function Rows({ tab, onOpen, onTogether }: RowsProps) {
               label={row.label}
               hint={row.hint}
               onOpen={(shown) => onOpen(row.id, shown)}
+              tools={
+                <RowTools owner={person.id} row={row.id} phrases={person[row.id]} gender={person.gender} />
+              }
             />
           ))
         : SCENE_ROWS.map((row) => (
@@ -131,6 +202,7 @@ export function Rows({ tab, onOpen, onTogether }: RowsProps) {
               label={row.label}
               hint={row.hint}
               onOpen={(shown) => onOpen(row.id, shown)}
+              tools={<RowTools owner={SCENE} row={row.id} phrases={recipe.scene[row.id]} />}
             />
           ))}
       {!person && recipe.cast.length > 1 && (

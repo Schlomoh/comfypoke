@@ -141,6 +141,7 @@ export function parseRecipe(raw: unknown): Recipe {
     sameSeed: r.sameSeed !== false,
     stopAfter: r.stopAfter === true,
     draft: r.draft === true,
+    pinned: Array.isArray(r.pinned) ? r.pinned.filter(isText) : [],
     upscale: {
       auto: up.auto === true,
       megapixels: [2, 4, 8].find((m) => m === up.megapixels) ?? EMPTY.upscale.megapixels,

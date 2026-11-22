@@ -95,6 +95,7 @@ export type Recipe = {
   upscale: UpscaleSettings;
   finish: FinishSettings | null; // a second, light pass over each render with a saved setup
   draft: boolean; // render small and quick (DRAFT_MP), to find a direction; a draft is made big from the library
+  pinned: string[]; // rows Surprise me leaves alone, by rowKey (domain/shuffle.ts)
 };
 export const DRAFT_MP = 0.5;
 /** setup: a saved setup's id (domain/setup.ts); strength: how much of the render it may repaint. */
@@ -121,6 +122,7 @@ export const EMPTY: Recipe = {
   upscale: { auto: false, megapixels: 4, prompt: "", denoise: 0.3 },
   finish: null,
   draft: false,
+  pinned: [],
 };
 
 /** Renders and recipes from before the model list knew only "turbo" and "raw". */

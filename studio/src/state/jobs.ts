@@ -73,6 +73,7 @@ function recordOf({ id, params, seconds, size }: Finished, meta: JobMeta): Rende
     ...size,
     recipe: meta.recipe,
     characterName: meta.characterName,
+    title: meta.title,
     batch: meta.batch,
     draft: meta.draft || undefined,
     source: meta.from?.id,

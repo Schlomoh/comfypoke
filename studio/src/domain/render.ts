@@ -83,6 +83,7 @@ export type JobMeta = {
   batch?: string;
   draft?: boolean;
   from?: Render; // the draft a render was made big from
+  title?: string; // what the library calls it: a surprise says what it changed
 };
 
 /** Every upscale and edit made from these renders, and from those, with the renders themselves. A render made big

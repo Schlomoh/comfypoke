@@ -1,12 +1,15 @@
 // The dock's ×N: how many seeds, random or fixed, whether versions share them, whether the GPU stops after the
-// queue, what it will take, and every render Generate will send, one after another.
+// queue, what it will take, and every render Generate will send, one after another. Surprise me sends that many
+// renders instead, each with one row changed to one of its presets (domain/shuffle.ts).
 import { useAtom } from "jotai";
 
 import { api, quietly } from "@/data/api";
+import { usePresets } from "@/data/db/presets";
 import { useGpu } from "@/data/queries";
 import { plan, randomSeed } from "@/domain/batch";
 import { duration } from "@/domain/format";
-import { useRenderTime } from "@/state/generate";
+import { surprises } from "@/domain/shuffle";
+import { useGenerate, useRenderTime } from "@/state/generate";
 import { useTriggers } from "@/state/recipe";
 import { layerAtom, recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
@@ -78,6 +81,9 @@ export function SeedsSheet() {
   const runs = open ? plan(recipe, triggers, 0) : [];
   const total = each == null ? null : each * runs.length;
   const rate = gpu?.rate_per_hour ?? null;
+  const presets = usePresets() ?? [];
+  const { surprise, sending } = useGenerate();
+  const surprising = open ? surprises(recipe, presets, recipe.count, () => 0).length : 0; // as many as there are changes
 
   return (
     <Sheet
@@ -91,6 +97,17 @@ export function SeedsSheet() {
         options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))}
         onChange={(count) => setRecipe((r) => ({ ...r, count }))}
       />
+      <Button
+        disabled={!surprising || sending}
+        onClick={() => void surprise(presets).then((n) => n && setLayer(null))}
+      >
+        Surprise me: {surprising || recipe.count} render{(surprising || recipe.count) === 1 ? "" : "s"}
+      </Button>
+      <Note>
+        {surprising
+          ? "Each one changes one row to one of its presets; pinned rows stay as they are."
+          : "No row has a preset left to change to: unpin a row or save presets."}
+      </Note>
       <SeedMode />
       <Checkbox
         on={recipe.sameSeed}
