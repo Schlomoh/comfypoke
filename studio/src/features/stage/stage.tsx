@@ -134,12 +134,13 @@ function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: bo
 export function Stage() {
   const { job, render } = useAtomValue(stageAtom);
   const loading = useAtomValue(rendersAtom) === undefined; // the workspace's renders are still being decrypted
+  const editing = useAtomValue(tabAtom) === "edit"; // the corner is paint area there
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="relative flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
         <Canvas job={job} render={render} loading={loading} />
         {/* the framing sits on the canvas, out of the bar's way */}
-        {render && !job && (
+        {render && !job && !editing && (
           <div className="absolute top-1 right-1 z-10 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]">
             <ZoomBar />
           </div>

@@ -50,6 +50,7 @@ export function useShortcuts(submit: () => void) {
     };
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector("dialog[open]:not([data-keys-through])")) return; // a layer over the studio: keys belong to it
+      if (document.querySelector(":popover-open:not([role=tooltip])")) return; // so does an open menu
       const { submit: send, actions: act } = latest.current;
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) return send();
       const editing = store.get(tabAtom) === "edit" && !store.get(viewerAtom);
@@ -118,8 +119,12 @@ export function useShortcuts(submit: () => void) {
       else if (k === "e") act.edit(cur);
       else if (k === "s") void saveImage(space, cur);
       else if (k === "b") void toggleBest(space, cur);
-      else if (k === "u") void act.upscaleMany([cur]);
-      else if (k === "Delete" || k === "Backspace") {
+      else if (k === "u") {
+        // the same question a tap gets, from the Upscale button showing this image: the viewer's or the stage's
+        const here = open ? "dialog[open] [data-upscale]" : "[data-upscale]";
+        if (open || cur.id === store.get(stageAtom).render?.id)
+          document.querySelector<HTMLButtonElement>(here)?.click();
+      } else if (k === "Delete" || k === "Backspace") {
         e.preventDefault();
         void act.remove(cur);
       }

@@ -38,10 +38,12 @@ function UpscaleConfirm({ render, className }: { render: Render; className?: str
     <Popover
       trigger="Upscale"
       align="start"
+      role="dialog"
+      data-upscale
       className={className}
       title="Upscale: this picture exactly, bigger (U)"
     >
-      <p className="px-3 py-2 text-xs text-muted">
+      <p className="line-clamp-4 px-3 py-2 text-xs text-muted">
         This picture at {megapixels} MP
         {prompt.trim() ? `, touched up: “${prompt.trim()}”` : ", as it is"}. Set in the dock under + then.
       </p>

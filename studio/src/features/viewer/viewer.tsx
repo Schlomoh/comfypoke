@@ -78,10 +78,13 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
         <Pressable
           onClick={() => setInfo(true)}
           title="Show everything it was made with"
-          className="line-clamp-3 shrink-0 border-t border-line px-3 pt-3 text-left font-mono text-xs text-muted hover:text-ink"
+          className="block shrink-0 border-t border-line px-3 pt-3 text-left font-mono text-xs text-muted hover:text-ink"
         >
-          {render.draft && <span className="mr-1.5 bg-warn px-1 text-bg">draft</span>}
-          {render.prompt}
+          {/* the clamp on a span: Safari does not clamp a button's own box */}
+          <span className="line-clamp-3">
+            {render.draft && <span className="mr-1.5 bg-warn px-1 text-bg">draft</span>}
+            {render.prompt}
+          </span>
         </Pressable>
       )}
       <div className="flex shrink-0 gap-2 border-t border-line p-3 lg:border-t-0">

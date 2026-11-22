@@ -35,6 +35,7 @@ export function Tip({
           if (e.pointerType !== "mouse" || isOpen()) return;
           hovered.current = true;
           pop.current?.showPopover();
+          place(); // in step with showing, so it never paints at the corner first
         }}
         onPointerLeave={(e) => {
           if (e.pointerType !== "mouse" || !hovered.current) return;
@@ -52,6 +53,7 @@ export function Tip({
             hovered.current = false; // a click pins it: leaving no longer closes it
             if (!isOpen()) pop.current?.showPopover();
           } else if (!wasOpen.current) pop.current?.togglePopover(); // a key, or a tap while closed
+          if (isOpen()) place();
           wasOpen.current = false;
         }}
         className={cn(
@@ -72,8 +74,7 @@ export function Tip({
         popover="auto"
         role="tooltip"
         onToggle={(e) => {
-          if (e.newState === "open") place();
-          else hovered.current = false;
+          if (e.newState === "closed") hovered.current = false;
         }}
         style={{ width: WIDTH }}
         className="m-0 border border-edge bg-raised p-3 text-xs leading-relaxed text-muted"
