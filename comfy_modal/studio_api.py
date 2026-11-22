@@ -7,6 +7,9 @@ Last-Event-ID) and gets the rest, image included. The last event is done or fail
 which EventSource reserves for its own connection errors). The phone deletes the job once it has
 stored the image; otherwise it is dropped STUDIO_JOB_TTL seconds after it ended. Nothing is
 written to disk.
+
+Every image this container sees is sealed (seal.py): the phone uploads ciphertext, the worker opens it, and the
+image and previews come back sealed. This container holds no key that opens them.
 """
 import asyncio
 import base64
@@ -29,9 +32,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, graph, graphs
+from . import config, graph, graphs, seal
 
 KEY = os.environ.get("COMFY_ACCESS_KEY", "")
+TRANSPORT = os.environ.get(config.TRANSPORT_PUBLIC_ENV, "")  # the worker's public key, which the phone wraps its image key with
+TRANSPORT_KID = seal.kid(TRANSPORT) if TRANSPORT else ""
 COOKIE = "studio_key"
 TERMINAL = ("execution_success", "execution_error", "execution_interrupted")
 STREAM_SECONDS = 100  # Modal ends any HTTP response at 150 s; ending it first lets EventSource resume cleanly
@@ -162,10 +167,10 @@ def _handle(job: Job, msg) -> bool:
     return not job.ended
 
 
-async def _run(job: Job, prompt: dict, queued: bool = True):
+async def _run(job: Job, prompt: dict, key: str, queued: bool = True):
     job.stages = graph.stages(prompt)
     job.counted = graph.counted(prompt)
-    payload = {"prompt": prompt, "prompt_id": job.id, "deploy_id": config.DEPLOY_ID, "io": False}  # see Worker.run
+    payload = {"prompt": prompt, "prompt_id": job.id, "deploy_id": config.DEPLOY_ID, "io": False, "key": key}  # see Worker.run
     try:
         for attempt in (1, 2):
             try:
@@ -236,6 +241,12 @@ async def models():
             "loras": await _uploads("loras")}
 
 
+@api.get("/api/transport")
+async def transport():
+    """The public key the phone wraps its image key with, and its id, which the phone sends back with the key."""
+    return {"kid": TRANSPORT_KID, "spki": TRANSPORT}
+
+
 def _params(body: dict) -> dict:
     unet = str(body.get("unet") or "")
     family = str(body.get("family") or "") or graphs.describe(unet)["family"]
@@ -288,39 +299,50 @@ def _reference(body: dict, family: str) -> str | None:
 # ---- images: each sent once and referred to by its hash after that ----------------------------------------
 # A find, a body preview and a few dressings of one picture would otherwise upload it each time, over a phone's
 # connection. Kept in this container's memory, oldest out first; a reference to one that is gone (the container
-# scaled down in between) is a 410, and the phone uploads it again.
+# scaled down in between) is a 410, and the phone uploads it again. They are sealed, so this container cannot read
+# a PNG's size from its header: the phone states it with the upload (?w=&h=, none for a JPEG face photo). Only the
+# phone that holds the key could state it wrong, and it could as well send any other picture.
 
 IMAGE_CACHE = 600 * 2**20  # base64 characters
-_images: OrderedDict[str, str] = OrderedDict()
+_images: OrderedDict[str, tuple[str, tuple[int, int] | None]] = OrderedDict()  # sha: (sealed image, base64; its size)
 
 
 @api.post("/api/images")
-async def put_image(request: Request):
+async def put_image(request: Request, w: int | None = None, h: int | None = None):
     data = await request.body()
     if not data or len(data) * 4 // 3 > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
-    if not data.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")):  # a render or a mask, or a face photo (JPEG)
-        raise HTTPException(400, "not a PNG or JPEG")
+    if len(data) <= seal.IV + 16:  # iv and tag
+        raise HTTPException(400, "not a sealed image")
     sha = hashlib.sha256(data).hexdigest()
     if sha not in _images:
-        _images[sha] = base64.b64encode(data).decode()
-        while sum(map(len, _images.values())) > IMAGE_CACHE and len(_images) > 1:
+        _images[sha] = (base64.b64encode(data).decode(), _size(w, h) if w is not None and h is not None else None)
+        while sum(len(b64) for b64, _ in _images.values()) > IMAGE_CACHE and len(_images) > 1:
             _images.popitem(last=False)
     _images.move_to_end(sha)
     return {"ref": sha}
 
 
 async def _json(request: Request) -> dict:
-    """The request's JSON with every image given as {"ref": sha} replaced by the image itself."""
+    """The request's JSON with every image given as {"ref": sha} replaced by the sealed image itself, and its stated
+    size as "<name>_size". `key` must be the phone's image key wrapped for this deploy's worker."""
     body = await request.json()
-    for key in ("image", "mask", "reference"):
-        v = body.get(key)
+    for name in ("image", "mask", "reference"):
+        body.pop(f"{name}_size", None)  # stated with the upload only
+        v = body.get(name)
+        if v and not isinstance(v, dict):
+            raise HTTPException(400, f"send the {name} as a reference from /api/images, sealed")
         if isinstance(v, dict):
             sha = str(v.get("ref", ""))
             if sha not in _images:
                 raise HTTPException(410, "the studio no longer has that image: send it again")
             _images.move_to_end(sha)
-            body[key] = _images[sha]
+            body[name], body[f"{name}_size"] = _images[sha]
+    key = body.get("key")
+    if not isinstance(key, dict) or not isinstance(key.get("key"), str):
+        raise HTTPException(400, "the request has no image key")
+    if key.get("kid") != TRANSPORT_KID:
+        raise HTTPException(409, "the image key was wrapped for an older deploy: fetch /api/transport again")
     return body
 
 
@@ -334,28 +356,26 @@ async def generate(request: Request):
     # what edits and retouches of this render run with by default: its last pass (setup.passOf)
     p["finish"] = finish and {k: finish[k] for k in ("unet", "family", "steps", "cfg", "denoise")} | {
         "loras": [{"name": n, "strength": w} for n, w in finish["loras"]]}
-    _note_stop_after(body)
-    _purge()
-    job = Job(p)
-    jobs[job.id] = job
-    job.emit("queued", {**job.params, "started": job.started})  # replayed on every reconnect
     prompt = graphs.graph(p["family"], p["unet"], p["prompt"], p["negative"], p["width"], p["height"], p["seed"], p["steps"], p["cfg"],
                           [(x["name"], x["strength"]) for x in p["loras"]], reference, finish)
-    job.task = asyncio.create_task(_run(job, prompt))
-    return {"id": job.id, **job.params}
+    return _start(body, p, prompt)
 
 
 STATIC = Path("/root/studio")  # the built studio/dist (studio.py)
 MAX_IMAGE = 40 * 2**20  # base64 characters: a 2048-square PNG is well under half of it
 
 
-def _png_size(data: bytes) -> tuple[int, int]:
-    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
-        raise HTTPException(400, "the image is not a PNG")
-    w, h = struct.unpack(">II", data[16:24])
+def _size(w: int, h: int) -> tuple[int, int]:
     if not (16 <= w <= 8192 and 16 <= h <= 8192):
         raise HTTPException(400, f"the image is {w}×{h}; 16 to 8192 pixels a side")
     return w, h
+
+
+def _png_size(body: dict, name: str = "image") -> tuple[int, int]:
+    """The size the phone stated when it uploaded the PNG sent as `name` (put_image)."""
+    if not body.get(f"{name}_size"):
+        raise HTTPException(400, f"the {name} is not a PNG of known size")
+    return tuple(body[f"{name}_size"])
 
 
 @api.post("/api/upscale")
@@ -367,7 +387,7 @@ async def upscale(request: Request):
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
     try:
-        w, h = _png_size(base64.b64decode(b64[:64]))  # the header is enough to know the size
+        w, h = _png_size(body)
         mp = float(body.get("megapixels", 4))
         seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
     except (ValueError, TypeError) as e:
@@ -396,13 +416,7 @@ async def upscale(request: Request):
     params = {"kind": "upscale", "unet": "seedvr2_7b_fp16.safetensors", "family": "seedvr2", "prompt": retouch["text"] if retouch else "",
               "negative": "", "width": round(w * s), "height": round(h * s), "steps": 1, "cfg": 1.0, "seed": seed, "loras": [],
               "megapixels": mp, "denoise": retouch["denoise"] if retouch else 0}
-    _purge()
-    job = Job(params)
-    jobs[job.id] = job
-    job.emit("queued", {**params, "started": job.started})
-    _note_stop_after(body)
-    job.task = asyncio.create_task(_run(job, graphs.upscale(b64, mp, seed, retouch)))
-    return {"id": job.id, **params}
+    return _start(body, params, graphs.upscale(b64, mp, seed, retouch))
 
 
 @api.post("/api/inpaint")
@@ -415,8 +429,8 @@ async def inpaint(request: Request):
     if not b64 or not mask or len(b64) > MAX_IMAGE or len(mask) > MAX_IMAGE:
         raise HTTPException(400, "missing image or mask, or larger than 40 MB")
     try:
-        w, h = _png_size(base64.b64decode(b64[:64]))
-        mw, mh = _png_size(base64.b64decode(mask[:64]))
+        w, h = _png_size(body)
+        mw, mh = _png_size(body, "mask")
         seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
     except (ValueError, TypeError) as e:
         raise HTTPException(400, f"malformed image, mask or number: {e}")
@@ -441,10 +455,10 @@ def _start(body: dict, params: dict, prompt: dict, queued: bool = True) -> dict:
     _purge()
     job = Job(params)
     jobs[job.id] = job
-    job.emit("queued", {**params, "started": job.started})
+    job.emit("queued", {**params, "started": job.started})  # replayed on every reconnect
     if queued:
         _note_stop_after(body)
-    job.task = asyncio.create_task(_run(job, prompt, queued))
+    job.task = asyncio.create_task(_run(job, prompt, body["key"]["key"], queued))
     return {"id": job.id, **params}
 
 
@@ -501,7 +515,7 @@ async def mask_preview(request: Request):
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
     try:
-        w, h = _png_size(base64.b64decode(b64[:64]))
+        w, h = _png_size(body)
         points = _points(body.get("points") or {}, w, h)
     except (ValueError, TypeError, KeyError) as e:
         raise HTTPException(400, f"malformed image or points: {e}")
@@ -530,10 +544,7 @@ async def body_preview(request: Request):
     b64 = str(body.get("image", ""))
     if not b64 or len(b64) > MAX_IMAGE:
         raise HTTPException(400, "missing image, or larger than 40 MB")
-    try:
-        w, h = _png_size(base64.b64decode(b64[:64]))
-    except ValueError as e:
-        raise HTTPException(400, f"malformed image: {e}")
+    w, h = _png_size(body)
     params = {"kind": "body", "unet": "sam_3d_body_dinov3_bf16.safetensors", "family": "body", "prompt": "", "negative": "",
               "width": w, "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
     return _start(body, params, graphs.body(b64), queued=False)

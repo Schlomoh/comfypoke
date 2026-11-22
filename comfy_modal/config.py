@@ -77,6 +77,10 @@ DEPLOY_ID = time.strftime("%Y%m%d-%H%M%S") if modal.is_local() else os.environ.g
 # read exactly these names and fail at start when one is missing. The UI adds
 # COMFY_RELAY=1 and COMFY_ACCESS_KEY, which turn on the relay and the key gate, and
 # COMFY_DATA_VOLUME, which extra_models reloads on /userdata requests.
+# Two more role variables carry the studio's image keypair (seal.py): the private half for the
+# Worker alone, the public half for the studio. Neither belongs in CONTAINER_ENV, which every class gets.
+TRANSPORT_PRIVATE_ENV = "COMFY_TRANSPORT_PRIVATE"  # PKCS#8 DER, base64
+TRANSPORT_PUBLIC_ENV = "COMFY_TRANSPORT_PUBLIC"  # SubjectPublicKeyInfo DER, base64, which WebCrypto imports as "spki"
 CONTAINER_ENV = {
     "COMFY_MODAL_APP": APP_NAME,  # gpu_relay: app that hosts Worker
     "COMFY_IO_VOLUME": VOLUME_IO,  # gpu_relay: committed before each prompt so uploads reach the worker

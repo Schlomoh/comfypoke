@@ -28,7 +28,12 @@ sys.path.insert(0, str(ROOT))
 import modal  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
-from comfy_modal import graph, studio_api  # noqa: E402
+from comfy_modal import config, graph, seal  # noqa: E402
+
+PRIVATE, os.environ[config.TRANSPORT_PUBLIC_ENV] = seal.mint()  # read when studio_api is imported
+TRANSPORT = seal.load_private(PRIVATE)
+
+from comfy_modal import studio_api  # noqa: E402
 
 STEP_SECONDS = 0.4
 
@@ -50,7 +55,13 @@ def _images(g: dict) -> list[Image.Image]:
 
 
 async def run(payload):
-    g, pid = payload["prompt"], payload["prompt_id"]
+    """Worker.run's encryption included: the images arrive sealed and leave sealed, as on the GPU."""
+    key = seal.unwrap(TRANSPORT, payload["key"])
+    async for kind, data in fake(seal.open_prompt(key, payload["prompt"]), payload["prompt_id"]):
+        yield (kind, seal.seal_frame(key, data) if kind == "bytes" else data)
+
+
+async def fake(g, pid):
     msg = lambda kind, **d: ("json", {"type": kind, "data": {"prompt_id": pid, **d}})  # noqa: E731
     roles, stages = graph.roles(g), graph.stages(g)
     await asyncio.sleep(float(os.environ.get("MOCK_BOOT", "0")))

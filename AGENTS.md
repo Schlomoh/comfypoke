@@ -15,6 +15,13 @@ explains where things are and how to change them without breaking the deployment
   (`max_containers=1`) and stream as server-sent events that end after 100 s and resume with
   Last-Event-ID, because Modal cuts any HTTP response at 150 s. Images reach the phone through
   `SaveImageWebsocket` and are stored in the browser's IndexedDB; nothing is written to a volume.
+  Every image crosses Modal sealed (`comfy_modal/seal.py`): the phone derives an AES-GCM transport
+  key from the workspace key and the deploy's key id, and sends it with each request wrapped for the worker's RSA-OAEP key,
+  which each deploy mints on the laptop (private half in the Worker's Secret only). `Worker.run`
+  opens the prompt's images before ComfyUI sees them and seals every image frame before it leaves,
+  so the studio holds ciphertext and no key. A new graph that carries an image must carry it in a
+  `StudioImageBase64` node, the only one the worker opens; the GUI's prompts carry no key and are
+  not encrypted.
 - Custom nodes in `comfy_nodes/` run inside ComfyUI in the containers. They cannot import
   `comfy_modal`, so everything they need arrives through environment variables. The contract is
   `CONTAINER_ENV` in `comfy_modal/config.py`: the nodes read exactly those names and fail at

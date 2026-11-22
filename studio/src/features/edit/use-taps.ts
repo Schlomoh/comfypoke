@@ -51,9 +51,10 @@ export function useTaps(render: Render) {
     void (async () => {
       try {
         const b64 = await preview(
+          space,
           async () =>
-            withImages(async () =>
-              api.mask(await imageRef(await loadImage(space, render.id)), "", {
+            withImages(space, async (t) =>
+              api.mask(t.wire, await imageRef(t, await loadImage(space, render.id)), "", {
                 positive: pts(false),
                 negative: pts(true),
               }),
