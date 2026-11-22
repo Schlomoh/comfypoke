@@ -78,7 +78,7 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFin
 export function parseSetup(raw: unknown): Setup | null {
   if (!isRecord(raw) || !isText(raw.id) || !isText(raw.name) || !isText(raw.unet) || !isText(raw.family))
     return null;
-  if (!raw.name.trim() || !raw.unet.endsWith(".safetensors") || !raw.family) return null;
+  if (!raw.name.trim() || !/\.(safetensors|gguf)$/.test(raw.unet) || !raw.family) return null;
   const loras = Array.isArray(raw.loras) ? raw.loras : [];
   return {
     id: raw.id,

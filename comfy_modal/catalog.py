@@ -108,4 +108,6 @@ MODELS = [
 # from this image every cold start; listed here it is part of the image.
 # Krea 2 Identity Edit (comfyui-krea2edit): the source-patch and grounded-encode nodes the BFS head
 # swap was trained with; two references at once, and a dial for how hard the second one is copied.
-NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit", "comfyui-krea2edit"]
+# ComfyUI-GGUF (city96): UnetLoaderGGUF, the loader graphs.LOADERS uses for quantized .gguf
+# diffusion models put in extra/diffusion_models.
+NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit", "comfyui-krea2edit", "ComfyUI-GGUF"]
