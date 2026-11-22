@@ -11,6 +11,3 @@ export function outfitPieces(p: Person): string[][] {
   }
   return out.filter((o) => o.length);
 }
-
-/** Each outfit as the words the prompt gets. */
-export const outfits = (p: Person): string[] => outfitPieces(p).map((o) => o.join(", "));

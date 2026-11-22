@@ -24,7 +24,14 @@ export type Upscale = { megapixels: number; prompt: string; denoise: number }; /
 export type Hold = "tight" | "loose" | "off";
 /** A dressing as recorded: the hold, the setup that dressed it, and the one that finished it (a name, or from the first
  * builds true for Krea 2 Turbo) at what strength. */
-export type Dress = { hold: Hold; dresser?: string; finish: string | boolean | null; strength?: number };
+export type Dress = {
+  hold: Hold;
+  dresser?: string;
+  finish: string | boolean | null;
+  strength?: number;
+  who?: string; // the saved character dressed, for Keep outfit
+  pieces?: string[]; // the outfit as its Wearing chips
+};
 /** A repaint of part of an image: what was masked by name (besides what was painted), what it became, and with whose
  * face; with `dress`, the clothes were replaced by graphs.dress rather than repainted. */
 export type Edit = { target: string; prompt: string; face?: string; dress?: Dress; setup?: string }; // setup: a repaint's, when not the image's own

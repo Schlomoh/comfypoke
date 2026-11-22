@@ -9,7 +9,7 @@ import { loadFace } from "@/data/db/faces";
 import { useSpace } from "@/data/db/space";
 import { lockApp, useGpu } from "@/data/queries";
 import { errorText, median } from "@/domain/format";
-import { outfits } from "@/domain/outfits";
+import { outfitPieces } from "@/domain/outfits";
 import type { Dress } from "@/domain/render";
 import { toPass } from "@/domain/setup";
 import { useFaceChoices } from "@/features/edit/face-choices";
@@ -46,7 +46,7 @@ export function useEdit() {
 
   const dressing = c.mode === "dress";
   const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
-  const wear = dressing && person ? outfits(person) : [];
+  const wear = dressing && person ? outfitPieces(person) : [];
   const dresser = choose(c.dresser, "zimage").picked;
   const finish = c.finish === "off" ? null : choose(c.finish).picked;
   const repaintWith = choose(c.repaintWith).picked;
@@ -93,10 +93,11 @@ export function useEdit() {
           dresser: dresser.pass,
           finish: finish ? { ...toPass(finish.pass), denoise: c.strength } : null,
         };
-        for (const outfit of wear) {
+        for (const pieces of wear) {
+          const outfit = pieces.join(", ");
           const started = await inpaint(
             render,
-            { ...common, prompt: outfit, dress: record },
+            { ...common, prompt: outfit, dress: { ...record, pieces, who: person.savedId ?? undefined } },
             { mask, face: faceBlob, stopAfter, pass: dresser.pass, dress },
           );
           first ??= started.id;

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { outfitPieces, outfits } from "@/domain/outfits";
+import { outfitPieces } from "@/domain/outfits";
 import { newPerson, phrase } from "@/domain/recipe";
 
+/** As the prompt gets them: pieces joined. */
+const outfits = (p: Parameters<typeof outfitPieces>[0]) => outfitPieces(p).map((o) => o.join(", "));
 const wearing = (...ps: ReturnType<typeof phrase>[]) => ({ ...newPerson("Ana"), wear: ps });
 
 describe("outfits", () => {

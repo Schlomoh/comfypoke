@@ -7,6 +7,7 @@ import { useSpace } from "@/data/db/space";
 import type { Render } from "@/domain/render";
 import { BestButton } from "@/features/library/best-button";
 import { saveImage } from "@/features/library/files";
+import { keepOutfit, outfitOf } from "@/features/library/keep-outfit";
 import { useImageActions } from "@/state/actions";
 import { useGenerate } from "@/state/generate";
 import { recipeAtom } from "@/state/studio";
@@ -65,6 +66,7 @@ function More({ render }: { render: Render }) {
       </MenuItem>
       <MenuItem onClick={() => void saveImage(space, render)}>Save to device</MenuItem>
       {render.draft && <MenuItem onClick={() => edit(render)}>Edit</MenuItem>}
+      {outfitOf(render) && <MenuItem onClick={() => void keepOutfit(space, render)}>Keep outfit</MenuItem>}
       <MenuItem onClick={() => void remove(render)} className="text-bad">
         Delete
       </MenuItem>
