@@ -1,14 +1,15 @@
 // The recipe being edited: written back to the workspace's draft once typing pauses, and on leaving.
-import { useAtomValue, useStore } from "jotai";
+import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
 import { saveDraft } from "@/data/db/drafts";
 import { useLoraNotes } from "@/data/db/presets";
-import { useSavedList } from "@/data/db/saved";
+import { updateSaved, useSavedList } from "@/data/db/saved";
 import { useSpace } from "@/data/db/space";
 import { useCatalog } from "@/data/queries";
 import { resolve } from "@/domain/catalog";
-import { syncCastLoras, triggersOf } from "@/domain/loras";
+import { handedOver, reassign, syncCastLoras, triggersOf, withLora, type Handoff } from "@/domain/loras";
+import type { StackLora } from "@/domain/recipe";
 import { recipeAtom } from "@/state/studio";
 
 /** Mounted once, by the studio. */
@@ -56,11 +57,53 @@ export function useCastLoras() {
   const cast = useAtomValue(recipeAtom).cast;
   const saved = useSavedList();
   const family = useFamily();
+  const handoff = useAtomValue(handoffAtom);
   useEffect(() => {
     if (!family || !saved) return; // both still loading: nothing moves
+    const known = (id?: string) => !id || saved.some((s) => s.id === id);
+    const stale =
+      !!handoff &&
+      (handoff.family !== family || // the model changed meanwhile: the write went to the other family's list
+        !known(handoff.from) ||
+        !known(handoff.to) || // deleted meanwhile
+        (!!handoff.to && !cast.some((c) => c.savedId === handoff.to))); // left the cast: the look keeps it
+    if (handoff && !stale && !handedOver(handoff, saved, family)) return; // being written: wait for it
     store.set(recipeAtom, (r) => {
-      const loras = syncCastLoras(r.loras, cast, saved, family);
+      const mine = handoff && !stale ? reassign(r.loras, handoff) : r.loras;
+      const loras = syncCastLoras(mine, cast, saved, family);
       return loras === r.loras ? r : { ...r, loras };
     });
-  }, [store, cast, saved, family]);
+    if (handoff) store.set(handoffAtom, null);
+  }, [store, cast, saved, family, handoff]);
+}
+
+/** A LoRA changing owner: the stack and the saved characters are two stores, so the stack follows once the
+ * characters show the change (useCastLoras), keeping the LoRA's place, strength and switch. */
+const handoffAtom = atom<Handoff | null>(null);
+
+/** Gives a LoRA of the stack to a saved character, or back to the look (`to` undefined). */
+export function useGiveLora() {
+  const store = useStore();
+  const space = useSpace();
+  const family = useFamily();
+  return (lora: StackLora, to: string | undefined) => {
+    if (!family || lora.from === to || store.get(handoffAtom)) return;
+    const from = lora.from;
+    store.set(handoffAtom, { name: lora.name, from, to, family });
+    const put = (id: string, strength: number | null) =>
+      updateSaved(space, id, (s) => ({ ...s, loras: withLora(s.loras, family, lora.name, strength) }));
+    void (async () => {
+      try {
+        if (to) await put(to, lora.strength);
+        try {
+          if (from) await put(from, null);
+        } catch (e) {
+          if (to) await put(to, null); // both bringing it would list it twice
+          throw e;
+        }
+      } catch {
+        store.set(handoffAtom, null);
+      }
+    })();
+  };
 }

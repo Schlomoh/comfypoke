@@ -25,8 +25,11 @@ let queue: Promise<unknown> = Promise.resolve();
 /** A change to one saved entry made from what is stored, not from what a screen last showed, one after another:
  * two quick edits each see the other's. */
 export const updateSaved = (space: Space, id: string, change: (s: Saved) => Saved) =>
-  (queue = queue.then(async () => {
-    const row = await db.chars.get(id);
-    const s = row && toSaved(await unsealJson(space.key, row.sealed));
-    return s ? putSaved(space, change(s)) : undefined;
-  }));
+  (queue = queue
+    .catch(() => undefined)
+    .then(async () => {
+      // one failed write must not fail every later one
+      const row = await db.chars.get(id);
+      const s = row && toSaved(await unsealJson(space.key, row.sealed));
+      return s ? putSaved(space, change(s)) : undefined;
+    }));

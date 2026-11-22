@@ -77,3 +77,41 @@ export function moved<T>(xs: readonly T[], from: number, to: number): T[] {
   out.splice(to, 0, x);
   return out;
 }
+
+/** Who a LoRA in the stack belongs to: the look itself (undefined) or a saved character, by id. */
+export type Handoff = { name: string; from?: string; to?: string; family?: string };
+
+/**
+ * The stack with one LoRA given to another owner in its place, with its strength and switch: `from` is who has it
+ * now. A copy the new owner already brought (the cast sync can add it first) goes, so the file is listed once.
+ */
+export function reassign(loras: StackLora[], { name, from, to }: Handoff): StackLora[] {
+  const at = loras.findIndex((l) => l.name === name && l.from === from);
+  if (at === -1 || from === to) return loras;
+  return loras.flatMap((l, i) => {
+    if (i === at) {
+      const { from: _, ...rest } = l;
+      return [to ? { ...rest, from: to } : rest];
+    }
+    return l.name === name && l.from === to ? [] : [l];
+  });
+}
+
+/** Whether the saved characters already show a handoff: the new owner lists the file for the family, the old one no
+ * longer does. Until then the cast sync would undo it. */
+export function handedOver(h: Handoff, saved: Pick<Saved, "id" | "loras">[], family: string): boolean {
+  const brings = (id: string) =>
+    !!saved.find((s) => s.id === id)?.loras?.[family]?.some((l) => l.name === h.name);
+  return (!h.to || brings(h.to)) && (!h.from || !brings(h.from));
+}
+
+/** A character's LoRAs for a family with one added (or its strength set) or taken out. */
+export function withLora(
+  loras: Saved["loras"],
+  family: string,
+  name: string,
+  strength: number | null, // null takes it out
+): NonNullable<Saved["loras"]> {
+  const rest = (loras?.[family] ?? []).filter((l) => l.name !== name);
+  return { ...loras, [family]: strength === null ? rest : [...rest, { name, strength }] };
+}

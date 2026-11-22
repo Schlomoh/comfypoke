@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { compose } from "@/domain/compose";
-import { moved, NO_TRIGGERS, runnable, syncCastLoras, triggersOf } from "@/domain/loras";
+import {
+  handedOver,
+  moved,
+  NO_TRIGGERS,
+  reassign,
+  runnable,
+  syncCastLoras,
+  triggersOf,
+  withLora,
+} from "@/domain/loras";
 import { EMPTY, newPerson, phrase, type StackLora } from "@/domain/recipe";
 
 const mia = {
@@ -71,5 +80,46 @@ describe("moved", () => {
   it("moves one item and ignores moves past the ends", () => {
     expect(moved(["a", "b", "c"], 0, 2)).toEqual(["b", "c", "a"]);
     expect(moved(["a", "b"], 1, 5)).toEqual(["a", "b"]);
+  });
+});
+
+describe("reassign", () => {
+  const mine: StackLora = { name: "mia_v3", strength: 0.4, on: false };
+  const stack = [grain, mine, { name: "glow", strength: 1, on: true }];
+  it("gives a LoRA of the look to a character in its place, with its strength and switch", () => {
+    expect(reassign(stack, { name: "mia_v3", to: "mia" })).toEqual([
+      grain,
+      { ...mine, from: "mia" },
+      stack[2],
+    ]);
+  });
+  it("drops the copy the cast sync already added for the new owner", () => {
+    const synced = [{ name: "mia_v3", strength: 0.9, on: true, from: "mia" }, ...stack];
+    expect(reassign(synced, { name: "mia_v3", to: "mia" })).toEqual([
+      grain,
+      { ...mine, from: "mia" },
+      stack[2],
+    ]);
+  });
+  it("gives a character's LoRA back to the look, without its owner", () => {
+    const hers = [grain, { ...mine, from: "mia" }];
+    expect(reassign(hers, { name: "mia_v3", from: "mia" })).toEqual([grain, mine]);
+    expect(reassign(hers, { name: "mia_v3", from: "mia" })[1]).not.toHaveProperty("from");
+  });
+  it("leaves the stack alone when the LoRA is not there or stays with its owner", () => {
+    expect(reassign(stack, { name: "nope", to: "mia" })).toBe(stack);
+    expect(reassign(stack, { name: "mia_v3" })).toBe(stack);
+  });
+});
+
+describe("handedOver and withLora", () => {
+  it("waits until the new owner lists it and the old one does not", () => {
+    expect(handedOver({ name: "film_grain", to: "mia" }, [mia], "krea2")).toBe(false);
+    const after = { ...mia, loras: withLora(mia.loras, "krea2", "film_grain", 0.6) };
+    expect(handedOver({ name: "film_grain", to: "mia" }, [after], "krea2")).toBe(true);
+    expect(handedOver({ name: "mia_v3", from: "mia" }, [mia], "krea2")).toBe(false);
+    const gone = { ...mia, loras: withLora(mia.loras, "krea2", "mia_v3", null) };
+    expect(handedOver({ name: "mia_v3", from: "mia" }, [gone], "krea2")).toBe(true);
+    expect(gone.loras.zimage).toEqual(mia.loras.zimage);
   });
 });
