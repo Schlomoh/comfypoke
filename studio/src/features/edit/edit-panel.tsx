@@ -117,7 +117,7 @@ function Passes() {
       title="Models"
       right={
         <Button variant="link" size="inline" onClick={() => setSaving(!saving)}>
-          {saving ? "done" : "save Look as a setup"}
+          {saving ? "done" : "save as a look"}
         </Button>
       }
     >
@@ -130,7 +130,7 @@ function Passes() {
             options={dresser.opts}
             onChange={(v) => set({ dresser: v })}
           />
-          {!dresser.opts.length && <Note tone="warn">Save a Z-Image setup to dress with.</Note>}
+          {!dresser.opts.length && <Note tone="warn">Save a Z-Image look to dress with.</Note>}
           <Segmented value={c.hold} options={HOLDS} onChange={(hold) => set({ hold })} />
           <Note>{HOLD_NOTE[c.hold]}</Note>
           <PassSelect

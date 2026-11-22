@@ -43,14 +43,21 @@ export function useSetup() {
     current,
     from,
     isOn: (s: Setup) => isCurrent(s, recipe, family),
+    /** Whether a look other than `except` has this name: saving under it would replace that one. */
+    taken: (name: string, except?: string) => setups.some((s) => s.name === name && s.id !== except),
     apply: (s: Setup) => {
       setRecipe((r) => applySetup(r, s, catalog.models.find((m) => m.file === s.unet)?.family));
+      setApplied(s.id);
+    },
+    /** A look just saved from the recipe: it is the one in use, so a later change reads as "changed from" it. */
+    saved: (s: Setup) => {
+      void saveSetup(s);
       setApplied(s.id);
     },
     update: (s: Setup) => {
       if (!family) return;
       void saveSetup({ ...setupOf(recipe, family, s.name), id: s.id });
-      notify(`Updated the setup “${s.name}”`);
+      notify(`Updated the look “${s.name}”`);
     },
   };
 }

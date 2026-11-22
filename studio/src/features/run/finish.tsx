@@ -17,7 +17,7 @@ export function FinishSection({ className }: { className?: string }) {
     <Section
       title="Finish"
       className={className}
-      tip="Goes over each new render once more with another setup, lightly: the picture stays, its look takes on that model's. A face photo is then put on with the finish's model, so it needs Krea 2 there."
+      tip="Goes over each new render once more with another look, lightly: the picture stays, its look takes on that model's. A face photo is then put on with the finish's model, so it needs Krea 2 there."
     >
       <Select
         aria-label="Finish every render with"

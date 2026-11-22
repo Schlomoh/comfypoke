@@ -1,42 +1,29 @@
-// What the next run is set to, one chip each, above Generate: the setup, the size, how many, draft, and what follows
+// What the next run is set to, one chip each, above Generate: the look, the size, how many, draft, and what follows
 // each render (a finish, an upscale). A tap opens that one setting; nothing else about the run is on screen.
 import { useAtom, useSetAtom } from "jotai";
 import { useState } from "react";
 
 import { useSetups } from "@/data/db/setups";
 import { shortName } from "@/domain/format";
+import { LookList } from "@/features/model/look-sheet";
 import { useSetup } from "@/features/model/use-setup";
 import { FinishSection } from "@/features/run/finish";
 import { SizeSection } from "@/features/run/size";
 import { UpscaleSection } from "@/features/run/upscale";
 import { layerAtom, recipeAtom, tabAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
-import { Chip, ChipRow } from "@/ui/chip";
+import { Chip } from "@/ui/chip";
 import { Sheet } from "@/ui/modal";
 
 type Open = "setup" | "size" | "then" | null;
 
 const FLUSH = "px-0 last:border-b-0"; // a section inside a sheet, which has its own padding
 
-function SetupSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { setups, isOn, apply } = useSetup();
+function LookSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const setTab = useSetAtom(tabAtom);
   return (
-    <Sheet open={open} onClose={onClose} title="Setup">
-      <ChipRow>
-        {setups.map((s) => (
-          <Chip
-            key={s.id}
-            tone={isOn(s) ? "picked" : "quiet"}
-            onClick={() => {
-              apply(s);
-              onClose();
-            }}
-          >
-            {s.name}
-          </Chip>
-        ))}
-      </ChipRow>
+    <Sheet open={open} onClose={onClose} title="Look">
+      <LookList onUsed={onClose} />
       <Button
         onClick={() => {
           setTab("look");
@@ -67,8 +54,12 @@ export function RunChips() {
   return (
     <>
       <div className="-mx-4 flex [scrollbar-width:none] gap-1.5 overflow-x-auto px-4">
-        <Chip className={chip} onClick={() => setOpen("setup")} title="The model and LoRAs this run uses">
-          {current?.name ?? (from ? `${from.name} · changed` : shortName(recipe.unet))}
+        <Chip
+          className={chip}
+          onClick={() => setOpen("setup")}
+          title="The look this run uses: model and LoRAs"
+        >
+          {current?.name ?? (from ? `${from.name} · changed` : `${shortName(recipe.unet)} · unsaved`)}
           <span aria-hidden className="text-faint">
             ▾
           </span>
@@ -97,7 +88,7 @@ export function RunChips() {
           {then || "+ then"}
         </Chip>
       </div>
-      <SetupSheet open={open === "setup"} onClose={close} />
+      <LookSheet open={open === "setup"} onClose={close} />
       <Sheet open={open === "size"} onClose={close} title="Size">
         <SizeSection className={FLUSH} />
       </Sheet>

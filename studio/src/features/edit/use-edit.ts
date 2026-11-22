@@ -63,7 +63,7 @@ export function useEdit() {
     if (!hasArea(ops)) return "find or paint what to replace";
     if (dressing && !person) return "add a person in the Prompt tab";
     if (dressing && !wear.length) return `say what ${person.name || "they"} wear below`;
-    if (dressing && !dresser) return "save a Z-Image setup to dress with";
+    if (dressing && !dresser) return "save a Z-Image look to dress with";
     if (!dressing && !c.repaint.trim()) return "say what goes there";
     if (!dressing && !repaintWith) return "pick a model to repaint with";
     return null;
