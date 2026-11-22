@@ -6,6 +6,7 @@ Krea 2 is workflows 04 and 05 in tools/build_workflows.py, Z-Image is workflow 0
 between the model loader and the rest. Every graph ends in SaveImageWebsocket: the PNG goes back
 over the worker's socket instead of onto the io volume, so a studio render leaves no file behind.
 The negative prompt is used only when CFG is above 1; at 1 a distilled model ignores it anyway."""
+import os
 import re
 
 from .catalog import MODELS as CATALOG
@@ -27,6 +28,14 @@ VERIFIED = {
 # Catalog files in diffusion_models no family can run: a detector, an upscaler, and FLUX.2 klein,
 # whose sampling (Flux2Scheduler, CFGGuider) is a graph of its own.
 NO_FAMILY = ("rt_detr", "seedvr2", "flux-2")
+
+# The diffusion model's loader node, by file extension. A new format is one entry here plus its
+# node pack in catalog.NODE_PACKS; the studio's listing and validation read the extensions from here.
+LOADERS = {
+    ".safetensors": lambda unet: {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+    ".gguf": lambda unet: {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": unet}},  # ComfyUI-GGUF
+}
+MODEL_EXTENSIONS = tuple(LOADERS)
 
 SAMPLER = "7"  # the node whose progress messages are the step counter: the render, or the retouch before an upscale
 UPSCALER = "46"
@@ -55,7 +64,7 @@ def _base(family: str, unet: str, text: str, negative: str, cfg: float, loras: l
     """Loaders, prompt and LoRA chain shared by a render and a retouch; returns the nodes and the model to sample with."""
     f = FAMILIES[family]
     g = {
-        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+        "1": LOADERS[os.path.splitext(unet)[1]](unet),
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": f["clip"][0], "type": f["clip"][1], "device": "default"}},
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": f["vae"]}},
         "4": {"class_type": "CLIPTextEncode", "inputs": {"text": text, "clip": ["2", 0]}},

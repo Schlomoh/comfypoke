@@ -99,4 +99,6 @@ MODELS = [
 # resolution, blend it back. Without it a 200 px jacket in a 2K photo only ever gets 200 px of the
 # model's attention. Installing it from the GUI does not stick, because the container is rebuilt
 # from this image every cold start; listed here it is part of the image.
-NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit"]
+# ComfyUI-GGUF (city96): UnetLoaderGGUF, the loader graphs.LOADERS uses for quantized .gguf
+# diffusion models put in extra/diffusion_models with tools/sync.sh.
+NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit", "ComfyUI-GGUF"]

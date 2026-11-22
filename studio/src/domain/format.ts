@@ -1,7 +1,7 @@
 // How things are written on screen and in file names.
 import type { Render } from "@/domain/render";
 
-export const shortName = (file: string) => file.replace(/\.safetensors$/, "");
+export const shortName = (file: string) => file.replace(/\.(safetensors|gguf)$/, "");
 
 type Described = {
   unet?: string;

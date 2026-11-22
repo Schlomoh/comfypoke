@@ -209,18 +209,18 @@ async def login(request: Request):
 
 # ---- renders -----------------------------------------------------------------------------------------------
 
-async def _uploads(folder: str) -> list[str]:
+async def _uploads(folder: str, extensions: tuple[str, ...] = (".safetensors",)) -> list[str]:
     """Files put on the models volume with tools/sync.sh (extra/<folder>), listed without waking the GPU."""
     try:
         entries = await modal.Volume.from_name(config.VOLUME_MODELS).listdir.aio(f"{config.CONTAINER_ENV['COMFY_EXTRA_MODELS']}/{folder}")
     except modal.exception.NotFoundError:  # nothing uploaded to that folder yet
         return []
-    return sorted(e.path.rsplit("/", 1)[-1] for e in entries if e.path.endswith(".safetensors"))
+    return sorted(e.path.rsplit("/", 1)[-1] for e in entries if e.path.endswith(extensions))
 
 
 @api.get("/api/models")
 async def models():
-    files = dict.fromkeys([*graphs.VERIFIED, *graphs.catalog_files(), *await _uploads("diffusion_models")])
+    files = dict.fromkeys([*graphs.VERIFIED, *graphs.catalog_files(), *await _uploads("diffusion_models", graphs.MODEL_EXTENSIONS)])
     listed = sorted((graphs.describe(f) for f in files), key=lambda m: (not m["verified"], m["file"].lower()))
     return {"models": listed, "families": [{"id": k, **{x: f[x] for x in ("label", "steps", "cfg")}} for k, f in graphs.FAMILIES.items()],
             "loras": await _uploads("loras")}
@@ -229,7 +229,7 @@ async def models():
 def _params(body: dict) -> dict:
     unet = str(body.get("unet") or "")
     family = str(body.get("family") or "") or graphs.describe(unet)["family"]
-    if not unet.endswith(".safetensors") or "/" in unet:
+    if not unet.endswith(graphs.MODEL_EXTENSIONS) or "/" in unet:
         raise HTTPException(400, f"not a model file: {unet!r}")
     if family not in graphs.FAMILIES:
         raise HTTPException(400, f"unknown model family {family!r}")
