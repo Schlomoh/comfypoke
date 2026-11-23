@@ -16,6 +16,9 @@ from . import comfy, config, seal, volumes
 from .app import app
 
 TERMINAL = ("execution_success", "execution_error", "execution_interrupted")
+# A keyed (studio) run passes back only what the studio reads (studio_api._handle): "executed" carries a node's UI
+# output, and custom nodes can send messages of their own, either of which could carry an opened image.
+SEALED_MESSAGES = ("executing", "progress", *TERMINAL)
 BASE = f"http://127.0.0.1:{config.WORKER_PORT}"
 
 
@@ -67,6 +70,7 @@ class Worker:
         self.log_owner = None  # prompt_id of the one run that tails the log (overlapping runs would duplicate lines)
         self.dequeued = set()  # prompt_ids that interrupt() removed from ComfyUI's pending queue
         self.transport = None  # the private key the studio's image keys arrive wrapped for, loaded by the first that does
+        self.output_nodes = None  # ComfyUI's output node classes, read by the first keyed run
         self._beat("warm")
 
     # --- heartbeat for the GUI's GPU badge (gpu_relay reads the Dict) ---------------------------------------
@@ -178,6 +182,9 @@ class Worker:
             except TimeoutError as e:
                 raise WorkerUnavailable(str(e)) from e
             async with aiohttp.ClientSession() as s:
+                if key and (stray := seal.stray_outputs(payload["prompt"], await self._output_nodes(s))):
+                    yield _error(pid, f"a sealed run may only output through {seal.OUTPUT_NODE}, not {', '.join(stray)}", "SealError")
+                    return
                 # aiohttp caps a message at 4 MB by default; an upscaled PNG arrives as one binary frame larger than that
                 async with s.ws_connect(f"{BASE}/ws?clientId={cid}", max_msg_size=0) as ws:
                     async with s.get(f"{BASE}/object_info/LoraLoaderModelOnly"):
@@ -209,6 +216,8 @@ class Worker:
                             break
                         if d.get("prompt_id") not in (None, pid):
                             continue
+                        if key and msg["type"] not in SEALED_MESSAGES:
+                            continue
                         if msg["type"] == "status":
                             d.pop("sid", None)  # the browser would adopt the worker's socket id as its own
                         if key and msg["type"] == "execution_error":
@@ -238,6 +247,13 @@ class Worker:
             self.busy -= 1
             self.last_input = time.time()
             self._wake.set()
+
+    async def _output_nodes(self, s) -> set[str]:
+        """ComfyUI's output node classes, as its /object_info declares them (read once per container)."""
+        if self.output_nodes is None:
+            async with s.get(f"{BASE}/object_info") as r:
+                self.output_nodes = {c for c, d in (await r.json()).items() if d.get("output_node")}
+        return self.output_nodes
 
     @modal.method()
     async def interrupt(self, prompt_id: str | None = None):

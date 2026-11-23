@@ -342,7 +342,7 @@ async def _json(request: Request) -> dict:
     if not isinstance(key, dict) or not isinstance(key.get("key"), str):
         raise HTTPException(400, "the request has no image key")
     if key.get("kid") != TRANSPORT_KID:
-        raise HTTPException(409, "the image key was wrapped for an older deploy: fetch /api/transport again")
+        raise HTTPException(412, "the image key was wrapped for an older deploy: fetch /api/transport again")
     return body
 
 

@@ -63,7 +63,7 @@ export type Started = Params & { id: string };
 export class Locked extends Error {}
 /** The studio no longer has an image sent before (410: it restarted): send it again (data/images.ts). */
 export class Gone extends Error {}
-/** The image key was wrapped for an older deploy's worker (409): fetch /api/transport again (data/images.ts). */
+/** The image key was wrapped for an older deploy's worker (412): fetch /api/transport again (data/images.ts). */
 export class Stale extends Error {}
 
 const detail = (body: unknown) => {
@@ -85,7 +85,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (r.status === 401) throw new Locked();
   if (r.status === 410) throw new Gone("The studio restarted and lost the images sent to it. Try again.");
-  if (r.status === 409) throw new Stale("The studio was redeployed while this was being sent. Try again.");
+  if (r.status === 412) throw new Stale("The studio was redeployed while this was being sent. Try again.");
   // Anything but JSON is not the studio answering: a dev server without its proxy serves the
   // app's own index.html with 200, a proxy in trouble serves an error page.
   if (!r.headers.get("content-type")?.includes("application/json"))
