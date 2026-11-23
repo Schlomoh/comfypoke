@@ -20,8 +20,9 @@ explains where things are and how to change them without breaking the deployment
   which each deploy mints on the laptop (private half in the Worker's Secret only). `Worker.run`
   opens the prompt's images before ComfyUI sees them and seals every image frame before it leaves,
   so the studio holds ciphertext and no key. A new graph that carries an image must carry it in a
-  `StudioImageBase64` node, the only one the worker opens; the GUI's prompts carry no key and are
-  not encrypted.
+  `StudioImageBase64` node, the only one the worker opens, and output only through
+  `SaveImageWebsocket`: the worker refuses a keyed graph with any other output node, and passes back
+  only the message types the studio reads. The GUI's prompts carry no key and are not encrypted.
 - Custom nodes in `comfy_nodes/` run inside ComfyUI in the containers. They cannot import
   `comfy_modal`, so everything they need arrives through environment variables. The contract is
   `CONTAINER_ENV` in `comfy_modal/config.py`: the nodes read exactly those names and fail at
@@ -111,8 +112,8 @@ explains where things are and how to change them without breaking the deployment
   `npm --prefix studio run dev:mock` (`tools/studio_mock.py`, a fake worker behind the real API); it
   keys off node classes and the roles in `_meta`.
   Images go to the studio once: `POST /api/images` returns a hash, and requests send `{"ref": hash}` instead of
-  base64 (`studio/src/data/images.ts`); the studio keeps them in memory and answers 409 for one it lost, and the
-  phone uploads it again. A render can have a finish pass: another setup over the whole image at a strength.
+  base64 (`studio/src/data/images.ts`); the studio keeps them in memory and answers 410 for one it lost, and the
+  phone uploads it again (412 for an image key wrapped for an older deploy: the phone fetches the new public key). A render can have a finish pass: another setup over the whole image at a strength.
 - Console: `tools/console.py` is a questionary menu; each entry is a function in the `ACTIONS` table that
   shells out to the other tools and prints the command it runs. Add an entry there, not a new script.
 - Frontend: the badge is plain JS on ComfyUI's extension API (`app.registerExtension`,

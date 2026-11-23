@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from comfy_modal import seal
+from tests.samples import samples
 
 VECTORS = json.loads((Path(__file__).parent / "seal_vectors.json").read_text())
 KEY = bytes(range(32))
@@ -69,3 +70,11 @@ def test_open_prompt_refuses_data_that_is_not_a_sealed_image():
     for data in ("not base64!", ["5", 0], None):
         with pytest.raises(seal.SealError):
             seal.open_prompt(KEY, {"1": {"class_type": seal.IMAGE_NODE, "inputs": {"data": data}}})
+
+
+def test_stray_outputs_allow_only_the_websocket_save():
+    outputs = {"SaveImageWebsocket", "SaveImage", "PreviewImage", "PreviewAny"}
+    for name, g in samples().items():  # every studio graph passes
+        assert seal.stray_outputs(g, outputs) == [], name
+    g = {"1": {"class_type": "SaveImageWebsocket"}, "2": {"class_type": "SaveImage"}, "3": {"class_type": "PreviewImage"}}
+    assert seal.stray_outputs(g, outputs) == ["PreviewImage", "SaveImage"]
