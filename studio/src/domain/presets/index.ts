@@ -21,13 +21,34 @@ const PRESETS: Record<PresetRow, readonly Group[]> = {
 
 const fits = (g: Group, gender: Gender) => !g.only || g.only.includes(gender);
 
-/** The subcategories offered in a row: your own first, as Yours, then the built-in ones for this gender. */
-export function presetGroups(row: PresetRow, gender: Gender, mine: string[]): [string, string[]][] {
-  const groups = new Map<string, string[]>(mine.length ? [["Yours", mine]] : []);
+/** A preset someone added to a subcategory, or a built-in one they removed (`hidden`). */
+export type Own = { text: string; group?: string; hidden?: boolean };
+/** Where presets added before subcategories took them are, and those of a row without any (Extra). */
+export const MORE = "More";
+
+/**
+ * The subcategories offered in a row, for this gender: the built-in ones less what was removed from them, each with
+ * what was added to it at its end. A subcategory not built in (More, Outfits) comes after them.
+ */
+export function presetGroups(row: PresetRow, gender: Gender, mine: readonly Own[]): [string, string[]][] {
+  const hidden = new Set(mine.filter((p) => p.hidden).map((p) => p.text));
+  const groups = new Map<string, string[]>();
   for (const g of PRESETS[row].filter((x) => fits(x, gender)))
-    groups.set(g.name, [...(groups.get(g.name) ?? []), ...g.items.map((t) => fill(t, gender))]);
+    groups.set(g.name, [
+      ...(groups.get(g.name) ?? []),
+      ...g.items.map((t) => fill(t, gender)).filter((t) => !hidden.has(t)),
+    ]);
+  for (const p of mine.filter((x) => !x.hidden)) {
+    if ([...groups.values()].some((items) => items.includes(p.text))) continue; // offered once, where it is first
+    const g = p.group ?? MORE;
+    groups.set(g, [...(groups.get(g) ?? []), p.text]);
+  }
   return [...groups];
 }
+
+/** Whether a row offers this text already, in any subcategory. */
+export const isOffered = (row: PresetRow, gender: Gender, text: string, mine: readonly Own[]) =>
+  presetGroups(row, gender, mine).some(([, items]) => items.includes(text));
 
 export const isBuiltIn = (row: PresetRow, gender: Gender, text: string) =>
   PRESETS[row].some((g) => fits(g, gender) && g.items.some((t) => fill(t, gender) === text));

@@ -12,6 +12,7 @@ export type Job = {
   error?: string;
   image?: Blob; // set only when storing it on this device failed: the person can still download it
   saved?: boolean; // stored as a render under the same id; dropped once the library shows it
+  source?: string; // the image an edit or upscale is made from
 };
 
 export const running = (j: Job) => !j.error;

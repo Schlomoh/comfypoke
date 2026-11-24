@@ -1,6 +1,7 @@
 // The keyboard: arrows and J/K browse, F opens, I shows info, Z and +/−/0 zoom, B marks best, U
 // upscales, S saves, R reuses, E edits, Delete deletes, H hides every image, ⌘↵ generates (or sends the edit),
-// ? lists them all. In the Edit tab X swaps brush and eraser, [ and ] size the brush, ⌘Z undoes a mask step.
+// ? lists them all. In the Edit tab X swaps brush and eraser, [ and ] size the brush, ⌘Z undoes a mask step,
+// C held shows the image the edited one was made from.
 // Every key reads the store as it is at that moment, so a held arrow never acts on a stale image.
 import { useStore } from "jotai";
 import { useEffect, useRef } from "react";
@@ -9,7 +10,7 @@ import { wide } from "@/app/platform";
 import { toggleBest } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
 import { FIT } from "@/domain/view";
-import { BRUSH, brushAtom, masksAtom, toolAtom } from "@/features/edit/state";
+import { BRUSH, brushAtom, masksAtom, peekAtom, toolAtom } from "@/features/edit/state";
 import { saveImage } from "@/features/library/files";
 import { useImageActions } from "@/state/actions";
 import {
@@ -73,6 +74,7 @@ export function useShortcuts(submit: () => void) {
       const view = store.get(viewAtom);
       const size = (f: number) =>
         store.set(brushAtom, Math.round(Math.min(BRUSH.max, Math.max(BRUSH.min, store.get(brushAtom) * f))));
+      if (editing && k === "c") return store.set(peekAtom, store.get(stageAtom).render?.id ?? null); // until it comes up
       if (editing && k === "x")
         return store.set(toolAtom, store.get(toolAtom) === "eraser" ? "brush" : "eraser");
       if (editing && k === "[") return size(1 / 1.25);
@@ -129,7 +131,18 @@ export function useShortcuts(submit: () => void) {
         void act.remove(cur);
       }
     };
+    const onUp = (e: KeyboardEvent) => e.key.toLowerCase() === "c" && store.set(peekAtom, null);
+    // a key let go elsewhere (another window, or with ⌘ down) sends no keyup here
+    const unpeek = () => store.set(peekAtom, null);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", unpeek);
+    document.addEventListener("visibilitychange", unpeek);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", unpeek);
+      document.removeEventListener("visibilitychange", unpeek);
+    };
   }, [store, space]);
 }

@@ -96,7 +96,11 @@ explains where things are and how to change them without breaking the deployment
   through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as depth into Z-Image's
   Fun Controlnet) with a Z-Image look, and optionally a light LanPaint finish with any look. Its outfits are a
   person's Wearing row of the Prompt tab, spelled out per render (`domain/outfits.ts`): switched-on chips are
-  worn together, each version is another job. The passes are chips (`edit/passes.tsx`). `/api/mask` and
+  worn together, each version is another job. Both modes put the person's Who, Look (and, repainting, Wearing)
+  into the prompt, never Doing (`portrait` in `compose.ts`, switch `editAtom.portrait`). An edit sends `editAtom.takes` jobs per outfit, each
+  with its own seed, and the stage stays on the source: results land in its lineage (`edit/edit-lineage.tsx`, from
+  `Job.source`), a finished job never takes the stage, and an image without a mask can take its source's. "before"
+  (or C held) shows the source under the mask (`peekAtom`). The passes are chips (`edit/passes.tsx`). `/api/mask` and
   `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
   Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,
   managed from the Look tab's head (`model/look-sheet.tsx`) and picked per pass. A LoRA in the stack belongs to
@@ -105,7 +109,8 @@ explains where things are and how to change them without breaking the deployment
   characters are written). The library shows stacks, an image and everything made from it
   (`domain/lineage.ts`), grouped by the Generate that made them. A die on a Prompt row adds a preset as a
   version, a pin keeps the row out of Surprise me, which sends renders that each change one row to a preset
-  (`domain/shuffle.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
+  (`domain/shuffle.ts`). Presets a person adds go into the subcategory open in the picker (`Preset.group`; none
+  is More), and removing a built-in one stores it with `hidden` (`presetGroups` in `domain/presets/index.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
   `features/library`. A person's face photo (`data/db/faces.ts`, sealed) rides along as
   `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
   through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with

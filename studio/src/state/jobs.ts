@@ -11,68 +11,15 @@ import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
 import { imageRef, openImage, openPreview, pngSize, withImages } from "@/data/images";
 import { errorText } from "@/domain/format";
-import type { Job } from "@/domain/job";
+import { isUpscale, type Job } from "@/domain/job";
 import { legacyUnet } from "@/domain/recipe";
+import { recordOf } from "@/domain/record";
 import type { Edit, JobMeta, Params, Render, Upscale } from "@/domain/render";
 import { passOf, retouchOf, type Pass } from "@/domain/setup";
-import { focusAtom, jobsAtom } from "@/state/studio";
+import { jobsAtom, viewerAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
-
-/** An upscale or an edit is a new image with its source's record, its own size, and a link back. */
-type Finished = { id: string; params: Params; seconds: number; size: { width: number; height: number } };
-
-function recordOf({ id, params, seconds, size }: Finished, meta: JobMeta): Render {
-  const createdAt = Date.now();
-  const from = meta.upscaleOf ?? meta.editOf;
-  if (from)
-    return {
-      ...from,
-      id,
-      createdAt,
-      seconds,
-      ...size,
-      source: from.id,
-      uploaded: meta.upscaleOf ? from.uploaded : undefined, // an upscale of a photo is still the photo; an edit is a render
-      upscale: meta.upscale,
-      edit: meta.edit,
-      // an edit's own: what it ran with, which need not be its source's model
-      ...(meta.editOf
-        ? (({ unet, family, steps, cfg, loras, reference, seed }) => ({
-            unet,
-            family,
-            steps,
-            cfg,
-            loras,
-            reference,
-            seed,
-          }))(params)
-        : {}),
-      best: false,
-      passed: undefined,
-      title: undefined,
-      notes: undefined,
-      // a new image: not its source's draft, batch or finish
-      ...(meta.editOf ? { finish: undefined } : {}),
-      draft: undefined,
-      batch: undefined,
-      recipe: from.recipe && { ...from.recipe, draft: false }, // Reuse on it must not turn draft mode on
-    };
-  return {
-    ...params,
-    id,
-    createdAt,
-    seconds,
-    ...size,
-    recipe: meta.recipe,
-    characterName: meta.characterName,
-    title: meta.title,
-    batch: meta.batch,
-    draft: meta.draft || undefined,
-    source: meta.from?.id,
-  };
-}
 
 function createRunner(store: Store, space: Space) {
   const sources = new Map<string, EventSource>();
@@ -86,8 +33,26 @@ function createRunner(store: Store, space: Space) {
     sources.delete(id);
     quietly(dropPending(id));
     quietly(api.forget(id));
+    const job = store.get(jobsAtom).find((j) => j.id === id);
     if (error || saved) update(id, { error, saved });
     else setJobs((js) => js.filter((j) => j.id !== id));
+    if (job?.source) settled(job, !!saved);
+  };
+
+  /** The last image saved from each source while others from it still ran: what the toast's View opens. */
+  const lastFrom = new Map<string, string>();
+  /** An edit or upscale ended (saved, failed or cancelled). Once nothing more from its source is running, and one of
+   * them was saved, a toast says so: the stage stays where it is. */
+  const settled = (job: Job, saved: boolean) => {
+    const source = job.source as string;
+    if (saved) lastFrom.set(source, job.id);
+    if (store.get(jobsAtom).some((j) => j.source === source && !j.saved && !j.error)) return;
+    const id = lastFrom.get(source);
+    lastFrom.delete(source);
+    if (!id) return;
+    notify(`${isUpscale(job) ? "Upscaled" : "Edited"}: in the lineage of the image it was made from`, {
+      action: { label: "View", run: () => store.set(viewerAtom, id) },
+    });
   };
 
   const keep = async (id: string, params: Params, image: string, seconds: number) => {
@@ -109,15 +74,16 @@ function createRunner(store: Store, space: Space) {
       sources.delete(id);
       return update(id, { error: `Could not store the image on this device: ${errorText(e)}`, image: blob });
     }
-    finish(id, undefined, true);
-    store.set(focusAtom, id);
+    finish(id, undefined, true); // the stage stays where it is: see settled
     then?.().catch((e: unknown) => notify(`Could not start the upscale: ${errorText(e)}`, { bad: true }));
   };
 
-  const attach = (id: string, retry = true) => {
+  const attach = (id: string, retry = true, source?: string) => {
     if (sources.has(id)) return;
     setJobs((js) =>
-      js.some((j) => j.id === id) ? js : [{ id, startedAt: Date.now(), step: 0, steps: 0 }, ...js],
+      js.some((j) => j.id === id)
+        ? js
+        : [{ id, startedAt: Date.now(), step: 0, steps: 0, ...(source ? { source } : {}) }, ...js],
     );
     const es = new EventSource(`/api/jobs/${id}/events`);
     sources.set(id, es);
@@ -155,6 +121,17 @@ function createRunner(store: Store, space: Space) {
     });
   };
 
+  /** After a reload: each pending job again, with the image it is made from. */
+  let visit = 0; // a leave ends the visit: a resume still reading pending jobs then attaches no more
+  const resume = async () => {
+    const at = visit;
+    for (const id of await pendingIds(space)) {
+      const meta = await pendingMeta(space, id).catch(() => null);
+      if (visit !== at) return;
+      attach(id, true, (meta?.editOf ?? meta?.upscaleOf)?.id);
+    }
+  };
+
   /** A render; `face`, the photo its head swap puts on the person, goes as an image reference. */
   const generate = async (p: Request, meta: JobMeta, face?: Blob) => {
     const r = await withImages(space, async (t) =>
@@ -179,7 +156,7 @@ function createRunner(store: Store, space: Space) {
       }),
     );
     await addPending(space, res.id, { upscaleOf: r, upscale: u });
-    attach(res.id);
+    attach(res.id, true, r.id);
     return res;
   };
 
@@ -218,7 +195,7 @@ function createRunner(store: Store, space: Space) {
       }),
     );
     await addPending(space, res.id, { editOf: r, edit: e });
-    attach(res.id);
+    attach(res.id, true, r.id);
     return res;
   };
 
@@ -228,10 +205,11 @@ function createRunner(store: Store, space: Space) {
     inpaint,
     cancel: (id: string) => api.cancel(id).catch(() => finish(id)),
     dismiss: (id: string) => setJobs((js) => js.filter((j) => j.id !== id)),
-    resume: () => pendingIds(space).then((ids) => ids.forEach((id) => attach(id))),
+    resume,
     /** Job cards still holding an image let go of it after a purge. */
     purged: () => setJobs((js) => js.filter((j) => !j.error)),
     leave: () => {
+      visit++;
       for (const t of retries) clearTimeout(t);
       retries.clear();
       for (const es of sources.values()) es.close(); // a page restored from the back/forward cache gets fresh ones

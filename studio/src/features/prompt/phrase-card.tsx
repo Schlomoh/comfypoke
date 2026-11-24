@@ -14,6 +14,9 @@ import { Chip, ChipRow, Tag } from "@/ui/chip";
 import { cn } from "@/ui/cn";
 import { Input } from "@/ui/field";
 import { notify } from "@/ui/notify";
+import type { useReorder } from "@/ui/reorder";
+
+type Reorder = ReturnType<typeof useReorder>;
 
 function targetLabel(p: Phrase, picked: boolean) {
   if (picked) return "adding versions below";
@@ -26,8 +29,11 @@ export function PhraseCard<T extends Phrase>({
   index,
   picked,
   onPick,
+  drag,
   children,
 }: {
+  /** A handle to drag it by, in a list of more than one: the prompt follows the order. */
+  drag?: { handle: Reorder["handle"]; row: ReturnType<Reorder["row"]> };
   lens: Lens<T>;
   phrase: T;
   index: number;
@@ -69,9 +75,27 @@ export function PhraseCard<T extends Phrase>({
   });
 
   return (
-    <div id={`card-${p.id}`} className={cn("shrink-0 border bg-bg", picked ? "border-warn" : "border-line")}>
+    <div
+      id={`card-${p.id}`}
+      {...drag?.row}
+      className={cn(
+        "shrink-0 border bg-bg data-dragging:relative data-dragging:z-10 data-dragging:shadow-lg",
+        picked ? "border-warn" : "border-line",
+      )}
+    >
       {children}
       <div className="flex items-center">
+        {drag && (
+          <span
+            {...drag.handle}
+            data-index={index}
+            aria-hidden
+            title="Drag to move: the prompt says them in this order"
+            className="grid h-11 w-6 shrink-0 place-items-center text-faint select-none fine:h-8"
+          >
+            ⋮⋮
+          </span>
+        )}
         <Checkbox
           on={p.on}
           onChange={(on) => change((x) => ({ ...x, on }))}

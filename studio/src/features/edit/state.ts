@@ -26,12 +26,16 @@ export const tapsAtom = atom<Readonly<Record<string, Taps>>>({});
 export const tapStageAtom = atom<{ id: string; stage: string } | null>(null);
 /** The image whose fitted body the stage shows instead of it, to check what dressing will hold; null for none. */
 export const showBodyAtom = atom<string | null>(null);
+/** While held (the "before" button, or C), the image held on: the stage shows the image it was made from, under its
+ * mask. Only that image: one left behind while held never opens on its source. */
+export const peekAtom = atom<string | null>(null);
 
 /** A pass runs with: the Model tab as it is ("tab"), the image's own model ("own"), or a saved setup's id. */
 export type PassChoice = string;
 export type EditChoice = {
   mode: "dress" | "repaint";
-  person: string | null; // whose Wearing row dresses; null is the first person
+  person: string | null; // who is edited: whose Wearing row dresses, whose rows describe them; null is the first
+  portrait: boolean; // the person's Who, Look and Wearing go into the prompt (compose.ts portrait)
   hold: Hold;
   dresser: PassChoice;
   finish: PassChoice; // or "off": no finish
@@ -39,11 +43,13 @@ export type EditChoice = {
   repaint: string; // what goes inside the mask
   repaintWith: PassChoice;
   face: string; // a face photo's id, "" for none
+  takes: number; // each outfit, or the repaint, this many times, each with its own seed
 };
 
 export const editAtom = atom<EditChoice>({
   mode: "dress",
   person: null,
+  portrait: true,
   hold: "tight",
   dresser: "zimage-turbo",
   finish: "own",
@@ -51,4 +57,6 @@ export const editAtom = atom<EditChoice>({
   repaint: "",
   repaintWith: "own",
   face: "",
+  takes: 1,
 });
+export const TAKES = [1, 2, 3, 4, 6, 8] as const;

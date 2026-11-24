@@ -11,7 +11,7 @@ import { size } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { EditCanvas } from "@/features/edit/edit-canvas";
 import { MaskTools } from "@/features/edit/mask-tools";
-import { masksAtom } from "@/features/edit/state";
+import { masksAtom, peekAtom } from "@/features/edit/state";
 import { download } from "@/features/library/files";
 import { ImageActions } from "@/features/library/image-actions";
 import { ZoomBar } from "@/features/stage/zoom-bar";
@@ -40,7 +40,11 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
   const recipe = useAtomValue(recipeAtom);
   const url = useObjectUrl(useImage(render?.id));
   const editing = useAtomValue(tabAtom) === "edit";
-  if (!job && render && url && editing) return <EditCanvas render={render} url={url} />;
+  // held "before": the image it was made from, with this one's mask over it
+  const peekOn = useAtomValue(peekAtom);
+  const peek = editing && !!render && peekOn === render.id;
+  const before = useObjectUrl(useImage(peek ? render?.source : undefined));
+  if (!job && render && url && editing) return <EditCanvas render={render} url={(peek && before) || url} />;
   if (!job && render && url)
     return (
       <ZoomView

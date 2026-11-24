@@ -13,7 +13,7 @@ import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
 
 /** `branches`: how many images were made from this one; more than one is where the lineage splits. */
-function Step({
+export function Step({
   r,
   current,
   branches = 0,

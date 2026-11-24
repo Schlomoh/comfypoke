@@ -15,6 +15,7 @@ export const KEYS = [
   ["[ ]", "edit: brush smaller, larger"],
   ["Space + drag", "edit: move the zoomed image"],
   ["⌘Z", "edit: undo a mask step"],
+  ["C (hold)", "edit: the image it was made from"],
   ["Del", "delete"],
   ["H", "hide all images"],
   ["⌘↵", "generate, or send the edit"],

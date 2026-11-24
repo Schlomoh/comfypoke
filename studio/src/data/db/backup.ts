@@ -39,7 +39,16 @@ function presetsIn(raw: unknown): Preset[] {
     const label = isText(p.label) ? p.label : undefined;
     if (!label && STARTERS[p.block]?.includes(p.text)) continue; // the old starter chips stay out, as in version 5
     const block = LEGACY_ROW[p.block] ?? p.block;
-    if (isRow(block)) out.push({ id: p.id, block, text: p.text, label, at: Number(p.at) || 0 });
+    if (isRow(block))
+      out.push({
+        id: p.id,
+        block,
+        text: p.text,
+        label,
+        at: Number(p.at) || 0,
+        ...(isText(p.group) ? { group: p.group } : {}),
+        ...(p.hidden === true ? { hidden: true } : {}),
+      });
   }
   return out;
 }
@@ -52,7 +61,8 @@ const notesIn = (raw: unknown): LoraNote[] =>
     )
     .map((n) => ({ name: n.name, trigger: n.trigger, ...(isText(n.family) ? { family: n.family } : {}) }));
 
-const presetKey = (p: Preset) => `${p.block}\u0000${p.text.toLowerCase()}`;
+// a removed built-in one and one added with the same text are two presets
+const presetKey = (p: Preset) => `${p.block}\u0000${p.hidden ? "hidden" : ""}\u0000${p.text.toLowerCase()}`;
 
 /** Same text in the same row is the same preset, whatever its id, and an id already used here is never overwritten: a backup only adds presets. */
 async function addPresets(presets: Preset[]) {
