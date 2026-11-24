@@ -1,6 +1,7 @@
 // The library's images as ideas: one tile per image and everything made from it (a stack, domain/lineage.ts), its
 // cover the one marked best, else the newest. A count on a tile opens its stack as a row under it, each step labeled.
-// Stacks from one Generate sit together under a quiet header with Pick; the ones picked over fold away.
+// Stacks from one Generate sit in a band of their own (ui/band.tsx) under a header with Pick; the ones picked over fold
+// away.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Fragment, useState } from "react";
 
@@ -8,6 +9,7 @@ import { groups, pickedOver, type Stack } from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 import { Thumb } from "@/features/library/thumb";
 import { pickAtom, stacksAtom, unfoldedAtom } from "@/state/studio";
+import { Band } from "@/ui/band";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
@@ -31,6 +33,7 @@ function StackTile({
   return (
     // the layered edge: more than one image under this one
     <div
+      data-stack={stack.members.map((m) => m.id).join(" ")}
       className={cn(
         "relative",
         many && "shadow-[3px_-3px_0_-1px_var(--color-panel),3px_-3px_0_0_var(--color-edge)]",
@@ -85,49 +88,49 @@ export function StackGrid(p: Props) {
   const [open, setOpen] = useState<string | null>(null); // the opened stack, by its root
   const [unfolded, setUnfolded] = useAtom(unfoldedAtom);
 
-  return groups(all).map((g, gi) => {
+  return groups(all).map((g) => {
     const many = g.batch !== undefined && g.stacks.length > 1;
     const showAll = !!g.batch && unfolded.has(g.batch);
-    const shown = many && !showAll ? g.stacks.filter((s) => !pickedOver(s)) : g.stacks;
-    const folded = g.stacks.length - shown.length;
     const live = g.stacks.filter((s) => !pickedOver(s));
+    const shown = many && !showAll ? live : g.stacks;
+    const folded = g.stacks.length - shown.length;
+    const tiles = shown.map((s) => (
+      <Fragment key={s.root.id}>
+        <StackTile
+          {...p}
+          stack={s}
+          open={open === s.root.id}
+          onOpen={() => setOpen(open === s.root.id ? null : s.root.id)}
+        />
+        {open === s.root.id && <StackRow {...p} stack={s} />}
+      </Fragment>
+    ));
+    if (!many) return <Fragment key={g.batch ?? g.stacks[0].root.id}>{tiles}</Fragment>;
+    const picked = live.length < g.stacks.length;
     return (
-      <Fragment key={g.batch ?? g.stacks[0].root.id}>
-        {many && (
-          <div
-            className={cn(
-              "col-span-full flex min-w-0 items-center gap-2 bg-bg px-3 py-1.5 font-mono text-[11px] text-muted",
-              gi > 0 && "mt-px",
-            )}
-          >
-            <span className="min-w-0 flex-1 truncate" title={g.stacks[0].root.prompt}>
-              {label(g.stacks[0].root)}
+      <Band key={g.batch} tone="batch" label={`${g.stacks.length} renders sent together`}>
+        <div className="col-span-full flex min-w-0 items-center gap-2 px-3 py-1.5 font-mono text-[11px] text-muted">
+          <span className="min-w-0 flex-1 truncate" title={g.stacks[0].root.prompt}>
+            {label(g.stacks[0].root)}
+          </span>
+          <span className="shrink-0 text-warn tabular-nums">×{g.stacks.length}</span>
+          {live.length > 1 && !p.picked ? (
+            <Button
+              variant="text"
+              size="inline"
+              title="Pick the best of these, two at a time"
+              onClick={() => setPick(live.map((s) => s.cover.id))}
+            >
+              {picked ? `${live.length} kept, pick` : `pick the best of ${live.length}`}
+            </Button>
+          ) : (
+            <span className="shrink-0">
+              {picked ? `${live.length} kept` : `pick the best of ${live.length}`}
             </span>
-            <span className="shrink-0 tabular-nums">{g.stacks.length}</span>
-            {live.length > 1 && !p.picked && (
-              <Button
-                variant="text"
-                size="inline"
-                title="Pick the best of these, two at a time"
-                onClick={() => setPick(live.map((s) => s.cover.id))}
-              >
-                Pick
-              </Button>
-            )}
-          </div>
-        )}
-        {shown.map((s) => (
-          <Fragment key={s.root.id}>
-            <StackTile
-              {...p}
-              stack={s}
-              open={open === s.root.id}
-              onOpen={() => setOpen(open === s.root.id ? null : s.root.id)}
-            />
-            {open === s.root.id && <StackRow {...p} stack={s} />}
-          </Fragment>
-        ))}
-        {(folded > 0 || showAll) && g.batch && (
+          )}
+        </div>
+        {tiles}
+        {(folded > 0 || showAll) && (
           <Pressable
             onClick={() =>
               setUnfolded((u) => {
@@ -136,12 +139,12 @@ export function StackGrid(p: Props) {
                 return next;
               })
             }
-            className="col-span-full bg-bg px-3 py-1.5 text-left font-mono text-[11px] text-faint hover:text-ink"
+            className="col-span-full px-3 py-1.5 text-left font-mono text-[11px] text-faint hover:text-ink"
           >
             {showAll ? "hide the ones picked over" : `show ${folded} picked over`}
           </Pressable>
         )}
-      </Fragment>
+      </Band>
     );
   });
 }
