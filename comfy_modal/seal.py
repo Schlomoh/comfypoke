@@ -24,6 +24,7 @@ from . import config
 
 IV = 12
 IMAGE_NODE = "StudioImageBase64"  # comfy_nodes/studio_image: the only node that carries an image in the prompt
+OUTPUT_NODE = "SaveImageWebsocket"  # the only output a sealed run may have: its frames are sealed on the way out
 
 
 class SealError(ValueError):
@@ -106,6 +107,13 @@ def open_prompt(key: bytes, prompt: dict) -> dict:
     """The prompt with every image node's data opened, for ComfyUI on localhost; the original is left as it came."""
     return {nid: {**n, "inputs": {**n["inputs"], "data": _open_b64(key, n["inputs"].get("data"))}}
             if n.get("class_type") == IMAGE_NODE else n for nid, n in prompt.items()}
+
+
+def stray_outputs(prompt: dict, output_nodes: set[str]) -> list[str]:
+    """The prompt's output node classes, by ComfyUI's definitions (`output_nodes`), other than OUTPUT_NODE. Whoever
+    sends the prompt chooses the graph: a SaveImage or a preview node would put the opened image on the io volume or
+    in a message, so a sealed run with any of these is refused (Worker.run)."""
+    return sorted({n.get("class_type") for n in prompt.values()} & (output_nodes - {OUTPUT_NODE}))
 
 
 def seal_frame(key: bytes, frame: bytes) -> bytes:
