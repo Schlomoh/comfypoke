@@ -60,7 +60,8 @@ def test_graph_sends_one_image_back(name):
 
 
 def test_stages_and_counted_samplers_are_marked():
-    assert set(graph.roles(GRAPHS["dress finish face"])) >= {"dresser", "sampler", "swapper", "output"}
+    assert set(graph.roles(GRAPHS["people dress and faces"])) >= {"dresser", "sampler", "output"}
+    assert set(graph.roles(GRAPHS["inpaint face"])) >= {"sampler", "swapper", "output"}
     assert graph.roles(GRAPHS["upscale"])["upscaler"]
     assert set(graph.stages(GRAPHS["body"]).values()) >= {"fitting"}
 
@@ -75,3 +76,21 @@ def test_face_pass_runs_only_without_a_face_photo():
     assert "refining" in graph.stages(GRAPHS["render finish face pass"]).values()
     swapped = graphs.graph("krea2", "krea2_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, [], IMG, face_pass=0.35)
     assert "refining" not in graph.stages(swapped).values() and "swapping" in graph.stages(swapped).values()
+
+
+def _count(name: str, cls: str) -> int:
+    return sum(n["class_type"] == cls for n in GRAPHS[name].values())
+
+
+def test_people_cut_each_area_to_its_person_and_find_each_part_once():
+    # two dressed in the same part: one SAM find by words, two silhouettes, two cuts, two dressings, two faces
+    assert _count("people dress and faces", "MaskComposite") == 2
+    assert _count("people dress and faces", "StudioPersonBox") == 2
+    assert _count("people dress and faces", "ZImageFunControlnet") == 2
+    assert _count("people dress and faces", "StudioFaceMask") == 2
+    assert _count("people dress and faces", "CLIPTextEncode") >= 2
+
+
+def test_people_without_a_face_dress_over_the_mask_and_redraw_nothing():
+    assert _count("people no face over the mask", "StudioFaceMask") == 0
+    assert _count("people no face over the mask", "ImageToMask") == 1

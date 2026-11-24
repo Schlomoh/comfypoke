@@ -33,8 +33,8 @@ export const peekAtom = atom<string | null>(null);
 /** A pass runs with: the Model tab as it is ("tab"), the image's own model ("own"), or a saved setup's id. */
 export type PassChoice = string;
 export type EditChoice = {
-  mode: "dress" | "repaint";
-  person: string | null; // who is edited: whose Wearing row dresses, whose rows describe them; null is the first
+  mode: "people" | "repaint"; // everyone on the image (features/edit/people), or an area by its mask
+  person: string | null; // who a repaint keeps as written; null is the first
   portrait: boolean; // the person's Who, Look and Wearing go into the prompt (compose.ts portrait)
   hold: Hold;
   dresser: PassChoice;
@@ -43,11 +43,13 @@ export type EditChoice = {
   repaint: string; // what goes inside the mask
   repaintWith: PassChoice;
   face: string; // a face photo's id, "" for none
+  faceWith: PassChoice; // People: what faces are redrawn with, each with their own words and LoRAs
+  faceStrength: number;
   takes: number; // each outfit, or the repaint, this many times, each with its own seed
 };
 
 export const editAtom = atom<EditChoice>({
-  mode: "dress",
+  mode: "people",
   person: null,
   portrait: true,
   hold: "tight",
@@ -57,6 +59,8 @@ export const editAtom = atom<EditChoice>({
   repaint: "",
   repaintWith: "own",
   face: "",
+  faceWith: "own",
+  faceStrength: 0.35,
   takes: 1,
 });
 export const TAKES = [1, 2, 3, 4, 6, 8] as const;

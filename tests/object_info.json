@@ -1121,6 +1121,58 @@
    "MODEL"
   ]
  },
+ "MaskComposite": {
+  "input": {
+   "required": {
+    "destination": [
+     "MASK",
+     {}
+    ],
+    "operation": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "multiply",
+       "add",
+       "subtract",
+       "and",
+       "or",
+       "xor"
+      ]
+     }
+    ],
+    "source": [
+     "MASK",
+     {}
+    ],
+    "x": [
+     "INT",
+     {
+      "default": 0,
+      "max": 16384,
+      "min": 0,
+      "step": 1
+     }
+    ],
+    "y": [
+     "INT",
+     {
+      "default": 0,
+      "max": 16384,
+      "min": 0,
+      "step": 1
+     }
+    ]
+   }
+  },
+  "output": [
+   "MASK"
+  ],
+  "output_name": [
+   "MASK"
+  ]
+ },
  "MaskToImage": {
   "input": {
    "required": {
@@ -1987,8 +2039,86 @@
    "LATENT"
   ]
  },
+ "StudioFaceLabels": {
+  "input": {
+   "optional": {
+    "people": [
+     "STRING",
+     {
+      "default": ""
+     }
+    ],
+    "ref_0": [
+     "IMAGE"
+    ],
+    "ref_1": [
+     "IMAGE"
+    ],
+    "ref_2": [
+     "IMAGE"
+    ],
+    "ref_3": [
+     "IMAGE"
+    ]
+   },
+   "required": {
+    "grow": [
+     "FLOAT",
+     {
+      "default": 0.15,
+      "max": 1.0,
+      "min": 0.0,
+      "step": 0.05
+     }
+    ],
+    "image": [
+     "IMAGE"
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
  "StudioFaceMask": {
   "input": {
+   "optional": {
+    "box": [
+     "STRING",
+     {
+      "default": ""
+     }
+    ],
+    "people": [
+     "STRING",
+     {
+      "default": ""
+     }
+    ],
+    "ref_0": [
+     "IMAGE"
+    ],
+    "ref_1": [
+     "IMAGE"
+    ],
+    "ref_2": [
+     "IMAGE"
+    ],
+    "ref_3": [
+     "IMAGE"
+    ],
+    "slot": [
+     "INT",
+     {
+      "default": -1,
+      "max": 3,
+      "min": -1
+     }
+    ]
+   },
    "required": {
     "grow": [
      "FLOAT",
@@ -2041,6 +2171,30 @@
   ],
   "output_name": [
    "IMAGE"
+  ]
+ },
+ "StudioPersonBox": {
+  "input": {
+   "required": {
+    "box": [
+     "STRING",
+     {
+      "default": ""
+     }
+    ],
+    "image": [
+     "IMAGE"
+    ],
+    "people": [
+     "BOUNDING_BOX"
+    ]
+   }
+  },
+  "output": [
+   "BOUNDING_BOX"
+  ],
+  "output_name": [
+   "BOUNDING_BOX"
   ]
  },
  "UNETLoader": {

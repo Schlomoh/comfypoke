@@ -5,7 +5,7 @@ import { faceFor, inPicture } from "@/domain/cast";
 import { portrait } from "@/domain/compose";
 import type { Triggers } from "@/domain/loras";
 import { noun } from "@/domain/presets/gender";
-import type { Recipe } from "@/domain/recipe";
+import type { Person, Recipe } from "@/domain/recipe";
 import type { FaceMatch, Lora, Render } from "@/domain/render";
 
 /** The face photo an image is compared with: the one of the person in the recipe it was made from. */
@@ -41,15 +41,25 @@ export function facePeople(
 ): FacePerson[] | null {
   const people = inPicture(r);
   if (people.length < 2 || people.length > FACE_PEOPLE) return null;
-  return people.map((p) => {
-    // someone only in what the people do together has no words of their own: still a woman, a man, a person
-    const own =
-      portrait(p, undefined, p.savedId ? (triggers.of[p.savedId] ?? []) : []) || `A ${noun(p.gender)}.`;
-    return {
-      text: [...triggers.lead, own].join(", "), // the stack's trigger words lead, as in the prompt
-      loras: loras(p.savedId),
-      side: p.side.length > 1 ? "center" : (p.side[0] ?? ""), // across: the middle
-      face: p.face ?? null,
-    };
-  });
+  return people.map((p) => facePerson(p, triggers, loras));
 }
+
+/** One person as a face pass redraws them, in a render or an edit (the Edit tab's People). */
+export function facePerson(
+  p: Person,
+  triggers: Triggers,
+  loras: (savedId: string | null) => Lora[],
+): FacePerson {
+  // someone only in what the people do together has no words of their own: still a woman, a man, a person
+  const own =
+    portrait(p, undefined, p.savedId ? (triggers.of[p.savedId] ?? []) : []) || `A ${noun(p.gender)}.`;
+  return {
+    text: [...triggers.lead, own].join(", "), // the stack's trigger words lead, as in the prompt
+    loras: loras(p.savedId),
+    side: sideOf(p),
+    face: p.face ?? null,
+  };
+}
+
+/** Where a person stands, as the face finder takes it: across is the middle. */
+export const sideOf = (p: Person) => (p.side.length > 1 ? "center" : (p.side[0] ?? ""));

@@ -42,3 +42,12 @@ def test_more_faces_than_people_leaves_them_as_rendered():
 
 def test_no_faces():
     assert assign([], [("left", A), ("right", None)]) == [None, None]
+
+
+def test_levels_mark_whose_face_and_number_the_rest():
+    levels = assign_mod.levels
+    assert levels([1, 0], 2) == [2, 1]
+    assert levels([None, 2], 4) == [5, 6, 2, 7]  # person 2 took the third face; the others come after PEOPLE
+    assert levels([], 0) == []
+    assert levels([None] * 4, 8) == [5, 6, 7, 8, 9, 10, 0, 0]  # a crowd: the faces past TOP are left out
+    assert assign_mod.TOP * assign_mod.LEVEL <= 255

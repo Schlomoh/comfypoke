@@ -1,5 +1,6 @@
-"""Faces, by InsightFace: how much the face in one image looks like the face in another (the studio's face match), and
-where the largest face is (the face pass's mask).
+"""Faces, by InsightFace: how much the face in one image looks like the face in another (the studio's face match),
+where a face is (the face pass's mask), every face and whose it is (the Edit tab's People), and which person found by
+RT-DETR a face belongs to (dressing one of several).
 
 InsightFace's buffalo_l pack (catalog.py) finds the largest face in each image and turns it into an ArcFace embedding;
 the score is their cosine similarity. Around 0.22 is where buffalo_l tells two people apart on photo benchmarks, and
@@ -20,7 +21,7 @@ import torch
 import folder_paths
 from server import PromptServer
 
-from .assign import assign
+from .assign import LEVEL, assign, levels
 
 MESSAGE = "studio_face"
 PACK = os.path.join(folder_paths.models_dir, "insightface", "models", "buffalo_l")
@@ -86,43 +87,122 @@ class StudioFaceScore:
         return {}
 
 
-REFS = 4  # people with a face photo in one picture, at most
+REFS = 4  # people with a face photo in one picture, at most: assign.PEOPLE
+
+
+def _box(h: int, w: int, x0: float, y0: float, x1: float, y1: float) -> torch.Tensor:
+    mask = torch.zeros((1, h, w), dtype=torch.float32)
+    mask[0, max(0, int(y0)):min(h, int(y1)), max(0, int(x0)):min(w, int(x1))] = 1.0
+    return mask
+
+
+def _grown(face, grow: float) -> tuple[float, float, float, float]:
+    x0, y0, x1, y1 = face.bbox
+    dx, dy = (x1 - x0) * grow, (y1 - y0) * grow
+    return x0 - dx, y0 - dy, x1 + dx, y1 + dy
+
+
+def _pick(image, sides: list[str], refs: dict) -> tuple[list, list[int | None]]:
+    """The picture's faces left to right, and per person of `sides` the index of theirs (assign.py)."""
+    faces = sorted(_all(image), key=lambda f: f.bbox[0] + f.bbox[2])
+    photos = [refs.get(f"ref_{n}") for n in range(len(sides))]
+    people = [(side, None if photo is None else _embedding(photo)) for side, photo in zip(sides, photos)]
+    return faces, assign([((f.bbox[0] + f.bbox[2]) / 2, f.normed_embedding) for f in faces], people)
+
+
+def _optional_people() -> dict:
+    return {"people": ("STRING", {"default": ""}), **{f"ref_{n}": ("IMAGE",) for n in range(REFS)}}
 
 
 class StudioFaceMask:
-    """A face's box, grown by `grow` of its size on each side, as a mask; empty when there is none. With `slot` -1 the
-    largest face. Otherwise the face of person `slot` of `people` (a JSON list of where each stands: "left", "center",
-    "right" or ""), each person's face photo as `ref_<n>` when they have one (assign.py)."""
+    """A face's box, grown by `grow` of its size on each side, as a mask; empty when there is none. With `box`
+    ("x0,y0,x1,y1" in pixels) that box as it is: a face the phone picked. With `slot` -1 the largest face. Otherwise
+    the face of person `slot` of `people` (a JSON list of where each stands: "left", "center", "right" or ""), each
+    person's face photo as `ref_<n>` when they have one (assign.py)."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {"image": ("IMAGE",), "grow": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.05})},
-            "optional": {"slot": ("INT", {"default": -1, "min": -1, "max": REFS - 1}), "people": ("STRING", {"default": ""}),
-                         **{f"ref_{n}": ("IMAGE",) for n in range(REFS)}},
+            "optional": {"slot": ("INT", {"default": -1, "min": -1, "max": REFS - 1}), "box": ("STRING", {"default": ""}),
+                         **_optional_people()},
         }
 
     RETURN_TYPES = ("MASK",)
     FUNCTION = "find"
     CATEGORY = "mask"
 
-    def find(self, image, grow, slot=-1, people="", **refs):
+    def find(self, image, grow, slot=-1, box="", people="", **refs):
         h, w = image.shape[1], image.shape[2]
-        mask = torch.zeros((1, h, w), dtype=torch.float32)
-        face = _largest(image) if slot < 0 else self._of(image, slot, json.loads(people or "[]"), refs)
-        if face is not None:
-            x0, y0, x1, y1 = face.bbox
-            dx, dy = (x1 - x0) * grow, (y1 - y0) * grow
-            mask[0, max(0, int(y0 - dy)):min(h, int(y1 + dy)), max(0, int(x0 - dx)):min(w, int(x1 + dx))] = 1.0
-        return (mask,)
-
-    @staticmethod
-    def _of(image, slot: int, sides: list[str], refs: dict):
-        faces = _all(image)
-        photos = [refs.get(f"ref_{n}") for n in range(len(sides))]
-        people = [(side, None if photo is None else _embedding(photo)) for side, photo in zip(sides, photos)]
-        pick = assign([((f.bbox[0] + f.bbox[2]) / 2, f.normed_embedding) for f in faces], people)
-        return None if slot >= len(pick) or pick[slot] is None else faces[pick[slot]]
+        if box:
+            return (_box(h, w, *(float(v) for v in box.split(","))),)
+        if slot < 0:
+            face = _largest(image)
+        else:
+            faces, pick = _pick(image, json.loads(people or "[]"), refs)
+            face = None if slot >= len(pick) or pick[slot] is None else faces[pick[slot]]
+        return (_box(h, w, *_grown(face, grow)) if face is not None else torch.zeros((1, h, w), dtype=torch.float32),)
 
 
-NODE_CLASS_MAPPINGS = {"StudioFaceScore": StudioFaceScore, "StudioFaceMask": StudioFaceMask}
+class StudioFaceLabels:
+    """Every face in the picture, grown by `grow`, as one label image (assign.levels): the phone reads the boxes and
+    whose each is from it, people as in StudioFaceMask."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {"image": ("IMAGE",), "grow": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.05})},
+            "optional": _optional_people(),
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "label"
+    CATEGORY = "mask"
+
+    def label(self, image, grow, people="", **refs):
+        h, w = image.shape[1], image.shape[2]
+        faces, pick = _pick(image, json.loads(people or "[]"), refs)
+        out = torch.zeros((1, h, w), dtype=torch.float32)
+        # largest first, so a small face in front of a large one keeps its own box
+        for face, level in sorted(zip(faces, levels(pick, len(faces))), key=lambda fl: -_area(fl[0])):
+            if level:
+                out = torch.where(_box(h, w, *_grown(face, grow)) > 0, level * LEVEL / 255, out)
+        return (out[..., None].repeat(1, 1, 1, 3),)
+
+
+def _area(face) -> float:
+    return (face.bbox[2] - face.bbox[0]) * (face.bbox[3] - face.bbox[1])
+
+
+class StudioPersonBox:
+    """Of the people RT-DETR found (`people`, a BOUNDING_BOX), the one whose box holds the face at `box` ("x0,y0,x1,y1"):
+    the smallest that holds its center, so someone standing behind does not take it. With none, a box below the face,
+    three faces wide, down to the bottom of the picture. Without `box`, the likeliest person, or the whole picture. As a
+    BOUNDING_BOX of one, for SAM 3.1 and SAM 3D Body."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",), "people": ("BOUNDING_BOX",), "box": ("STRING", {"default": ""})}}
+
+    RETURN_TYPES = ("BOUNDING_BOX",)
+    FUNCTION = "pick"
+    CATEGORY = "mask"
+
+    def pick(self, image, people, box):
+        found = people[0] if people and isinstance(people[0], list) else people or []
+        h, w = image.shape[1], image.shape[2]
+        if not box:
+            best = max(found, key=lambda d: d.get("score", 0), default=None)
+            return ([[best or {"x": 0.0, "y": 0.0, "width": float(w), "height": float(h), "score": 0.0}]],)
+        x0, y0, x1, y1 = (float(v) for v in box.split(","))
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        holding = [d for d in found if d["x"] <= cx <= d["x"] + d["width"] and d["y"] <= cy <= d["y"] + d["height"]]
+        if holding:
+            return ([[min(holding, key=lambda d: d["width"] * d["height"])]],)
+        fw = x1 - x0
+        left, right = max(0.0, x0 - fw), min(float(w), x1 + fw)
+        return ([[{"x": left, "y": max(0.0, y0), "width": right - left, "height": h - max(0.0, y0), "score": 0.0}]],)
+
+
+NODE_CLASS_MAPPINGS = {"StudioFaceScore": StudioFaceScore, "StudioFaceMask": StudioFaceMask, "StudioFaceLabels": StudioFaceLabels,
+                       "StudioPersonBox": StudioPersonBox}

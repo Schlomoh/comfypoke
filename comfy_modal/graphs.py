@@ -187,13 +187,14 @@ def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, ref_boost: fl
 FACE_PASS = (0.15, 0.6)
 
 
-def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float,
-              which: dict | None = None, found_in: Ref | None = None) -> Ref:
-    """The largest face redrawn, or with `which` (StudioFaceMask's slot, people and refs) one person's, found in
-    `found_in` (the render before any face pass, so every person's face is decided on the same picture) and redrawn
-    in `image`."""
-    # SCRFD's box around the face (comfy_nodes/studio_face), not SAM's "face", which can take the sky for one
-    face = g.add("StudioFaceMask", image=found_in or image, grow=0.15, stage="masking", **(which or {}))
+def _face(g: G, image: Ref, **which) -> Ref:
+    """A face's box as a mask (comfy_nodes/studio_face StudioFaceMask): the largest, one person's of several (slot,
+    people, refs) or a box the phone picked. SCRFD's, not SAM's "face", which can take the sky for one."""
+    return g.add("StudioFaceMask", image=image, grow=0.15, stage="masking", **which)
+
+
+def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float, face: Ref) -> Ref:
+    """The face under the mask `face` redrawn in `image`, and only it."""
     crop = g.add("InpaintCropImproved", {**CROP, "context_from_mask_extend_factor": 2.0}, image=image, mask=face)
     latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=crop.out(1), vae=b.vae), mask=crop.out(2))
     redrawn = g.add("VAEDecode", samples=_sampler(g, family, b, latent, seed, steps, cfg, denoise, "refining"), vae=b.vae,
@@ -215,8 +216,9 @@ def _facepasses(g: G, b: Base, last: dict, image: Ref, seed: int, denoise: float
     rendered = image
     for slot, p in enumerate(people):
         own = _rebase(g, b, last["family"], p["text"], last["negative"], last["cfg"], p["loras"])
+        # every face is found in the render before any face pass, so each is decided on the same picture
         image = _facepass(g, own, last["family"], image, seed, last["steps"], last["cfg"], denoise,
-                          {"slot": slot, "people": sides, **refs}, found_in=rendered)
+                          _face(g, rendered, slot=slot, people=sides, **refs))
     return image
 
 
@@ -242,7 +244,7 @@ def graph(family: str, unet: str, text: str, negative: str, width: int, height: 
     elif face_pass:
         last = finish or {"family": family, "steps": steps, "cfg": cfg, "negative": negative}
         out = (_facepasses(g, b, last, out, seed, face_pass, face_people) if face_people
-               else _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass))
+               else _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass, _face(g, out)))
     _save(g, out)
     return g.prompt()
 
@@ -319,10 +321,16 @@ DRESS_HOLD = {"tight": 0.9, "loose": 0.65, "off": 0.9}  # controlnet strength; "
 FINISH = (0.1, 0.8)  # how much a finish may repaint, of a render or of dressed clothes; 0.35 keeps the shape and takes its look
 
 
-def _body(g: G, image: Ref) -> Ref:
-    """RT-DETR picks the person, SAM 3D Body fits a mesh to them; returns the fitted pose data."""
+def _people(g: G, image: Ref, most: int = 1) -> Ref:
+    """The people RT-DETR finds, up to `most`, most likely first, as a BOUNDING_BOX."""
     detector = g.add("UNETLoader", unet_name="rt_detr_v4-x-hgnet_fp16.safetensors", weight_dtype="default", stage="fitting")
-    person = g.add("RTDETR_detect", threshold=0.5, class_name="person", max_detections=1, model=detector, image=image, stage="fitting")
+    return g.add("RTDETR_detect", threshold=0.5, class_name="person", max_detections=most, model=detector, image=image, stage="fitting")
+
+
+def _body(g: G, image: Ref, person: Ref | None = None) -> Ref:
+    """SAM 3D Body's mesh fitted to `person` (a BOUNDING_BOX of one), or to the likeliest person RT-DETR finds; returns
+    the fitted pose data."""
+    person = person or _people(g, image)
     model = g.add("SAM3DBody_Loader", model_file="sam_3d_body_dinov3_bf16.safetensors", stage="fitting")
     return g.add("SAM3DBody_Predict", run_hand_refinement=True, fov=0.0, batch_size=64, sam3d_body_model=model, image=image,
                  bboxes=person, stage="fitting")
@@ -341,17 +349,14 @@ def body(image_b64: str) -> dict:
     return g.prompt()
 
 
-def dress(image_b64: str, mask_b64: str, outfit: str, seed: int, hold: str, dresser: dict,
-          finish: dict | None, face: str | None = None) -> dict:
-    """Replace what someone wears with `outfit`, the body held by its mesh (`hold`: tight, loose, off). `dresser` is the
-    Z-Image model that dresses it (unet, steps, cfg, loras). With `finish` (family, unet, text, negative, steps, cfg,
-    loras, denoise) a second model repaints the clothes lightly afterwards; `face` needs a Krea 2 finish, whose
-    loaders the head swap uses."""
-    g = G()
-    image, mask, box = _masked(g, image_b64, mask_b64)
+def _dressed(g: G, image: Ref, mask: Ref, outfit: str, seed: int, hold: str, dresser: dict, finish: dict | None,
+             person: Ref | None = None, body_of: Ref | None = None) -> tuple[Ref, Base | None]:
+    """`image` with what `mask` covers dressed in `outfit`: the body is fitted in `body_of` (the picture before any
+    dressing, by default `image`), to `person` when given. Returns the image and the finish's loaders, if any."""
+    box = g.add("InpaintCropImproved", CROP, image=image, mask=mask, stage="masking")
     control = {}
     if hold != "off":
-        depth = g.add("SAM3DBody_Render", _mesh("depth"), pose_data=_body(g, image), stage="fitting")
+        depth = g.add("SAM3DBody_Render", _mesh("depth"), pose_data=_body(g, body_of or image, person), stage="fitting")
         control = {"image": g.add("InpaintCropImproved", CROP, image=depth, mask=mask, stage="fitting").out(1)}
     z = FAMILIES["zimage"]
     vae = g.add("VAELoader", vae_name=z["vae"], stage="dressing")
@@ -370,7 +375,58 @@ def dress(image_b64: str, mask_b64: str, outfit: str, seed: int, hold: str, dres
         b = _base(g, finish["family"], finish["unet"], finish["text"], finish["negative"], finish["cfg"], finish["loras"])
         latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=dressed, vae=b.vae, stage="encoding"), mask=box.out(2))
         dressed = g.add("VAEDecode", samples=_lanpaint(g, finish, b, latent, seed, finish["denoise"]), vae=b.vae, stage="decoding")
-    out = g.add("InpaintStitchImproved", stitcher=box, inpainted_image=dressed, stage="decoding")
-    swap = face and finish and b and finish["family"] in HEADSWAP_FAMILIES
-    _save(g, _headswap(g, b, out, face, seed) if swap else out)
+    return g.add("InpaintStitchImproved", stitcher=box, inpainted_image=dressed, stage="decoding"), b
+
+
+# People: everyone on a picture at once (the Edit tab's People). First the faces and whose each is, as one label image
+# the phone reads (assign.levels); then, with the people the phone settled on, each one's outfit and face. Everything is
+# found in the picture as it came, so a person dressed first does not move anyone else's box.
+
+def faces(image_b64: str, people: list[dict]) -> dict:
+    """Every face on the picture and whose it is: `people` (side, face: a photo or None) as StudioFaceMask takes them."""
+    g = G()
+    image = _image(g, image_b64)
+    refs = {f"ref_{n}": _image(g, p["face"]) for n, p in enumerate(people) if p.get("face")}
+    labels = g.add("StudioFaceLabels", image=image, grow=0.15, people=json.dumps([p["side"] for p in people]), stage="finding",
+                   **refs)
+    _save(g, labels)
+    return g.prompt()
+
+
+def people(image_b64: str, who: list[dict], seed: int, dress_with: dict | None, face_with: dict | None,
+           mask_b64: str | None = None) -> dict:
+    """Each of `who` (box: their face's "x0,y0,x1,y1", or None for whoever RT-DETR likes best when no face was found;
+    text, loras; `outfit` over `part`, the words SAM finds their clothes by, or over the phone's mask with part "mask";
+    `redraw` for their face) dressed and redrawn. Every area is cut to its person's silhouette. `dress_with` is hold, dresser and finish as in `dress`
+    (the finish's text is each person's outfit); `face_with` is the face pass's setup (family, unet, negative, steps,
+    cfg) and strength (denoise), each face with its person's own text and LoRAs on loaders they share."""
+    g = G()
+    source = image = _image(g, image_b64)
+    dressing = [p for p in who if p.get("outfit")]
+    if dressing:
+        found = _people(g, source, most=8)
+        sam = g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
+        clothes: dict[str, Ref] = {}  # one find per part, shared by everyone dressed in it
+        if mask_b64:
+            clothes["mask"] = g.add("ImageToMask", channel="red", image=_image(g, mask_b64))
+        for p in dressing:
+            person = (g.add("StudioPersonBox", image=source, people=found, box=p["box"], stage="masking") if p["box"]
+                      else g.add("StudioPersonBox", image=source, people=_people(g, source), box="", stage="masking"))
+            # SAM with a box and no words: the person in it. With words it would take the box for an example of what
+            # to find and mark everyone's clothes, so the clothes found by words are cut to this person.
+            alone = g.add("SAM3_Detect", threshold=0.4, refine_iterations=2, individual_masks=False, model=sam, image=source,
+                          bboxes=person, stage="masking")
+            if p["part"] not in clothes:
+                clothes[p["part"]] = _sam(g, source, p["part"], 0.4, 12)
+            area = g.add("MaskComposite", x=0, y=0, operation="multiply", destination=clothes[p["part"]],
+                         source=g.add("GrowMask", expand=12, tapered_corners=True, mask=alone), stage="masking")
+            d = dress_with
+            finish = d["finish"] and {**d["finish"], "text": p["outfit"]}
+            image, _ = _dressed(g, image, area, p["outfit"], seed, d["hold"], d["dresser"], finish, person, source)
+    f, b = face_with, None
+    for p in (x for x in who if x.get("redraw") and x["box"]):
+        b = (_rebase(g, b, f["family"], p["text"], f["negative"], f["cfg"], p["loras"]) if b
+             else _base(g, f["family"], f["unet"], p["text"], f["negative"], f["cfg"], p["loras"]))
+        image = _facepass(g, b, f["family"], image, seed, f["steps"], f["cfg"], f["denoise"], _face(g, source, box=p["box"]))
+    _save(g, image)
     return g.prompt()
