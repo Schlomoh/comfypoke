@@ -22,17 +22,33 @@ function useVisibleArea(dialog: { current: HTMLDialogElement | null }, open: boo
       const hidden = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       d.style.setProperty("--keyboard", `${hidden}px`);
       d.style.setProperty("--visible", `${vv.height}px`);
+      // the keyboard, not a toolbar sliding in: the sheet makes room for the field being typed in
+      d.toggleAttribute("data-keyboard", hidden > 80);
+    };
+    // The keyboard is up and the sheet shrank around the focused field: keep it in sight. Only its own
+    // scroller moves; scrollIntoView would also scroll the dialog and the locked page.
+    const resize = () => {
+      fit();
+      const f = document.activeElement;
+      const box =
+        f instanceof HTMLElement && d.hasAttribute("data-keyboard") && f.closest("[data-sheet-scroll]");
+      if (!box || !(f instanceof HTMLElement)) return;
+      const r = f.getBoundingClientRect();
+      const b = box.getBoundingClientRect();
+      if (r.bottom > b.bottom) box.scrollTop += r.bottom - b.bottom;
+      else if (r.top < b.top) box.scrollTop -= b.top - r.top;
     };
     // a field losing focus is the keyboard closing: make WebKit settle its viewport before the next tap
     const settle = () => requestAnimationFrame(() => window.scrollTo(window.scrollX, window.scrollY));
     fit();
-    vv.addEventListener("resize", fit);
+    vv.addEventListener("resize", resize);
     vv.addEventListener("scroll", fit);
     d.addEventListener("focusout", settle);
     return () => {
-      vv.removeEventListener("resize", fit);
+      vv.removeEventListener("resize", resize);
       vv.removeEventListener("scroll", fit);
       d.removeEventListener("focusout", settle);
+      d.removeAttribute("data-keyboard");
     };
   }, [dialog, open]);
 }
@@ -96,6 +112,10 @@ export function Modal({
  * A bottom sheet on a phone, a centered panel on a desktop. Its regions are stacked, never layered: the
  * title, the body, which scrolls, and an optional footer, which scrolls on its own when tall. Nothing
  * is sticky and no scroller sits inside another, so what a finger touches is what is drawn there.
+ *
+ * With the keyboard up (iOS shrinks only the visual viewport, never dvh) the footer gives way: typing in
+ * the body folds it away, and typing in the footer hides its parts marked `data-keyboard-hide`, leaving
+ * the field.
  */
 export function Sheet({
   open,
@@ -132,6 +152,7 @@ export function Sheet({
       <div data-toast-slot className="relative z-10 h-0 shrink-0" />
       <div
         data-sheet-body
+        data-sheet-scroll
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4",
           footer ? "pb-3" : edge,
@@ -141,8 +162,12 @@ export function Sheet({
       </div>
       {footer && (
         <div
+          data-sheet-footer
+          data-sheet-scroll
           className={cn(
-            "flex max-h-[45dvh] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain border-t border-warn bg-raised px-4 pt-2.5",
+            "flex max-h-[calc(var(--visible,100dvh)*0.4)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain border-t border-warn bg-raised px-4 pt-2.5",
+            "in-data-keyboard:focus-within:**:data-keyboard-hide:hidden",
+            "[[data-keyboard]:has([data-sheet-body]:focus-within)_&]:hidden",
             edge,
           )}
         >

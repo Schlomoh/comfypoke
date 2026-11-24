@@ -129,42 +129,45 @@ export function PresetPicker({
   return (
     <>
       <div className="flex h-11 items-center gap-2 text-[13px] text-warn fine:h-8">{header}</div>
-      {groups.length > 0 && (
-        <Tabs
-          className="-mx-4 pl-4"
-          label="Subcategories"
-          value={sub}
-          options={groups.map(([g]) => g)}
-          onChange={(g) => {
-            setSubs((m) => ({ ...m, [row]: g }));
-            setRemoving(false);
-          }}
-        />
-      )}
-      {(items.length > 0 || removed.length > 0) && (
-        <ChipRow>
-          {chips}
-          {items.length > 0 && (
-            <Button variant="link" size="inline" onClick={() => setRemoving(!removing)}>
-              {removing ? "done removing" : "remove some"}
-            </Button>
-          )}
-          {removed.length > 0 && !removing && (
-            <Button
-              variant="link"
-              size="inline"
-              onClick={() => {
-                for (const p of removed) void deletePreset(p.id);
-                notify(`Brought back ${removed.length} removed`, {
-                  action: { label: "Undo", run: () => removed.forEach((p) => void restorePreset(p)) },
-                });
-              }}
-            >
-              bring back {removed.length} removed
-            </Button>
-          )}
-        </ChipRow>
-      )}
+      {/* typing with the keyboard up, the sheet hides these to keep the field in sight */}
+      <div data-keyboard-hide className="flex flex-col gap-2 empty:hidden">
+        {groups.length > 0 && (
+          <Tabs
+            className="-mx-4 pl-4"
+            label="Subcategories"
+            value={sub}
+            options={groups.map(([g]) => g)}
+            onChange={(g) => {
+              setSubs((m) => ({ ...m, [row]: g }));
+              setRemoving(false);
+            }}
+          />
+        )}
+        {(items.length > 0 || removed.length > 0) && (
+          <ChipRow>
+            {chips}
+            {items.length > 0 && (
+              <Button variant="link" size="inline" onClick={() => setRemoving(!removing)}>
+                {removing ? "done removing" : "remove some"}
+              </Button>
+            )}
+            {removed.length > 0 && !removing && (
+              <Button
+                variant="link"
+                size="inline"
+                onClick={() => {
+                  for (const p of removed) void deletePreset(p.id);
+                  notify(`Brought back ${removed.length} removed`, {
+                    action: { label: "Undo", run: () => removed.forEach((p) => void restorePreset(p)) },
+                  });
+                }}
+              >
+                bring back {removed.length} removed
+              </Button>
+            )}
+          </ChipRow>
+        )}
+      </div>
       <form
         className="flex gap-1.5"
         onSubmit={(e) => {

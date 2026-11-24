@@ -191,7 +191,7 @@ export function LoraRow({
               aria-label="Made for"
               value={note?.family ?? ""}
               onChange={(e) => void setLoraFamily(l.name, e.target.value)}
-              className="min-w-0 flex-1 text-xs"
+              className="min-w-0 flex-1"
             >
               <option value="">made for any family</option>
               {families.map((f) => (

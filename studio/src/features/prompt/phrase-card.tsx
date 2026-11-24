@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { insertAt, type Lens } from "@/domain/cast";
 import type { Phrase } from "@/domain/recipe";
+import { sameText } from "@/domain/versions";
 import { emptiedAtom } from "@/features/prompt/state";
 import { useTapGuard } from "@/features/prompt/use-tap-guard";
 import { recipeAtom } from "@/state/studio";
@@ -12,7 +13,7 @@ import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Chip, ChipRow, Tag } from "@/ui/chip";
 import { cn } from "@/ui/cn";
-import { Input } from "@/ui/field";
+import { LineArea } from "@/ui/field";
 import { notify } from "@/ui/notify";
 import type { useReorder } from "@/ui/reorder";
 
@@ -63,7 +64,7 @@ export function PhraseCard<T extends Phrase>({
     });
   });
 
-  const removeVersion = guard((v: string, i: number) => {
+  const dropVersion = (v: string, i: number) => {
     change((x) => ({ ...x, versions: x.versions.filter((y) => y !== v) }));
     notify(`Removed the version “${v}”`, {
       action: {
@@ -72,7 +73,21 @@ export function PhraseCard<T extends Phrase>({
           change((x) => (x.versions.includes(v) ? x : { ...x, versions: insertAt(x.versions, i, v) })),
       },
     });
-  });
+  };
+  const removeVersion = guard(dropVersion);
+
+  // emptied, it goes as the × takes it; a text the phrase already says is refused
+  const saveVersion = (v: string, i: number, text: string) => {
+    const t = text.trim();
+    if (t === v) return;
+    if (!t) return dropVersion(v, i); // unguarded: a tap that ended the edit may be a × that follows
+    const others = [p.t, ...p.versions.filter((_, j) => j !== i)];
+    if (others.some((x) => sameText(x, t))) {
+      notify(`This phrase already has “${t}”`);
+      return;
+    }
+    change((x) => ({ ...x, versions: x.versions.map((y) => (y === v ? t : y)) }));
+  };
 
   return (
     <div
@@ -84,7 +99,7 @@ export function PhraseCard<T extends Phrase>({
       )}
     >
       {children}
-      <div className="flex items-center">
+      <div className="flex items-start">
         {drag && (
           <span
             {...drag.handle}
@@ -101,17 +116,16 @@ export function PhraseCard<T extends Phrase>({
           onChange={(on) => change((x) => ({ ...x, on }))}
           title={p.on ? "In the prompt; tap to leave it out" : "Left out; tap to use it"}
         />
-        <Input
+        <LineArea
           bare
           value={p.t}
-          onChange={(e) => {
-            const t = e.target.value;
+          onText={(t) => {
             if (!t.trim() && p.t.trim()) setEmptied((m) => new Map(m).set(p.id, p.t));
             change((x) => ({ ...x, t }));
           }}
           aria-label="Phrase"
           placeholder="empty: removed when the sheet closes"
-          className={cn("flex-1 fine:h-9", !p.on && "text-faint line-through")}
+          className={cn("flex-1 fine:min-h-8 fine:py-1.5", !p.on && "text-faint line-through")}
         />
         <Button variant="icon" size="square" onClick={remove} aria-label={`Remove ${p.t}`}>
           ×
@@ -119,7 +133,12 @@ export function PhraseCard<T extends Phrase>({
       </div>
       <ChipRow className="pr-2 pb-2 pl-11">
         {p.versions.map((v, i) => (
-          <Tag key={v} onRemove={() => removeVersion(v, i)} removeLabel={`Remove the version ${v}`}>
+          <Tag
+            key={v}
+            onRemove={() => removeVersion(v, i)}
+            removeLabel={`Remove the version ${v}`}
+            edit={{ value: v, label: "Version", onSave: (t) => saveVersion(v, i, t) }}
+          >
             or {v}
           </Tag>
         ))}

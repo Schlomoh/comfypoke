@@ -51,7 +51,8 @@ body {
   color: var(--color-muted);
 }
 
-/* iOS zooms into any input under 16px on focus, so fields are 16px on touch screens. */
+/* iOS zooms into any input under 16px on focus, so fields are 16px on touch screens, whatever text
+   size a call site adds (its class comes later in the CSS and would win). */
 @utility field {
   background: var(--color-bg);
   border: 1px solid var(--color-control);
@@ -59,6 +60,9 @@ body {
   font-size: 16px;
   @media (pointer: fine) {
     font-size: 13px;
+  }
+  @media (pointer: coarse) {
+    font-size: 16px !important;
   }
   &:focus {
     border-color: var(--color-ink);
