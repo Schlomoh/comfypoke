@@ -29,3 +29,25 @@ def assign(faces: Sequence[tuple[float, Sequence[float]]], people: Sequence[tupl
         for p, f in zip(rest, left):
             out[p] = f
     return out
+
+
+# The finder's label image (StudioFaceLabels): every face's box filled with one gray level, LEVEL apart. Level 1 to
+# PEOPLE is person 1 to PEOPLE of the request; faces nobody took come after, left to right, up to TOP (a crowd's
+# further faces are left out). The phone reads it back (studio/src/domain/people.ts), so one sealed image carries the
+# boxes and who they were taken for.
+LEVEL = 25
+TOP = 255 // LEVEL
+PEOPLE = 4  # REFS in __init__.py, graphs.FACE_PEOPLE
+
+
+def levels(pick: Sequence[int | None], faces: int) -> list[int]:
+    """Each face's level, from `assign`'s pick, for faces numbered left to right; 0 for one left out."""
+    out = [0] * faces
+    for p, f in enumerate(pick):
+        if f is not None:
+            out[f] = p + 1
+    extra = PEOPLE + 1
+    for f in range(faces):
+        if not out[f] and extra <= TOP:
+            out[f], extra = extra, extra + 1
+    return out

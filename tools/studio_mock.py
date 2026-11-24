@@ -2,7 +2,8 @@
 worker's heartbeat, the models volume and the billing API replaced by stand-ins. No Modal calls and
 nothing billed. Renders are flat colors with a few seconds of fake progress; upscales are the image
 scaled up; an inpaint is the image with the mask tinted blue, a dressing the same in violet; SAM's find is a white
-ellipse in one of five bands, picked by the text; the body preview draws a stick figure. Starts the API and Vite (hot reload) together; Ctrl+C stops both.
+ellipse in one of five bands, picked by the text; the body preview draws a stick figure; the face finder answers two
+faces, and People tints each dressed person's column and each redrawn face. Starts the API and Vite (hot reload) together; Ctrl+C stops both.
 
     npm --prefix studio run dev:mock       the usual way in
     uv run --with fastapi --with uvicorn --with pillow tools/studio_mock.py [--port 8788] [--api-only]
@@ -81,7 +82,24 @@ async def fake(g, pid):
     first = next((g[k] for k in sorted(g, key=int) if g[k]["class_type"] == "KSampler"), None)  # the render's own sampler
     rendered = bool(first) and g.get(first["inputs"]["latent_image"][0], {}).get("class_type", "").startswith("Empty")
     cropped = not rendered and len(images) > 1 and bool(_nodes(g, "InpaintCropImproved")) and "SetLatentNoiseMask" in {n["class_type"] for n in g.values()}
-    if _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
+    labels, boxes = _nodes(g, "StudioFaceLabels"), [n["inputs"]["box"] for n in _nodes(g, "StudioFaceMask") if n["inputs"].get("box")]
+    if labels:  # the faces found: two, at a third and two thirds across, taken by the first people sent (assign.levels)
+        w, h = images[0].size
+        out = Image.new("RGB", (w, h))
+        cast = len(json.loads(labels[0]["inputs"].get("people") or "[]"))
+        for k, cx in enumerate((w // 3, 2 * w // 3)):
+            level = k + 1 if k < cast else 5 + k - min(k, cast)
+            ImageDraw.Draw(out).rectangle((cx - w // 14, h // 10, cx + w // 14, h // 10 + w // 7), fill=(level * 25,) * 3)
+    elif _nodes(g, "StudioPersonBox") or boxes:  # People: each dressed person's column tinted violet, each redrawn face pink
+        out = images[0].convert("RGB")
+        d = ImageDraw.Draw(out, "RGBA")
+        for n in _nodes(g, "StudioPersonBox"):  # no face found: the middle third
+            box = n["inputs"]["box"] or f"{out.width // 3},0,{2 * out.width // 3},0"
+            x0, y0, x1, y1 = (int(v) for v in box.split(","))
+            d.rectangle((x0 - (x1 - x0), y1, x1 + (x1 - x0), out.height), fill=(150, 80, 220, 110))
+        for box in boxes:
+            d.rectangle(tuple(int(v) for v in box.split(",")), fill=(255, 62, 165, 110))
+    elif _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
         w, h = images[0].size
         out = Image.new("RGB", (w, h))
         taps = json.loads(_nodes(g, "SAM3_Detect")[0]["inputs"].get("positive_coords", "[]"))

@@ -347,7 +347,7 @@ async def _json(request: Request) -> dict:
         body.pop(f"{name}_size", None)  # stated with the upload only
         if body.get(name):
             body[name], body[f"{name}_size"] = stored(body[name], name)
-    for person in body.get("face_people") or []:  # each person's face photo, for the face pass to tell them apart
+    for person in [*(body.get("face_people") or []), *(body.get("people") or [])]:  # face photos, to tell people apart
         if isinstance(person, dict) and person.get("face"):
             person["face"] = stored(person["face"], "face photo")[0]
     key = body.get("key")
@@ -382,19 +382,24 @@ def _face_people(raw) -> list[dict] | None:
         return None
     if not isinstance(raw, list) or not 2 <= len(raw) <= graphs.FACE_PEOPLE:
         raise HTTPException(400, f"the face pass tells 2 to {graphs.FACE_PEOPLE} people apart")
-    people = []
-    for x in raw:
-        try:
-            text, side = str(x.get("text", "")).strip(), str(x.get("side", ""))
-            loras = [(str(lo["name"]), float(lo["strength"])) for lo in x.get("loras") or []]
-        except (AttributeError, TypeError, ValueError, KeyError) as e:
-            raise HTTPException(400, f"malformed person for the face pass: {e}")
-        if len(text) > 2000 or side not in ("", "left", "center", "right"):
-            raise HTTPException(400, "a person's description is up to 2000 characters, their side left, center or right")
-        if len(loras) > 8 or any(not -8 <= w <= 8 or "/" in n for n, w in loras):
-            raise HTTPException(400, "at most 8 LoRAs a person, strengths between -8 and 8")
-        people.append({"text": text, "side": side, "loras": loras, "face": x.get("face") and _photo(x["face"])})
-    return people
+    return [{**_person(x), "face": x.get("face") and _photo(x["face"])} for x in raw]
+
+
+SIDES = ("", "left", "center", "right")
+
+
+def _person(x) -> dict:
+    """One person of a picture as the face pass and People take them: their description, own LoRAs and side."""
+    try:
+        text, side = str(x.get("text", "")).strip(), str(x.get("side", ""))
+        loras = [(str(lo["name"]), float(lo["strength"])) for lo in x.get("loras") or []]
+    except (AttributeError, TypeError, ValueError, KeyError) as e:
+        raise HTTPException(400, f"malformed person: {e}")
+    if len(text) > 2000 or side not in SIDES:
+        raise HTTPException(400, "a person's description is up to 2000 characters, their side left, center or right")
+    if len(loras) > 8 or any(not -8 <= w <= 8 or "/" in n for n, w in loras):
+        raise HTTPException(400, "at most 8 LoRAs a person, strengths between -8 and 8")
+    return {"text": text, "side": side, "loras": loras}
 
 
 def _face_pass(raw) -> float | None:
@@ -473,7 +478,7 @@ async def upscale(request: Request):
 async def inpaint(request: Request):
     """Repaint part of an image (graphs.inpaint). The phone sends the image, its mask at the image's size (found
     with /api/mask and painted), the prompt for what goes inside, the setup to repaint with, optionally `target`
-    (what the mask was found as, recorded only) and a face photo for the head swap."""
+    (what the mask was found as, recorded only) and a face photo for the head swap. Dressing is /api/people."""
     body = await _json(request)
     b64, mask = str(body.get("image", "")), str(body.get("mask", ""))
     if not b64 or not mask or len(b64) > MAX_IMAGE or len(mask) > MAX_IMAGE:
@@ -487,8 +492,6 @@ async def inpaint(request: Request):
     if (mw, mh) != (w, h):
         raise HTTPException(400, f"the mask is {mw}×{mh} and the image {w}×{h}; they must match")
     target = str(body.get("target", "")).strip()[:200]
-    if body.get("dress") is not None:
-        return _dress(body, b64, mask, seed, (w, h), target)
     p = _params({**body, "width": 1024, "height": 1024, "seed": seed})  # same checks as a render; the size is the image's
     reference = _reference(body, p["family"])
     params = {**p, "kind": "inpaint", "width": w, "height": h, "target": target, "reference": bool(reference)}
@@ -534,28 +537,6 @@ def _finish(spec, prompt: str, seed: int, what: str) -> dict | None:
     return finish
 
 
-def _dress(body: dict, b64: str, mask: str, seed: int, size: tuple[int, int], target: str) -> dict:
-    """Dressing (graphs.dress): the prompt is the outfit. `dress` holds the hold, the Z-Image setup that dresses the
-    body, and optionally the setup that finishes it with its strength; a face photo needs a Krea 2 finish."""
-    d = body["dress"]
-    if not isinstance(d, dict) or not isinstance(d.get("hold"), str) or d["hold"] not in graphs.DRESS_HOLD:
-        raise HTTPException(400, f"dress needs hold, one of {list(graphs.DRESS_HOLD)}")
-    outfit = str(body.get("prompt", "")).strip()
-    dresser = _pass(d.get("dresser"), outfit, seed, "the dress pass")
-    if dresser["family"] != "zimage":
-        raise HTTPException(400, "the dress pass runs on a Z-Image model: its controlnet holds the body")
-    finish = _finish(d.get("finish"), outfit, seed, "the finish")
-    swap = bool(finish) and finish["family"] in graphs.HEADSWAP_FAMILIES
-    if body.get("reference") and not swap:
-        raise HTTPException(400, "a face photo needs a Krea 2 finish: the head swap runs on its loaders")
-    reference = _reference(body, "krea2")
-    # the job's model is what drew the last pixels: the finish when there is one, else the dresser
-    p = _params({**(d["finish"] if finish else d["dresser"]), "prompt": outfit, "seed": seed, "width": 1024, "height": 1024})
-    params = {**p, "kind": "dress", "dresser": dresser["unet"], "width": size[0], "height": size[1], "target": target, "reference": bool(reference),
-              "hold": d["hold"], "finish": finish["unet"] if finish else None}
-    return _start(body, params, graphs.dress(b64, mask, outfit, seed, d["hold"], dresser, finish, reference))
-
-
 @api.post("/api/mask")
 async def mask_preview(request: Request):
     """What SAM 3.1 finds in a picture by `text`, by tapped `points` or by both, as a white-on-black mask
@@ -574,6 +555,94 @@ async def mask_preview(request: Request):
     params = {"kind": "mask", "unet": "sam3.1_multiplex_fp16.safetensors", "family": "sam", "prompt": text, "negative": "",
               "width": w, "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
     return _start(body, params, graphs.mask(b64, text, points), queued=False)
+
+
+@api.post("/api/faces")
+async def find_faces(request: Request):
+    """Every face on a picture and whose it is (graphs.faces): `people` are the cast as far as telling them apart goes,
+    each with a side and maybe a face photo. Runs outside stop-after, like the other looks ahead of an edit."""
+    body = await _json(request)
+    b64 = str(body.get("image", ""))
+    if not b64 or len(b64) > MAX_IMAGE:
+        raise HTTPException(400, "missing image, or larger than 40 MB")
+    w, h = _png_size(body)
+    raw = body.get("people") or []
+    if not isinstance(raw, list) or len(raw) > graphs.FACE_PEOPLE:
+        raise HTTPException(400, f"at most {graphs.FACE_PEOPLE} people to tell apart")
+    cast = [{"side": _person(x)["side"], "face": x.get("face") and _photo(x["face"])} for x in raw]
+    params = {"kind": "faces", "unet": "buffalo_l", "family": "faces", "prompt": "", "negative": "",
+              "width": w, "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
+    return _start(body, params, graphs.faces(b64, cast), queued=False)
+
+
+@api.post("/api/people")
+async def edit_people(request: Request):
+    """Everyone on a picture at once (graphs.people): each of `people` (their face's `box` in pixels as /api/faces found
+    it, `text`, `loras`, and `outfit` with `part`, or `redraw`) dressed and their face redrawn. `dress` is hold,
+    dresser and finish as /api/inpaint's; `face` the face pass's setup with its strength as `denoise`; `mask`, the image's
+    size, for whoever is dressed over part "mask". A person without a box is whoever RT-DETR finds, for a picture with
+    no face found."""
+    body = await _json(request)
+    b64 = str(body.get("image", ""))
+    if not b64 or len(b64) > MAX_IMAGE:
+        raise HTTPException(400, "missing image, or larger than 40 MB")
+    try:
+        w, h = _png_size(body)
+        seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, f"malformed image or number: {e}")
+    raw = body.get("people")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= graphs.FACE_PEOPLE:
+        raise HTTPException(400, f"send 1 to {graphs.FACE_PEOPLE} people")
+    who = [_who(x, w, h) for x in raw]
+    mask = str(body.get("mask") or "") or None
+    if mask and _png_size(body, "mask") != (w, h):
+        raise HTTPException(400, "the mask must be the image's size")
+    if any(p["outfit"] and p["part"] == "mask" for p in who) and not mask:
+        raise HTTPException(400, "someone is dressed over the mask, and none was sent")
+    dressing, redrawing = any(p["outfit"] for p in who), any(p["redraw"] for p in who)
+    if not (dressing or redrawing):
+        raise HTTPException(400, "nothing to do: dress someone or redraw a face")
+    dress, last = None, None
+    if dressing:
+        d = body.get("dress")
+        if not isinstance(d, dict) or d.get("hold") not in graphs.DRESS_HOLD:
+            raise HTTPException(400, f"dressing needs dress.hold, one of {list(graphs.DRESS_HOLD)}")
+        dresser = _pass(d.get("dresser"), "dressing", seed, "the dress pass")
+        if dresser["family"] != "zimage":
+            raise HTTPException(400, "the dress pass runs on a Z-Image model: its controlnet holds the body")
+        dress = {"hold": d["hold"], "dresser": dresser, "finish": _finish(d.get("finish"), "dressing", seed, "the finish")}
+        last = d["finish"] if dress["finish"] else d["dresser"]
+    face = None
+    if redrawing:
+        f = body.get("face")
+        face = {**_pass(f, "faces", seed, "the face pass"), "denoise": _face_pass(f.get("denoise") if isinstance(f, dict) else None)}
+        if face["denoise"] is None:
+            raise HTTPException(400, "the face pass needs a strength")
+        last = f
+    # the job's model is what drew the last pixels: the face pass's when it runs, else the dressing's
+    p = _params({**last, "prompt": "; ".join(x["outfit"] or x["text"] for x in who)[:4000] or "people", "seed": seed, "width": 1024, "height": 1024})
+    params = {**p, "kind": "people", "width": w, "height": h, "people": len(who)}
+    return _start(body, params, graphs.people(b64, who, seed, dress, face, mask))
+
+
+def _who(x, w: int, h: int) -> dict:
+    """One person for /api/people, checked: their face's box inside the picture, what they wear and what to redraw."""
+    person = _person(x)
+    try:
+        box = [int(v) for v in x["box"]] if x.get("box") else None
+        outfit = str(x.get("outfit") or "").strip()
+        part = str(x.get("part") or "").strip()
+    except (TypeError, ValueError, KeyError) as e:
+        raise HTTPException(400, f"malformed person: {e}")
+    if box and (len(box) != 4 or not (0 <= box[0] < box[2] <= w and 0 <= box[1] < box[3] <= h)):
+        raise HTTPException(400, "a face's box lies outside the picture")
+    if not box and x.get("redraw"):
+        raise HTTPException(400, "a face is redrawn by its box")
+    if len(outfit) > 2000 or (outfit and not 0 < len(part) <= 200):
+        raise HTTPException(400, "an outfit is up to 2000 characters and needs the part it replaces, in up to 200")
+    return {**person, "box": ",".join(map(str, box)) if box else None, "outfit": outfit or None, "part": part,
+            "redraw": bool(x.get("redraw"))}
 
 
 def _points(raw: dict, w: int, h: int) -> dict:

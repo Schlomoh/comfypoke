@@ -42,10 +42,27 @@ export type InpaintRequest = Pick<Params, "unet" | "prompt" | "negative" | "lora
   target: string; // what the mask was found as, recorded only; the mask is what is replaced
   reference?: ImageRef; // face photo
   stop_after?: boolean;
-  dress?: DressRequest; // replace the clothes against the body's mesh (graphs.dress); prompt is the outfit
 };
 /** The passes of a dressing: Z-Image dresses the body held by its mesh, then optionally another model finishes it. */
 export type DressRequest = { hold: Hold; dresser: Pass; finish: (Pass & { denoise: number }) | null };
+/** Everyone on an image at once (graphs.people): each person by their face's box as /api/faces found it, with an
+ * outfit over a part (the words SAM finds it by), their face redrawn, or both. */
+export type PeopleRequest = {
+  image: ImageRef;
+  seed: number | null;
+  mask?: ImageRef; // the image's size: whoever is dressed over part "mask"
+  people: {
+    box: [number, number, number, number] | null; // their face as /api/faces found it; null when no face was found
+    text: string; // who they are, for their face
+    loras: Lora[]; // their face's
+    outfit: string | null;
+    part: string;
+    redraw: boolean;
+  }[];
+  dress: DressRequest | null; // when anyone is dressed
+  face: (Pass & { negative: string; denoise: number }) | null; // when any face is redrawn
+  stop_after?: boolean;
+};
 
 export type GpuState = "cold" | "starting" | "warm" | "busy";
 export type Gpu = {
@@ -125,6 +142,10 @@ export const api = {
     post<Started>("/api/face", { image, reference, key }), // a score
   mask: (key: WrappedKey, image: ImageRef, text: string, points?: { positive: Pt[]; negative: Pt[] }) =>
     post<Started>("/api/mask", { image, text, points, key }),
+  /** Every face on the picture and whose of `people` (by side, or face photo) it is, as a label image. */
+  faces: (key: WrappedKey, image: ImageRef, people: { side: string; face?: ImageRef }[]) =>
+    post<Started>("/api/faces", { image, people, key }),
+  people: (key: WrappedKey, p: PeopleRequest) => post<Started>("/api/people", { ...p, key }),
   transport: () => call<{ kid: string; spki: string }>("/api/transport"),
   /** A sealed image, once per image (data/images.ts); a PNG's size goes along, since the studio cannot read it. */
   putImage: (sealed: Blob, size?: { width: number; height: number }) =>

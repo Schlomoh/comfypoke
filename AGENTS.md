@@ -89,19 +89,25 @@ explains where things are and how to change them without breaking the deployment
   (`mask-tools.tsx`: brush, eraser, tap, find…, body, invert and clear) and built on the phone as steps
   (`edit/mask.ts`, listed and removable in `mask-summary.tsx`): areas SAM 3.1 found through `/api/mask`
   (`graphs.mask`, white on black) by words (`use-find.ts`) or by tapped points (`use-taps.ts`), brush and eraser
-  strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own at edit time. The
+  strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own for a repaint. The
   fitted body (`/api/body`) shows as a half-strength layer under the mask, with every tool still working. A
-  Repaint/Dress choice (`editAtom.mode`) picks the chain: Repaint is `graphs.inpaint`
-  (workflow 09's chain: crop and stitch, LanPaint) with a picked look; Dress is dressing, `graphs.dress`, sent
-  through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as depth into Z-Image's
-  Fun Controlnet) with a Z-Image look, and optionally a light LanPaint finish with any look. Its outfits are a
-  person's Wearing row of the Prompt tab, spelled out per render (`domain/outfits.ts`): switched-on chips are
-  worn together, each version is another job. Both modes put the person's Who, Look (and, repainting, Wearing)
-  into the prompt, never Doing (`portrait` in `compose.ts`, switch `editAtom.portrait`). An edit sends `editAtom.takes` jobs per outfit, each
-  with its own seed, and the stage stays on the source: results land in its lineage (`edit/edit-lineage.tsx`, from
-  `Job.source`), a finished job never takes the stage, and an image without a mask can take its source's. "before"
-  (or C held) shows the source under the mask (`peekAtom`). The passes are chips (`edit/passes.tsx`). `/api/mask` and
-  `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
+  People/Repaint choice (`editAtom.mode`) picks the chain. Repaint is `graphs.inpaint` (workflow 09's chain: crop and
+  stitch, LanPaint) with a picked look, the person's Who, Look and Wearing after the words. People
+  (`edit/people/`) works on everyone at once: `/api/faces` (`graphs.faces`, StudioFaceLabels) finds every face and
+  guesses whose it is by face photo, then side (`comfy_nodes/studio_face/assign.py`), as one sealed label image the
+  phone reads (`facesOf` in `domain/people.ts`); the faces are outlined on the stage and each gets a card: who, a new
+  outfit over a part ("all clothes" and the like, or the mask), its face redrawn. `/api/people` (`graphs.people`)
+  sends it as one render: each dressed person's part is SAM's find by words cut to their silhouette (SAM with their
+  RT-DETR box and no words, `StudioPersonBox`; with words a box is only an example), dressed by workflow 08's chain
+  (`_dressed`: SAM 3D Body's mesh for that person as depth into Z-Image's Fun Controlnet, optionally a light LanPaint
+  finish), then each face picked gets the face pass with its own words and LoRAs (`facePerson` in `domain/face.ts`).
+  Outfits are a person's Wearing row of the Prompt tab (`domain/outfits.ts`); versions go side by side
+  (`sideBySide`), one render per version, each `editAtom.takes` times with its own seed. Who and Look go into the
+  prompt, never Doing (`portrait` in `compose.ts`, switch `editAtom.portrait`). The stage stays on the source:
+  results land in its lineage (`edit/edit-lineage.tsx`, from `Job.source`), a finished job never takes the stage,
+  and an image without a mask can take its source's. "before"
+  (or C held) shows the source under the mask (`peekAtom`). The passes are chips (`edit/passes.tsx`). `/api/mask`,
+  `/api/faces` and `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
   Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,
   managed from the Look tab's head (`model/look-sheet.tsx`) and picked per pass. A LoRA in the stack belongs to
   the look or to a saved character in the cast (`StackLora.from`, the character's `loras[family]`); its row's tag
