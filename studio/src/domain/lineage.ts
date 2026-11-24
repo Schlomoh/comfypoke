@@ -113,3 +113,47 @@ export function visible(ss: Stack[], unfolded: ReadonlySet<string>) {
       : g.stacks,
   );
 }
+
+/** A stack depth first: the root, then each image made from it oldest first, each followed by everything made from
+ * it before its next sibling. */
+export function depthFirst(s: Stack): Render[] {
+  const kids = new Map<string, Render[]>(); // members are oldest first, so each list is too
+  for (const m of s.members.slice(1))
+    kids.set(m.source as string, [...(kids.get(m.source as string) ?? []), m]);
+  const out: Render[] = [];
+  const seen = new Set<string>();
+  const walk = (r: Render) => {
+    if (seen.has(r.id)) return;
+    seen.add(r.id);
+    out.push(r);
+    for (const k of kids.get(r.id) ?? []) walk(k);
+  };
+  walk(s.root);
+  return out;
+}
+
+/** What swiping goes through in a stack: all of it depth first, or once any image in it is marked best, only those. */
+export function trail(s: Stack): Render[] {
+  const all = depthFirst(s);
+  const best = all.filter((m) => m.best);
+  return best.length ? best : all;
+}
+
+/** Where `id` sits in `seq` (the trails one after another): its index, or for an image left out of its trail, half a
+ * step past the trail image before it in `order` (its stack depth first), else half a step before the one after it.
+ * undefined when it is in neither. */
+export function placeIn(seq: string[], order: string[] | undefined, id: string): number | undefined {
+  const i = seq.indexOf(id);
+  if (i >= 0) return i;
+  const p = order?.indexOf(id) ?? -1;
+  if (!order || p < 0) return undefined;
+  for (let k = p - 1; k >= 0; k--) {
+    const j = seq.indexOf(order[k]);
+    if (j >= 0) return j + 0.5;
+  }
+  for (let k = p + 1; k < order.length; k++) {
+    const j = seq.indexOf(order[k]);
+    if (j >= 0) return j - 0.5;
+  }
+  return undefined;
+}

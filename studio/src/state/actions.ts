@@ -7,15 +7,17 @@ import { Locked } from "@/data/api";
 import { removeRender, useRenders } from "@/data/db/renders";
 import { lockApp, useCatalog } from "@/data/queries";
 import { errorText } from "@/domain/format";
+import { placeIn } from "@/domain/lineage";
 import { parseRecipe } from "@/domain/parse";
 import { EMPTY, fromSize, legacyUnet, phrase, type Recipe } from "@/domain/recipe";
 import { withUpscales, type Render } from "@/domain/render";
 import { upscaleOf } from "@/state/generate";
 import { useJobs } from "@/state/jobs";
 import {
-  stepFromAtom,
+  cursorAtom,
   focusAtom,
   jobsAtom,
+  orderOfAtom,
   recipeAtom,
   rendersAtom,
   sequenceAtom,
@@ -44,7 +46,8 @@ export function useRendersSync() {
 
 /** The library's thumbnail for an item, wherever it is on screen (the phone tab and the desktop column both have one). */
 const revealThumb = (id: string) => {
-  for (const el of document.querySelectorAll(`[data-render="${CSS.escape(id)}"]`))
+  const at = CSS.escape(id); // an image inside a closed stack shows as its stack's tile
+  for (const el of document.querySelectorAll(`[data-render="${at}"], [data-stack~="${at}"]`))
     el.scrollIntoView({ block: "nearest" });
 };
 
@@ -118,30 +121,33 @@ export function useImageActions() {
     return ids;
   };
 
+  /** Where an image or job sits in the sequence; a fraction for an image left out of its stack's trail. */
+  const place = (id: string) => placeIn(store.get(sequenceAtom), store.get(orderOfAtom).get(id), id);
+
   /** Deletes one image (and its upscales), then shows the next one where it was. */
   const remove = async (r: Render) => {
-    const items = store.get(sequenceAtom); // the covers on screen, as browsing goes
-    const from = store.get(stepFromAtom);
+    const items = store.get(sequenceAtom); // as browsing goes
+    const at = place(r.id) ?? -1;
     const gone = await removeMany([r]);
     if (!gone) return;
-    const at = items.indexOf(from ?? r.id);
     const left = (start: number, dir: 1 | -1) => {
       for (let i = start; i >= 0 && i < items.length; i += dir) if (!gone.has(items[i])) return items[i];
     };
-    // an image inside a stack that is still there: its cover; otherwise the next stack, or the one before
-    const stays = from && from !== r.id && !gone.has(from) ? from : undefined;
-    const after = stays ?? left(at + 1, 1) ?? left(at - 1, -1);
+    // the next image in the sequence, else the one before
+    const after = left(Math.floor(at) + 1, 1) ?? left(Math.ceil(at) - 1, -1);
     store.set(focusAtom, after ?? null);
     if (store.get(viewerAtom)) store.set(viewerAtom, after ?? null);
   };
 
-  /** Moves through the queue and the library by n images. The zoom stays as it is. */
+  /** Moves through the queue and the library by n images. From an image left out of its trail, the first step goes to
+   * the trail image next to it in its stack. The zoom stays as it is. */
   const step = (n: number) => {
     const items = store.get(sequenceAtom);
-    const at = items.indexOf(store.get(stepFromAtom) ?? "");
-    const to = Math.min(items.length - 1, Math.max(0, at + n));
+    const from = store.get(cursorAtom);
+    const at = (from ? place(from) : undefined) ?? -1;
+    const to = Math.min(items.length - 1, Math.max(0, (n > 0 ? Math.floor(at) : Math.ceil(at)) + n));
     const next = items[to];
-    if (!next || to === at) return false; // at an end: stay, even on an image inside the stack
+    if (!next || (at >= 0 && (n > 0 ? to <= at : to >= at))) return false; // at an end: stay
     if (store.get(viewerAtom)) store.set(viewerAtom, next);
     store.set(focusAtom, next);
     revealThumb(next);

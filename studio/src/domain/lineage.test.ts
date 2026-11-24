@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { childCounts, family, groups, kindOf, lineage, stacks, visible } from "@/domain/lineage";
+import {
+  childCounts,
+  family,
+  groups,
+  kindOf,
+  lineage,
+  placeIn,
+  stacks,
+  trail,
+  visible,
+} from "@/domain/lineage";
 import type { Render } from "@/domain/render";
 
 const r = (id: string, source?: string, more: Partial<Render> = {}): Render => ({
@@ -84,5 +94,34 @@ describe("visible", () => {
   it("folds the picked-over stacks of a batch until it is unfolded", () => {
     expect(visible(stacks(batch), new Set()).map((s) => s.root.id)).toEqual(["a"]);
     expect(visible(stacks(batch), new Set(["x"]))).toHaveLength(3);
+  });
+});
+
+const ids = (xs: Render[]) => xs.map((x) => x.id);
+
+describe("trail", () => {
+  // o → A (upscale) → A1 (edit of A); o → B (upscale), made after A1
+  const fork = [r("o"), r("p", "o"), r("q", "p"), r("s", "o")];
+  it("goes depth first through a fork", () =>
+    expect(ids(trail(stacks(fork)[0]))).toEqual(["o", "p", "q", "s"]));
+  it("keeps a branch before the next sibling even when the sibling is older", () => {
+    const late = [r("o"), r("p", "o"), r("s", "o"), r("t", "p")];
+    expect(ids(trail(stacks(late)[0]))).toEqual(["o", "p", "t", "s"]);
+  });
+  it("is only the ones marked best once any are", () => {
+    const marked = fork.map((x) => (x.id === "q" || x.id === "s" ? { ...x, best: true } : x));
+    expect(ids(trail(stacks(marked)[0]))).toEqual(["q", "s"]);
+  });
+  it("is the whole stack with none marked", () => expect(trail(stacks([r("o")])[0])).toHaveLength(1));
+});
+
+describe("placeIn", () => {
+  const order = ["o", "p", "q", "s"];
+  it("is the index of an image in the sequence", () => expect(placeIn(["j", "q", "s"], order, "s")).toBe(2));
+  it("puts a left-out image after the trail image before it", () =>
+    expect(placeIn(["j", "q", "s", "x"], order, "p")).toBe(0.5));
+  it("puts it before the next one when none comes before", () => {
+    expect(placeIn(["q", "s"], order, "o")).toBe(-0.5);
+    expect(placeIn(["x"], undefined, "o")).toBeUndefined();
   });
 });

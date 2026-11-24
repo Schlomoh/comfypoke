@@ -5,7 +5,7 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 import type { Job } from "@/domain/job";
-import { stacks, visible } from "@/domain/lineage";
+import { depthFirst, stacks, trail, visible } from "@/domain/lineage";
 import { EMPTY, type Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { FIT, type View } from "@/domain/view";
@@ -69,9 +69,15 @@ export const stacksAtom = atom((get) => stacks(get(shownAtom)));
 export const unfoldedAtom = atom<ReadonlySet<string>>(new Set<string>());
 /** The stacks on screen: picked-over ones in a folded batch are not. Browsing and "select all" go by these. */
 export const visibleStacksAtom = atom((get) => visible(get(stacksAtom), get(unfoldedAtom)));
-/** Each shown image's stack cover: where browsing goes on from an image inside a stack. */
-const coverOfAtom = atom(
-  (get) => new Map(get(stacksAtom).flatMap((s) => s.members.map((m) => [m.id, s.cover.id]))),
+/** Each shown image's stack, depth first, by id: where stepping goes on from an image left out of its trail. */
+export const orderOfAtom = atom(
+  (get) =>
+    new Map(
+      get(stacksAtom).flatMap((s) => {
+        const ids = depthFirst(s).map((m) => m.id);
+        return ids.map((id) => [id, ids]);
+      }),
+    ),
 );
 export const bestCountAtom = atom((get) => get(ofCharacterAtom).filter((r) => r.best).length);
 export const libraryFilterAtom = atom((get) => ({
@@ -105,14 +111,9 @@ export const cursorAtom = atom((get) => {
   return (render ?? job ?? stage.job ?? stage.render)?.id ?? null;
 });
 
-/** Queue and library in the order the library lists them, for stepping through with arrows and swipes: one step per
- * stack, by its cover (the viewer's lineage strip goes within a stack). */
+/** Queue and library in the order the library lists them, for stepping through with arrows and swipes: the jobs in
+ * flight, then each stack's trail (domain/lineage.ts: all of it depth first, or only its bests). */
 export const sequenceAtom = atom((get) => [
   ...get(liveJobsAtom).map((j) => j.id),
-  ...get(visibleStacksAtom).map((s) => s.cover.id),
+  ...get(visibleStacksAtom).flatMap((s) => trail(s).map((m) => m.id)),
 ]);
-/** Where stepping starts from an image: its stack's cover, which is in the sequence. */
-export const stepFromAtom = atom((get) => {
-  const at = get(cursorAtom);
-  return at ? (get(coverOfAtom).get(at) ?? at) : null;
-});

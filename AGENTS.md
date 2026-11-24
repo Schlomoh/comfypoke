@@ -107,7 +107,8 @@ explains where things are and how to change them without breaking the deployment
   the look or to a saved character in the cast (`StackLora.from`, the character's `loras[family]`); its row's tag
   gives it to another in its place (`reassign` in `domain/loras.ts`, applied by `useCastLoras` once the
   characters are written). The library shows stacks, an image and everything made from it
-  (`domain/lineage.ts`), grouped by the Generate that made them. A die on a Prompt row adds a preset as a
+  (`domain/lineage.ts`), grouped by the Generate that made them (a batch of several is a `Band` of its own). Swipes and arrows go
+  through each stack's `trail`: depth first, or only its bests once any are marked. A die on a Prompt row adds a preset as a
   version, a pin keeps the row out of Surprise me, which sends renders that each change one row to a preset
   (`domain/shuffle.ts`). Presets a person adds go into the subcategory open in the picker (`Preset.group`; none
   is More), and removing a built-in one stores it with `hidden` (`presetGroups` in `domain/presets/index.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
