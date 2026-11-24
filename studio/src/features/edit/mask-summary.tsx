@@ -1,6 +1,6 @@
 // The mask so far, as its steps: what was found or tapped, painted, erased, inverted or cleared, each one taken out
-// with its ×. Strokes in a row are one step here. Below them, what is still being found and the body's state.
-import { useAtom } from "jotai";
+// with its ×. Strokes in a row are one step here. An image without a mask can take its source's. Below them, what is still being found and the body's state.
+import { useAtom, useAtomValue } from "jotai";
 
 import { status } from "@/domain/job";
 import type { Render } from "@/domain/render";
@@ -8,6 +8,8 @@ import type { Op } from "@/features/edit/mask";
 import { masksAtom, showBodyAtom, tapsAtom } from "@/features/edit/state";
 import { useFinding } from "@/features/edit/use-find";
 import { usePreview } from "@/state/preview";
+import { rendersAtom } from "@/state/studio";
+import { Button } from "@/ui/button";
 import { ChipRow, Tag } from "@/ui/chip";
 import { Section } from "@/ui/section";
 import { Note } from "@/ui/text";
@@ -40,6 +42,10 @@ export function MaskSummary({ render }: { render: Render }) {
   const finding = useFinding(render);
   const groups = grouped(masks[render.id] ?? []);
   const showBody = bodyOf === render.id;
+  // steps are fractions of the image, so the source's mask fits any image of its shape: an upscale, an edit
+  const source = (useAtomValue(rendersAtom) ?? []).find((r) => r.id === render.source);
+  const sameShape = !!source && Math.abs(source.width / source.height - render.width / render.height) < 0.01;
+  const carried = sameShape ? (masks[source.id] ?? []) : [];
   return (
     <Section
       title="Mask"
@@ -47,6 +53,16 @@ export function MaskSummary({ render }: { render: Render }) {
     >
       {groups.length === 0 && finding.length === 0 && (
         <Note>Nothing yet: paint, tap or find on the image.</Note>
+      )}
+      {groups.length === 0 && carried.length > 0 && (
+        <Button
+          variant="link"
+          size="inline"
+          className="self-start"
+          onClick={() => setMasks((m) => ({ ...m, [render.id]: carried }))}
+        >
+          Use the mask of the image it was made from
+        </Button>
       )}
       {(groups.length > 0 || finding.length > 0) && (
         <ChipRow>

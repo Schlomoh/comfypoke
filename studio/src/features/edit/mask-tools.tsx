@@ -3,7 +3,7 @@
 // what the tool needs at hand: the brush's size, or how tapping works and Done. Undo takes back the last step, or in
 // tap mode the last point.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "@/data/api";
 import { loadImage } from "@/data/db/renders";
@@ -15,6 +15,7 @@ import {
   BRUSH,
   brushAtom,
   masksAtom,
+  peekAtom,
   showBodyAtom,
   tapsAtom,
   tapStageAtom,
@@ -95,6 +96,8 @@ export function MaskTools({ render, steps }: { render: Render; steps: number }) 
   const running = useAtomValue(tapStageAtom);
   const setMasks = useSetAtom(masksAtom);
   const [bodyOf, setBodyOf] = useAtom(showBodyAtom);
+  const setPeek = useSetAtom(peekAtom);
+  useEffect(() => () => setPeek(null), [setPeek]); // the bar gone while held
   const body = usePreview(`body:${id}`);
   const showBody = bodyOf === id;
   const points = allTaps[id]?.points ?? [];
@@ -164,6 +167,21 @@ export function MaskTools({ render, steps }: { render: Render; steps: number }) 
               />
             </span>
           </label>
+        )}
+        {render.source && (
+          <Button
+            title="Hold to see the image this one was made from (hold C)"
+            className="touch-none select-none"
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId); // the up comes here even off the button
+              setPeek(id);
+            }}
+            onPointerUp={() => setPeek(null)}
+            onPointerCancel={() => setPeek(null)}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            before
+          </Button>
         )}
         <Button disabled={!steps && !points.length} title="Undo the last step (⌘Z)" onClick={undo}>
           Undo

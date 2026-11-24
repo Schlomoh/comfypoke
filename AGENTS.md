@@ -97,7 +97,10 @@ explains where things are and how to change them without breaking the deployment
   Fun Controlnet) with a Z-Image look, and optionally a light LanPaint finish with any look. Its outfits are a
   person's Wearing row of the Prompt tab, spelled out per render (`domain/outfits.ts`): switched-on chips are
   worn together, each version is another job. Both modes put the person's Who, Look (and, repainting, Wearing)
-  into the prompt, never Doing (`portrait` in `compose.ts`, switch `editAtom.portrait`). The passes are chips (`edit/passes.tsx`). `/api/mask` and
+  into the prompt, never Doing (`portrait` in `compose.ts`, switch `editAtom.portrait`). An edit sends `editAtom.takes` jobs per outfit, each
+  with its own seed, and the stage stays on the source: results land in its lineage (`edit/edit-lineage.tsx`, from
+  `Job.source`), a finished job never takes the stage, and an image without a mask can take its source's. "before"
+  (or C held) shows the source under the mask (`peekAtom`). The passes are chips (`edit/passes.tsx`). `/api/mask` and
   `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
   Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,
   managed from the Look tab's head (`model/look-sheet.tsx`) and picked per pass. A LoRA in the stack belongs to

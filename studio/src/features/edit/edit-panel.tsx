@@ -6,9 +6,10 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { portrait } from "@/domain/compose";
 import { outfitPieces } from "@/domain/outfits";
 import type { Person } from "@/domain/recipe";
+import { EditLineage } from "@/features/edit/edit-lineage";
 import { MaskSummary } from "@/features/edit/mask-summary";
 import { Passes } from "@/features/edit/passes";
-import { editAtom } from "@/features/edit/state";
+import { editAtom, TAKES } from "@/features/edit/state";
 import { flash } from "@/features/prompt/flash";
 import { Row } from "@/features/prompt/rows";
 import { openAtom } from "@/features/prompt/state";
@@ -123,6 +124,7 @@ export function EditPanel() {
   const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
   return (
     <div>
+      {render && <EditLineage render={render} />}
       {render ? (
         <MaskSummary key={render.id} render={render} />
       ) : (
@@ -150,6 +152,16 @@ export function EditPanel() {
         {person && <Who person={person} />}
       </Section>
       <Passes />
+      <Section
+        title="Takes"
+        tip="Each outfit, or the repaint, sent this many times, each with a seed of its own, one after another. They show in the lineage above as they come back; the stage stays on this image."
+      >
+        <Segmented
+          value={c.takes}
+          options={TAKES.map((n) => ({ value: n, label: `×${n}` }))}
+          onChange={(takes) => setC((x) => ({ ...x, takes }))}
+        />
+      </Section>
     </div>
   );
 }
