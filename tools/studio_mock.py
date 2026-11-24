@@ -78,7 +78,9 @@ async def fake(g, pid):
         yield msg("execution_success")
         return
     # a repaint or a dressing, by the mask that came with the picture; a render's face pass crops too, with no picture
-    cropped = len(images) > 1 and bool(_nodes(g, "InpaintCropImproved")) and "SetLatentNoiseMask" in {n["class_type"] for n in g.values()}
+    first = next((g[k] for k in sorted(g, key=int) if g[k]["class_type"] == "KSampler"), None)  # the render's own sampler
+    rendered = bool(first) and g.get(first["inputs"]["latent_image"][0], {}).get("class_type", "").startswith("Empty")
+    cropped = not rendered and len(images) > 1 and bool(_nodes(g, "InpaintCropImproved")) and "SetLatentNoiseMask" in {n["class_type"] for n in g.values()}
     if _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
         w, h = images[0].size
         out = Image.new("RGB", (w, h))
