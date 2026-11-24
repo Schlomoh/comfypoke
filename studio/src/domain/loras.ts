@@ -27,6 +27,19 @@ const live = (loras: StackLora[], notes: readonly Note[], family: string | undef
 export const runnable = (loras: StackLora[], notes: readonly Note[], family: string | undefined) =>
   live(loras, notes, family).map(({ name, strength }) => ({ name, strength }));
 
+/** What runs for one person's face pass: the stack's own LoRAs and that person's character's, none of anyone else's. */
+export const ownedBy = (
+  loras: StackLora[],
+  notes: readonly Note[],
+  family: string | undefined,
+  savedId: string | null | undefined,
+) =>
+  runnable(
+    loras.filter((l) => !l.from || l.from === savedId),
+    notes,
+    family,
+  );
+
 /** The trigger words of the switched-on LoRAs that run with this family, in stack order. */
 export function triggersOf(loras: StackLora[], notes: readonly Note[], family?: string): Triggers {
   const out: Triggers = { lead: [], of: {} };

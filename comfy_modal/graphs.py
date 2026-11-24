@@ -87,13 +87,19 @@ def _base(g: G, family: str, unet: str, text: str, negative: str, cfg: float, lo
     bare = _unet(g, unet)
     clip = g.add("CLIPLoader", clip_name=f["clip"][0], type=f["clip"][1], device="default", stage="loading")
     vae = g.add("VAELoader", vae_name=f["vae"], stage="loading")
-    pos = g.add("CLIPTextEncode", text=text, clip=clip, stage="encoding")
-    neg = (g.add("CLIPTextEncode", text=negative, clip=clip) if cfg > 1
+    return _rebase(g, Base(bare, bare, clip, vae, bare, bare), family, text, negative, cfg, loras)
+
+
+def _rebase(g: G, b: Base, family: str, text: str, negative: str, cfg: float, loras: list[tuple[str, float]]) -> Base:
+    """The loaders of `b` (its bare model, encoder and VAE) with a prompt and LoRA chain of their own: what `_base`
+    finishes, and one person's face pass."""
+    pos = g.add("CLIPTextEncode", text=text, clip=b.clip, stage="encoding")
+    neg = (g.add("CLIPTextEncode", text=negative, clip=b.clip) if cfg > 1
            else g.add("ConditioningZeroOut", conditioning=pos))
-    model = _loras(g, bare, loras)
-    if "shift" in f:
-        model = g.add("ModelSamplingAuraFlow", shift=f["shift"], model=model)
-    return Base(bare, model, clip, vae, pos, neg)
+    model = _loras(g, b.bare, loras)
+    if "shift" in FAMILIES[family]:
+        model = g.add("ModelSamplingAuraFlow", shift=FAMILIES[family]["shift"], model=model)
+    return Base(b.bare, model, b.clip, b.vae, pos, neg)
 
 
 def _image(g: G, b64: str) -> Ref:
@@ -181,9 +187,13 @@ def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, ref_boost: fl
 FACE_PASS = (0.15, 0.6)
 
 
-def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float) -> Ref:
-    # SCRFD's box around the largest face (comfy_nodes/studio_face), not SAM's "face", which can take the sky for one
-    face = g.add("StudioFaceMask", image=image, grow=0.15, stage="masking")
+def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float,
+              which: dict | None = None, found_in: Ref | None = None) -> Ref:
+    """The largest face redrawn, or with `which` (StudioFaceMask's slot, people and refs) one person's, found in
+    `found_in` (the render before any face pass, so every person's face is decided on the same picture) and redrawn
+    in `image`."""
+    # SCRFD's box around the face (comfy_nodes/studio_face), not SAM's "face", which can take the sky for one
+    face = g.add("StudioFaceMask", image=found_in or image, grow=0.15, stage="masking", **(which or {}))
     crop = g.add("InpaintCropImproved", {**CROP, "context_from_mask_extend_factor": 2.0}, image=image, mask=face)
     latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=crop.out(1), vae=b.vae), mask=crop.out(2))
     redrawn = g.add("VAEDecode", samples=_sampler(g, family, b, latent, seed, steps, cfg, denoise, "refining"), vae=b.vae,
@@ -194,12 +204,29 @@ def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg
     return g.add("ImageCompositeMasked", x=0, y=0, resize_source=False, destination=image, source=stitched, mask=keep)
 
 
+FACE_PEOPLE = 4  # comfy_nodes/studio_face REFS: people a face pass tells apart
+
+
+def _facepasses(g: G, b: Base, last: dict, image: Ref, seed: int, denoise: float, people: list[dict]) -> Ref:
+    """One face pass per person of `people` (text, loras, side, face: a photo or None), each with only their own LoRAs
+    and description, so two characters' faces do not drift towards each other. Which face is whose: assign.py."""
+    refs = {f"ref_{n}": _image(g, p["face"]) for n, p in enumerate(people) if p.get("face")}
+    sides = json.dumps([p["side"] for p in people])
+    rendered = image
+    for slot, p in enumerate(people):
+        own = _rebase(g, b, last["family"], p["text"], last["negative"], last["cfg"], p["loras"])
+        image = _facepass(g, own, last["family"], image, seed, last["steps"], last["cfg"], denoise,
+                          {"slot": slot, "people": sides, **refs}, found_in=rendered)
+    return image
+
+
 def graph(family: str, unet: str, text: str, negative: str, width: int, height: int, seed: int, steps: int, cfg: float,
           loras: list[tuple[str, float]], face: str | None = None, finish: dict | None = None,
-          face_pass: float | None = None) -> dict:
+          face_pass: float | None = None, face_people: list[dict] | None = None) -> dict:
     """A render. With `finish` (family, unet, text, negative, steps, cfg, loras, denoise) another model goes over the
     whole image lightly afterwards; with `face` (a base64 photo) the head swap runs last, on the last pass's model, and
-    without one `face_pass` (a strength) redraws the face with it."""
+    without one `face_pass` (a strength) redraws the face with it: each person's of `face_people` with their own, or the
+    largest."""
     g = G()
     b = _base(g, family, unet, text, negative, cfg, loras)
     latent = g.add(FAMILIES[family]["latent"], width=width, height=height, batch_size=1)
@@ -213,8 +240,9 @@ def graph(family: str, unet: str, text: str, negative: str, width: int, height: 
     if face:
         out = _headswap(g, b, out, face, seed)
     elif face_pass:
-        last = finish or {"family": family, "steps": steps, "cfg": cfg}
-        out = _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass)
+        last = finish or {"family": family, "steps": steps, "cfg": cfg, "negative": negative}
+        out = (_facepasses(g, b, last, out, seed, face_pass, face_people) if face_people
+               else _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass))
     _save(g, out)
     return g.prompt()
 

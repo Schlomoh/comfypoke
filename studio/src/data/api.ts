@@ -11,6 +11,8 @@ export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg" | "refere
   cfg: number | null;
   stop_after?: boolean; // stop the GPU once the queue is empty; the latest request decides, absent leaves it as it is
   reference?: ImageRef; // face photo the head swap puts on the person
+  // the face pass with several people: each one's description, own LoRAs, side and face photo (graphs._facepasses)
+  face_people?: { text: string; loras: Lora[]; side: string; face?: ImageRef }[];
 };
 /** An upscale: SeedVR2 to `megapixels`, with an optional prompt retouch at the image's own size first. */
 export type UpscaleRequest = {

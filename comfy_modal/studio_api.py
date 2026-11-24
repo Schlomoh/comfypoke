@@ -334,17 +334,22 @@ async def _json(request: Request) -> dict:
     """The request's JSON with every image given as {"ref": sha} replaced by the sealed image itself, and its stated
     size as "<name>_size". `key` must be the phone's image key wrapped for this deploy's worker."""
     body = await request.json()
+    def stored(v, name: str):
+        if not isinstance(v, dict):
+            raise HTTPException(400, f"send the {name} as a reference from /api/images, sealed")
+        sha = str(v.get("ref", ""))
+        if sha not in _images:
+            raise HTTPException(410, "the studio no longer has that image: send it again")
+        _images.move_to_end(sha)
+        return _images[sha]
+
     for name in ("image", "mask", "reference"):
         body.pop(f"{name}_size", None)  # stated with the upload only
-        v = body.get(name)
-        if v and not isinstance(v, dict):
-            raise HTTPException(400, f"send the {name} as a reference from /api/images, sealed")
-        if isinstance(v, dict):
-            sha = str(v.get("ref", ""))
-            if sha not in _images:
-                raise HTTPException(410, "the studio no longer has that image: send it again")
-            _images.move_to_end(sha)
-            body[name], body[f"{name}_size"] = _images[sha]
+        if body.get(name):
+            body[name], body[f"{name}_size"] = stored(body[name], name)
+    for person in body.get("face_people") or []:  # each person's face photo, for the face pass to tell them apart
+        if isinstance(person, dict) and person.get("face"):
+            person["face"] = stored(person["face"], "face photo")[0]
     key = body.get("key")
     if not isinstance(key, dict) or not isinstance(key.get("key"), str):
         raise HTTPException(400, "the request has no image key")
@@ -361,12 +366,35 @@ async def generate(request: Request):
     reference = _reference(body, (finish or p)["family"])  # the head swap runs on the last pass's model
     p["reference"] = bool(reference)
     p["face_pass"] = None if reference else _face_pass(body.get("face_pass"))  # a face photo's head swap redraws the face anyway
+    people = _face_people(body.get("face_people")) if p["face_pass"] else None
     # what edits and retouches of this render run with by default: its last pass (setup.passOf)
     p["finish"] = finish and {k: finish[k] for k in ("unet", "family", "steps", "cfg", "denoise")} | {
         "loras": [{"name": n, "strength": w} for n, w in finish["loras"]]}
     prompt = graphs.graph(p["family"], p["unet"], p["prompt"], p["negative"], p["width"], p["height"], p["seed"], p["steps"], p["cfg"],
-                          [(x["name"], x["strength"]) for x in p["loras"]], reference, finish, p["face_pass"])
+                          [(x["name"], x["strength"]) for x in p["loras"]], reference, finish, p["face_pass"], people)
     return _start(body, p, prompt)
+
+
+def _face_people(raw) -> list[dict] | None:
+    """The people of a picture for the face pass, each with their description, own LoRAs, where they stand and maybe a
+    face photo (graphs._facepasses); None for one person, whose face pass is the largest face with the whole prompt."""
+    if not raw:
+        return None
+    if not isinstance(raw, list) or not 2 <= len(raw) <= graphs.FACE_PEOPLE:
+        raise HTTPException(400, f"the face pass tells 2 to {graphs.FACE_PEOPLE} people apart")
+    people = []
+    for x in raw:
+        try:
+            text, side = str(x.get("text", "")).strip(), str(x.get("side", ""))
+            loras = [(str(lo["name"]), float(lo["strength"])) for lo in x.get("loras") or []]
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            raise HTTPException(400, f"malformed person for the face pass: {e}")
+        if len(text) > 2000 or side not in ("", "left", "center", "right"):
+            raise HTTPException(400, "a person's description is up to 2000 characters, their side left, center or right")
+        if len(loras) > 8 or any(not -8 <= w <= 8 or "/" in n for n, w in loras):
+            raise HTTPException(400, "at most 8 LoRAs a person, strengths between -8 and 8")
+        people.append({"text": text, "side": side, "loras": loras, "face": x.get("face") and _photo(x["face"])})
+    return people
 
 
 def _face_pass(raw) -> float | None:

@@ -38,6 +38,10 @@ def samples() -> dict[str, dict]:
                                          face_pass=0.35),
         "render finish face pass": graphs.graph("zimage", "z_image_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, [],
                                                 finish={**raw, "denoise": 0.35}, face_pass=0.35),
+        "render face pass two people": graphs.graph("zimage", "z_image_turbo_bf16.safetensors", "two women", "", 512, 768, 1, 8, 1.0,
+                                                    LORAS, face_pass=0.35, face_people=[
+                                                        {"text": "Mia.", "side": "left", "loras": LORAS, "face": IMG},
+                                                        {"text": "Jen.", "side": "", "loras": [], "face": None}]),
         "render face": graphs.graph("krea2", "krea2_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, LORAS, face=IMG),
         "upscale": graphs.upscale(IMG, 4, 1),
         "upscale retouch": graphs.upscale(IMG, 4, 1, {**raw, "denoise": 0.3}),

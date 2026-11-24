@@ -67,8 +67,8 @@ const clean = (ps: Phrase[]) =>
  * A person as an edit keeps them: Who, Look and Wearing, never Doing (the pose is the image's). `wear` stands in for
  * the Wearing row when given (an outfit being dressed). Empty when nothing is written.
  */
-export function portrait(p: Person, wear?: string[]) {
-  const [who, look, worn] = [clean(p.who), clean(p.look), wear ?? clean(p.wear)];
+export function portrait(p: Person, wear?: string[], lead: string[] = []) {
+  const [who, look, worn] = [[...lead.map(verbatim), ...clean(p.who)], clean(p.look), wear ?? clean(p.wear)];
   if (!who.length && !look.length && !worn.length) return "";
   return cap(article(person(p.gender, who, look, worn))) + ".";
 }

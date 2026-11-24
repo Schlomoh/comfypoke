@@ -12,12 +12,13 @@ import { plan, runCount, summary } from "@/domain/batch";
 import { faceFor, inPicture } from "@/domain/cast";
 import { resolve } from "@/domain/catalog";
 import { compose } from "@/domain/compose";
+import { facePeople } from "@/domain/face";
 import { errorText, median, shortName } from "@/domain/format";
-import { runnable, triggersOf } from "@/domain/loras";
+import { ownedBy, runnable, triggersOf } from "@/domain/loras";
 import { DRAFT_MP, legacyUnet, size, type Recipe } from "@/domain/recipe";
 import type { Render, Upscale } from "@/domain/render";
 import { toPass } from "@/domain/setup";
-import { useJobs } from "@/state/jobs";
+import { useJobs, type FaceOf } from "@/state/jobs";
 import { useTriggers } from "@/state/recipe";
 import { focusAtom, recipeAtom, rendersAtom } from "@/state/studio";
 
@@ -96,7 +97,33 @@ export function useGenerate() {
       const photo = face ? await loadFace(space, face) : undefined;
       // one job per version and seed; stop_after rides on each, so the last one sent decides
       const jobs = plan(r, words).map((run) => ({ ...run, title }));
+      // a photo gone from the device only means that face is told apart by where the person stands
+      const photos = new Map<string, Promise<Blob | undefined>>(); // each face photo read once for the whole batch
+      const photoOf = (id: string) => {
+        let read = photos.get(id);
+        if (!read) photos.set(id, (read = loadFace(space, id).catch(() => undefined)));
+        return read;
+      };
+      // on a finish's model its LoRAs (and their words) go for everyone; otherwise each face gets the stack's and
+      // its own character's
+      const lorasOf = (savedId: string | null) => finish?.loras ?? ownedBy(r.loras, notes, last, savedId);
+      const faceWords = finish
+        ? triggersOf(
+            finish.loras.map((l) => ({ ...l, on: true })),
+            notes,
+            finish.family,
+          )
+        : words;
+      /** The face pass's people, when it runs and the picture has several. */
+      const peopleOf = async (rec: Recipe): Promise<FaceOf[] | undefined> => {
+        const people = r.facePass !== null && !face ? facePeople(rec, faceWords, lorasOf) : null;
+        if (!people) return undefined;
+        return Promise.all(
+          people.map(async (p) => ({ person: p, photo: p.face ? await photoOf(p.face) : undefined })),
+        );
+      };
       for (const [i, run] of jobs.entries()) {
+        const people = await peopleOf(run.recipe);
         const started = await generate(
           {
             unet: r.unet,
@@ -111,8 +138,8 @@ export function useGenerate() {
             loras: active,
             stop_after: r.stopAfter,
             finish,
-            // one face only: with two, the box around both faces is most of the picture; the server skips it under a photo
-            face_pass: inPicture(run.recipe).length === 1 ? r.facePass : null,
+            // more people than the pass tells apart: none, rather than every face redrawn with everyone's LoRAs
+            face_pass: inPicture(run.recipe).length > 1 && !people ? null : r.facePass, // skipped under a face photo
           },
           {
             recipe: run.recipe,
@@ -125,6 +152,7 @@ export function useGenerate() {
             from,
           },
           photo,
+          people,
         );
         if (i === 0) setFocus(started.id);
       }

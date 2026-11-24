@@ -10,6 +10,7 @@ import { addPending, dropPending, pendingIds, pendingMeta } from "@/data/db/pend
 import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
 import { imageRef, openImage, openPreview, pngSize, withImages } from "@/data/images";
+import type { FacePerson } from "@/domain/face";
 import { errorText } from "@/domain/format";
 import { isUpscale, type Job } from "@/domain/job";
 import { legacyUnet } from "@/domain/recipe";
@@ -20,6 +21,8 @@ import { jobsAtom, viewerAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
+/** A person of the face pass and their face photo, when they have one. */
+export type FaceOf = { person: FacePerson; photo?: Blob };
 /** Stages that count steps of their own: a step keeps them on screen instead of reading as the render's sampling. */
 const STEPPED = new Set(["swapping", "refining"]);
 
@@ -140,10 +143,26 @@ function createRunner(store: Store, space: Space) {
     }
   };
 
-  /** A render; `face`, the photo its head swap puts on the person, goes as an image reference. */
-  const generate = async (p: Request, meta: JobMeta, face?: Blob) => {
+  /** A render; `face`, the photo its head swap puts on the person, goes as an image reference, as do the face photos
+   * the face pass tells `people` apart by. */
+  const generate = async (p: Request, meta: JobMeta, face?: Blob, people?: FaceOf[]) => {
     const r = await withImages(space, async (t) =>
-      api.generate(t.wire, { ...p, ...(face ? { reference: await imageRef(t, face) } : {}) }),
+      api.generate(t.wire, {
+        ...p,
+        ...(face ? { reference: await imageRef(t, face) } : {}),
+        ...(people
+          ? {
+              face_people: await Promise.all(
+                people.map(async ({ person: { text, loras, side }, photo }) => ({
+                  text,
+                  loras,
+                  side,
+                  ...(photo ? { face: await imageRef(t, photo) } : {}),
+                })),
+              ),
+            }
+          : {}),
+      }),
     );
     await addPending(space, r.id, meta);
     attach(r.id);
