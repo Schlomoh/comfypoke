@@ -9,21 +9,24 @@ import { cn } from "@/ui/cn";
 import { lockPage, pushLayer } from "@/ui/layers";
 
 /**
- * While open, keeps the dialog inside what is visible. The iOS keyboard shrinks only the visual
- * viewport: a sheet anchored to the bottom of the layout viewport would sit behind it, Safari would pan
- * to the focused field, and after the keyboard closed taps could land where the sheet was drawn before.
+ * While open, keeps the dialog inside what is visible. The iOS keyboard shrinks only the visual viewport, and Safari
+ * pans the page to the focused field: measured against the layout viewport, a panned keyboard looks like no keyboard
+ * at all. So the keyboard is how far the visible height dropped below the most seen since opening, and while it is
+ * up the sheet takes exactly the visible area (`--vv-top`, `--visible`), wherever Safari has panned to. After the
+ * keyboard closed, taps could otherwise land where the sheet was drawn before.
  */
 function useVisibleArea(dialog: { current: HTMLDialogElement | null }, open: boolean) {
   useEffect(() => {
     const vv = window.visualViewport;
     const d = dialog.current;
     if (!open || !vv || !d) return;
+    let full = Math.max(window.innerHeight, vv.height);
     const fit = () => {
-      const hidden = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      d.style.setProperty("--keyboard", `${hidden}px`);
+      full = Math.max(full, vv.height);
       d.style.setProperty("--visible", `${vv.height}px`);
+      d.style.setProperty("--vv-top", `${vv.offsetTop}px`);
       // the keyboard, not a toolbar sliding in: the sheet makes room for the field being typed in
-      d.toggleAttribute("data-keyboard", hidden > 80);
+      d.toggleAttribute("data-keyboard", full - vv.height > 120);
     };
     // The keyboard is up and the sheet shrank around the focused field: keep it in sight. Only its own
     // scroller moves; scrollIntoView would also scroll the dialog and the locked page.
@@ -142,7 +145,9 @@ export function Sheet({
         "overflow-hidden border-line open:flex open:flex-col",
         center
           ? "m-auto max-h-[min(90dvh,var(--visible,100dvh))] w-[min(28rem,calc(100vw-2rem))] border"
-          : "mx-0 mt-auto mb-(--keyboard,0px) max-h-[min(90dvh,calc(var(--visible,100dvh)-2rem))] w-screen max-w-none border-t lg:m-auto lg:w-[30rem] lg:border",
+          : "mx-0 mt-auto max-h-[min(90dvh,calc(var(--visible,100dvh)-2rem))] w-screen max-w-none border-t lg:m-auto lg:w-[30rem] lg:border",
+        // the keyboard up: exactly what is visible, from its top, whatever Safari panned
+        "data-keyboard:fixed data-keyboard:inset-x-0 data-keyboard:top-(--vv-top) data-keyboard:bottom-auto data-keyboard:m-0 data-keyboard:h-(--visible) data-keyboard:max-h-(--visible) data-keyboard:w-screen data-keyboard:max-w-none",
       )}
     >
       <div className="flex shrink-0 items-center gap-3 px-4 py-3">
