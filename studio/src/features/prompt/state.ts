@@ -23,3 +23,6 @@ export const emptiedAtom = atom<ReadonlyMap<string, string>>(new Map());
 
 /** "Keep what I type as a preset": on until switched off, in every row. */
 export const keepTypedAtom = atom(false);
+
+/** Whether a person's setup (gender, face, LoRAs, placement) is unfolded above their rows. */
+export const setupOpenAtom = atom(false);

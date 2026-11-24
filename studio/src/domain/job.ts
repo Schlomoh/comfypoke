@@ -36,6 +36,10 @@ export function status(job: Job, booted?: boolean) {
       return "Dressing";
     case "swapping":
       return job.steps ? `Swapping the face ${job.step}/${job.steps}` : "Swapping the face";
+    case "refining":
+      return job.steps ? `Refining the face ${job.step}/${job.steps}` : "Refining the face";
+    case "comparing":
+      return "Comparing the faces";
     case "decoding":
       return "Decoding";
     default:

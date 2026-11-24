@@ -94,12 +94,14 @@ export type Recipe = {
   stopAfter: boolean; // the GPU stops once the queue this sends is done
   upscale: UpscaleSettings;
   finish: FinishSettings | null; // a second, light pass over each render with a saved setup
+  facePass: number | null; // the face redrawn at 1024 at this strength after each render, unless a face photo is on
   draft: boolean; // render small and quick (DRAFT_MP), to find a direction; a draft is made big from the library
-  pinned: string[]; // rows Surprise me leaves alone, by rowKey (domain/shuffle.ts)
 };
 export const DRAFT_MP = 0.5;
 /** setup: a saved setup's id (domain/setup.ts); strength: how much of the render it may repaint. */
 export type FinishSettings = { setup: string; strength: number };
+/** How strongly the face pass may redraw the face (graphs.FACE_PASS on the server). */
+export const FACE_PASS = { min: 0.15, max: 0.6, default: 0.35 };
 // auto: every new render is upscaled once it is stored; prompt "" upscales without a retouch
 export type UpscaleSettings = { auto: boolean; megapixels: number; prompt: string; denoise: number };
 
@@ -121,8 +123,8 @@ export const EMPTY: Recipe = {
   stopAfter: false,
   upscale: { auto: false, megapixels: 4, prompt: "", denoise: 0.3 },
   finish: null,
+  facePass: null,
   draft: false,
-  pinned: [],
 };
 
 /** Renders and recipes from before the model list knew only "turbo" and "raw". */

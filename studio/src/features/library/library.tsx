@@ -149,7 +149,7 @@ export function Library({ column = false }: { column?: boolean }) {
             : "Nothing here yet. Renders, and photos you add to edit or dress, are kept on this device only."}
         </p>
       ) : (
-        <div className="grid grid-cols-3 gap-px bg-line p-px sm:grid-cols-4 lg:grid-cols-2">
+        <div className="grid grid-cols-3 gap-px bg-line p-px sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
           {!picked && jobs.map((j) => <Pending key={j.id} job={j} active={j.id === focus} onFocus={show} />)}
           <StackGrid focus={focus} picked={picked} onSelect={picked ? toggle : (x) => showImage(x.id)} />
         </div>

@@ -2,10 +2,10 @@
 import type { GpuState } from "@/data/api";
 
 export const LABEL: Record<GpuState, string> = {
-  cold: "OFF",
-  starting: "BOOTING",
-  warm: "WARM",
-  busy: "BUSY",
+  cold: "GPU off",
+  starting: "GPU starting",
+  warm: "GPU ready", // with the minutes until it stops beside it
+  busy: "GPU busy",
 };
 export const TONE: Record<GpuState, string> = {
   cold: "text-faint",

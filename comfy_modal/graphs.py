@@ -104,10 +104,11 @@ def _save(g: G, image: Ref) -> None:
     g.add("SaveImageWebsocket", images=image, stage="decoding", role="output")
 
 
-def _sampler(g: G, family: str, b: Base, latent: Ref, seed: int, steps: int, cfg: float, denoise: float) -> Ref:
+def _sampler(g: G, family: str, b: Base, latent: Ref, seed: int, steps: int, cfg: float, denoise: float,
+             stage: str = "sampling") -> Ref:
     return g.add("KSampler", seed=seed, steps=steps, cfg=cfg, sampler_name=FAMILIES[family]["sampler"], scheduler="simple",
                  denoise=denoise, model=b.model, positive=b.positive, negative=b.negative, latent_image=latent,
-                 stage="sampling", role="sampler")
+                 stage=stage, role="sampler")
 
 
 def _lanpaint(g: G, r: dict, b: Base, latent: Ref, seed: int, denoise: float) -> Ref:
@@ -173,10 +174,32 @@ def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, ref_boost: fl
                  inpainted_image=g.add("VAEDecode", samples=swapped, vae=b.vae, stage="decoding"), stage="decoding")
 
 
+# The face pass: a face a few dozen pixels high in a full-body render gets a few dozen pixels of the model's attention,
+# which is where likeness goes first. A box twice the face is cut out, redrawn at 1024 by the last pass's model with its
+# prompt and LoRAs (a character's LoRA included), lightly, and only the face is blended back. Skipped under a face
+# photo: the head swap redraws the head at 1024 already.
+FACE_PASS = (0.15, 0.6)
+
+
+def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float) -> Ref:
+    # SCRFD's box around the largest face (comfy_nodes/studio_face), not SAM's "face", which can take the sky for one
+    face = g.add("StudioFaceMask", image=image, grow=0.15, stage="masking")
+    crop = g.add("InpaintCropImproved", {**CROP, "context_from_mask_extend_factor": 2.0}, image=image, mask=face)
+    latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=crop.out(1), vae=b.vae), mask=crop.out(2))
+    redrawn = g.add("VAEDecode", samples=_sampler(g, family, b, latent, seed, steps, cfg, denoise, "refining"), vae=b.vae,
+                    stage="decoding")
+    stitched = g.add("InpaintStitchImproved", stitcher=crop, inpainted_image=redrawn, stage="decoding")
+    # only the face and its blend go back: with no face the mask is empty, and so is what changes
+    keep = g.add("GrowMask", expand=CROP["mask_blend_pixels"], tapered_corners=True, mask=face)
+    return g.add("ImageCompositeMasked", x=0, y=0, resize_source=False, destination=image, source=stitched, mask=keep)
+
+
 def graph(family: str, unet: str, text: str, negative: str, width: int, height: int, seed: int, steps: int, cfg: float,
-          loras: list[tuple[str, float]], face: str | None = None, finish: dict | None = None) -> dict:
+          loras: list[tuple[str, float]], face: str | None = None, finish: dict | None = None,
+          face_pass: float | None = None) -> dict:
     """A render. With `finish` (family, unet, text, negative, steps, cfg, loras, denoise) another model goes over the
-    whole image lightly afterwards; with `face` (a base64 photo) the head swap runs last, on the last pass's model."""
+    whole image lightly afterwards; with `face` (a base64 photo) the head swap runs last, on the last pass's model, and
+    without one `face_pass` (a strength) redraws the face with it."""
     g = G()
     b = _base(g, family, unet, text, negative, cfg, loras)
     latent = g.add(FAMILIES[family]["latent"], width=width, height=height, batch_size=1)
@@ -187,7 +210,12 @@ def graph(family: str, unet: str, text: str, negative: str, width: int, height: 
         latent = g.add("VAEEncode", pixels=out, vae=b.vae, stage="encoding")
         out = g.add("VAEDecode", samples=_sampler(g, f["family"], b, latent, seed, f["steps"], f["cfg"], f["denoise"]), vae=b.vae,
                     stage="decoding")
-    _save(g, _headswap(g, b, out, face, seed) if face else out)
+    if face:
+        out = _headswap(g, b, out, face, seed)
+    elif face_pass:
+        last = finish or {"family": family, "steps": steps, "cfg": cfg}
+        out = _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass)
+    _save(g, out)
     return g.prompt()
 
 
@@ -229,6 +257,14 @@ def mask(image_b64: str, text: str = "", points: dict | None = None) -> dict:
     it paints."""
     g = G()
     _save(g, g.add("MaskToImage", mask=_sam(g, _image(g, image_b64), text, 0.4, 12, points)))
+    return g.prompt()
+
+
+def face(image_b64: str, reference_b64: str) -> dict:
+    """How much the largest face in the image looks like the one in the reference photo (comfy_nodes/studio_face): a
+    score, and no image."""
+    g = G()
+    g.add("StudioFaceScore", image=_image(g, image_b64), reference=_image(g, reference_b64), stage="comparing")
     return g.prompt()
 
 

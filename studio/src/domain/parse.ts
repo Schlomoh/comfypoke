@@ -4,6 +4,7 @@ import { GENDERS, type Gender } from "@/domain/presets/gender";
 import {
   ASPECTS,
   EMPTY,
+  FACE_PASS,
   legacyUnet,
   MAX_PEOPLE,
   MEGAPIXELS,
@@ -141,13 +142,13 @@ export function parseRecipe(raw: unknown): Recipe {
     sameSeed: r.sameSeed !== false,
     stopAfter: r.stopAfter === true,
     draft: r.draft === true,
-    pinned: Array.isArray(r.pinned) ? r.pinned.filter(isText) : [],
     upscale: {
       auto: up.auto === true,
       megapixels: [2, 4, 8].find((m) => m === up.megapixels) ?? EMPTY.upscale.megapixels,
       prompt: isText(up.prompt) ? up.prompt : "",
       denoise: finite(up.denoise) ? Math.min(0.8, Math.max(0.05, up.denoise)) : EMPTY.upscale.denoise,
     },
+    facePass: finite(r.facePass) ? Math.min(FACE_PASS.max, Math.max(FACE_PASS.min, r.facePass)) : null,
     finish:
       isText(fin.setup) && fin.setup
         ? {

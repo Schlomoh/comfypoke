@@ -16,6 +16,9 @@ export type Layer = "activity" | "renders" | "workspace" | "keys" | null;
 
 export const recipeAtom = atom<Recipe>(EMPTY);
 export const tabAtom = atom<Tab>("prompt");
+/** On a phone, while the prompt or the look is written, the stage is a strip: the image small, a tap opens it, and its
+ * buttons are the viewer's. A render on its way keeps its bar, to see it and cancel it. */
+export const stripTab = (tab: Tab) => tab === "prompt" || tab === "look";
 export const layerAtom = atom<Layer>(null);
 /** The image or job on the stage; null shows the newest. */
 export const focusAtom = atom<string | null>(null);

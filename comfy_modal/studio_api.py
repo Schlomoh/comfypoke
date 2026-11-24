@@ -158,6 +158,8 @@ def _handle(job: Job, msg) -> bool:
             job.emit("stage", job.stages[d["node"]])
         elif data["type"] == "progress" and d.get("node") in job.counted:
             job.emit("progress", {"value": d["value"], "max": d["max"]})
+        elif data["type"] == seal.SCORE_MESSAGE:  # rebuilt by the worker: the number alone
+            job.emit("score", d.get("score"))
         elif data["type"] == "execution_success":
             job.end("done", {"seconds": round(time.time() - job.started, 1)})
         elif data["type"] == "execution_interrupted":
@@ -284,13 +286,18 @@ def _params(body: dict) -> dict:
 MAX_REFERENCE = 4 * 2**20  # base64 characters; the phone sends the photo at most 768 px a side
 
 
+def _photo(ref) -> str:
+    if not isinstance(ref, str) or not ref or len(ref) > MAX_REFERENCE:
+        raise HTTPException(400, "the face photo must be an image under 3 MB")
+    return ref
+
+
 def _reference(body: dict, family: str) -> str | None:
     """The face photo a render or inpaint puts on its person (graphs._headswap), base64, or None."""
     ref = body.get("reference")
     if not ref:
         return None
-    if not isinstance(ref, str) or len(ref) > MAX_REFERENCE:
-        raise HTTPException(400, "the face photo must be an image under 3 MB")
+    _photo(ref)
     if family not in graphs.HEADSWAP_FAMILIES:
         raise HTTPException(400, f"face photos work with {', '.join(graphs.FAMILIES[f]['label'] for f in graphs.HEADSWAP_FAMILIES)} only")
     return ref
@@ -353,12 +360,27 @@ async def generate(request: Request):
     finish = _finish(body.get("finish"), p["prompt"], p["seed"], "the finish")
     reference = _reference(body, (finish or p)["family"])  # the head swap runs on the last pass's model
     p["reference"] = bool(reference)
+    p["face_pass"] = None if reference else _face_pass(body.get("face_pass"))  # a face photo's head swap redraws the face anyway
     # what edits and retouches of this render run with by default: its last pass (setup.passOf)
     p["finish"] = finish and {k: finish[k] for k in ("unet", "family", "steps", "cfg", "denoise")} | {
         "loras": [{"name": n, "strength": w} for n, w in finish["loras"]]}
     prompt = graphs.graph(p["family"], p["unet"], p["prompt"], p["negative"], p["width"], p["height"], p["seed"], p["steps"], p["cfg"],
-                          [(x["name"], x["strength"]) for x in p["loras"]], reference, finish)
+                          [(x["name"], x["strength"]) for x in p["loras"]], reference, finish, p["face_pass"])
     return _start(body, p, prompt)
+
+
+def _face_pass(raw) -> float | None:
+    """How strongly the face pass redraws the face (graphs._facepass), or None for no face pass."""
+    if raw is None:
+        return None
+    lo, hi = graphs.FACE_PASS
+    try:
+        strength = float(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "malformed face pass strength")
+    if not lo <= strength <= hi:
+        raise HTTPException(400, f"face pass strength must be between {lo} and {hi}")
+    return strength
 
 
 STATIC = Path("/root/studio")  # the built studio/dist (studio.py)
@@ -548,6 +570,20 @@ async def body_preview(request: Request):
     params = {"kind": "body", "unet": "sam_3d_body_dinov3_bf16.safetensors", "family": "body", "prompt": "", "negative": "",
               "width": w, "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
     return _start(body, params, graphs.body(b64), queued=False)
+
+
+@api.post("/api/face")
+async def face_score(request: Request):
+    """How much the face in a picture looks like a face photo (graphs.face): a `score` event and no image. Runs outside
+    stop-after, like the other looks at a picture."""
+    body = await _json(request)
+    b64, ref = str(body.get("image", "")), _photo(body.get("reference"))
+    if not b64 or len(b64) > MAX_IMAGE:
+        raise HTTPException(400, "missing image, or larger than 40 MB")
+    w, h = _png_size(body)
+    params = {"kind": "face", "unet": "buffalo_l", "family": "face", "prompt": "", "negative": "",
+              "width": w, "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
+    return _start(body, params, graphs.face(b64, ref), queued=False)
 
 
 @api.get("/api/jobs/{job_id}/events")

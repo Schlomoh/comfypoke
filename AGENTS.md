@@ -90,9 +90,9 @@ explains where things are and how to change them without breaking the deployment
   (`edit/mask.ts`, listed and removable in `mask-summary.tsx`): areas SAM 3.1 found through `/api/mask`
   (`graphs.mask`, white on black) by words (`use-find.ts`) or by tapped points (`use-taps.ts`), brush and eraser
   strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own at edit time. The
-  fitted body (`/api/body`) shows as a half-strength layer under the mask, with every tool still working. One
-  switch, "Keep the body's shape" (`editAtom.mode`), picks the chain: off is a repaint, `graphs.inpaint`
-  (workflow 09's chain: crop and stitch, LanPaint) with a picked look; on is dressing, `graphs.dress`, sent
+  fitted body (`/api/body`) shows as a half-strength layer under the mask, with every tool still working. A
+  Repaint/Dress choice (`editAtom.mode`) picks the chain: Repaint is `graphs.inpaint`
+  (workflow 09's chain: crop and stitch, LanPaint) with a picked look; Dress is dressing, `graphs.dress`, sent
   through `/api/inpaint` with a `dress` block: workflow 08's chain (SAM 3D Body's mesh as depth into Z-Image's
   Fun Controlnet) with a Z-Image look, and optionally a light LanPaint finish with any look. Its outfits are a
   person's Wearing row of the Prompt tab, spelled out per render (`domain/outfits.ts`): switched-on chips are
@@ -108,9 +108,10 @@ explains where things are and how to change them without breaking the deployment
   gives it to another in its place (`reassign` in `domain/loras.ts`, applied by `useCastLoras` once the
   characters are written). The library shows stacks, an image and everything made from it
   (`domain/lineage.ts`), grouped by the Generate that made them (a batch of several is a `Band` of its own). Swipes and arrows go
-  through each stack's `trail`: depth first, or only its bests once any are marked. A die on a Prompt row adds a preset as a
-  version, a pin keeps the row out of Surprise me, which sends renders that each change one row to a preset
-  (`domain/shuffle.ts`). Presets a person adds go into the subcategory open in the picker (`Preset.group`; none
+  through each stack's `trail`: depth first, or only its bests once any are marked. The dock's run line
+  (`features/run/run-line.tsx`) opens one Run sheet with the look, size, draft, seeds and what runs after each
+  render; a person's setup folds above their rows (`features/prompt/person-setup.tsx`, `ui/disclosure.tsx`), and on
+  a phone the stage is a strip in the Prompt and Look tabs (`stripTab`). Presets a person adds go into the subcategory open in the picker (`Preset.group`; none
   is More), and removing a built-in one stores it with `hidden` (`presetGroups` in `domain/presets/index.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
   `features/library`. A person's face photo (`data/db/faces.ts`, sealed) rides along as
   `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA

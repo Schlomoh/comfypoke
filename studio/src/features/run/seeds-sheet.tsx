@@ -1,21 +1,20 @@
-// The dock's ×N: how many seeds, random or fixed, whether versions share them, whether the GPU stops after the
-// queue, what it will take, and every render Generate will send, one after another. Surprise me sends that many
-// renders instead, each with one row changed to one of its presets (domain/shuffle.ts).
-import { useAtom } from "jotai";
+// Seeds: how many per version, random or fixed, whether versions share them, and whether the GPU stops after the
+// queue (a section of the Run sheet). And the sheet listing every render Generate will send, one after another,
+// with what it will take, opened from the prompt's "see each render".
+import { useAtom, useAtomValue } from "jotai";
 
 import { api, quietly } from "@/data/api";
-import { usePresets } from "@/data/db/presets";
 import { useGpu } from "@/data/queries";
 import { plan, randomSeed } from "@/domain/batch";
 import { duration } from "@/domain/format";
-import { surprises } from "@/domain/shuffle";
-import { useGenerate, useRenderTime } from "@/state/generate";
+import { useRenderTime } from "@/state/generate";
 import { useTriggers } from "@/state/recipe";
 import { layerAtom, recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/field";
 import { Sheet } from "@/ui/modal";
+import { Section } from "@/ui/section";
 import { Segmented } from "@/ui/segmented";
 import { Facts, Heading, Note } from "@/ui/text";
 
@@ -71,43 +70,15 @@ function SeedMode() {
   );
 }
 
-export function SeedsSheet() {
-  const [layer, setLayer] = useAtom(layerAtom);
+export function SeedsSection({ className }: { className?: string }) {
   const [recipe, setRecipe] = useAtom(recipeAtom);
-  const triggers = useTriggers();
-  const each = useRenderTime();
-  const { gpu } = useGpu();
-  const open = layer === "renders";
-  const runs = open ? plan(recipe, triggers, 0) : [];
-  const total = each == null ? null : each * runs.length;
-  const rate = gpu?.rate_per_hour ?? null;
-  const presets = usePresets() ?? [];
-  const { surprise, sending } = useGenerate();
-  const surprising = open ? surprises(recipe, presets, recipe.count, () => 0).length : 0; // as many as there are changes
-
   return (
-    <Sheet
-      open={open}
-      onClose={() => setLayer(null)}
-      title={`${runs.length} render${runs.length === 1 ? "" : "s"}`}
-    >
-      <Heading>Seeds per version</Heading>
+    <Section title="Seeds per version" className={className}>
       <Segmented
         value={recipe.count}
         options={[1, 2, 3, 4].map((n) => ({ value: n, label: `×${n}` }))}
         onChange={(count) => setRecipe((r) => ({ ...r, count }))}
       />
-      <Button
-        disabled={!surprising || sending}
-        onClick={() => void surprise(presets).then((n) => n && setLayer(null))}
-      >
-        Surprise me: {surprising || recipe.count} render{(surprising || recipe.count) === 1 ? "" : "s"}
-      </Button>
-      <Note>
-        {surprising
-          ? "Each one changes one row to one of its presets; pinned rows stay as they are."
-          : "No row has a preset left to change to: unpin a row or save presets."}
-      </Note>
       <SeedMode />
       <Checkbox
         on={recipe.sameSeed}
@@ -124,6 +95,15 @@ export function SeedsSheet() {
         }
         className="py-1"
       />
+    </Section>
+  );
+}
+
+/** Whether the GPU stops once the queue this sends is done. */
+export function GpuSection({ className }: { className?: string }) {
+  const [recipe, setRecipe] = useAtom(recipeAtom);
+  return (
+    <Section title="GPU" className={className}>
       <Checkbox
         on={recipe.stopAfter}
         onChange={(stopAfter) => {
@@ -138,6 +118,27 @@ export function SeedsSheet() {
         }
         className="py-1"
       />
+    </Section>
+  );
+}
+
+export function SeedsSheet() {
+  const [layer, setLayer] = useAtom(layerAtom);
+  const recipe = useAtomValue(recipeAtom);
+  const triggers = useTriggers();
+  const each = useRenderTime();
+  const { gpu } = useGpu();
+  const open = layer === "renders";
+  const runs = open ? plan(recipe, triggers, 0) : [];
+  const total = each == null ? null : each * runs.length;
+  const rate = gpu?.rate_per_hour ?? null;
+
+  return (
+    <Sheet
+      open={open}
+      onClose={() => setLayer(null)}
+      title={`${runs.length} render${runs.length === 1 ? "" : "s"}`}
+    >
       <Facts
         rows={[
           ["time, warm GPU", total == null ? "no estimate yet" : `≈ ${duration(total)}`],

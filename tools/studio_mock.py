@@ -70,7 +70,15 @@ async def fake(g, pid):
         yield msg("execution_error", exception_message="the mock was asked to fail")
         return
     images, out = _images(g), None
-    cropped = bool(_nodes(g, "InpaintCropImproved")) and "SetLatentNoiseMask" in {n["class_type"] for n in g.values()}
+    if _nodes(g, "StudioFaceScore"):  # the face match: a number from the picture, so an image keeps its score
+        yield msg("executing", node=next(iter(stages)))
+        await asyncio.sleep(STEP_SECONDS * 2)
+        small = images[0].convert("L").resize((8, 8))
+        yield ("json", seal.score_message(pid, {"score": round(0.05 + sum(small.getdata()) % 70 / 100, 3)}))
+        yield msg("execution_success")
+        return
+    # a repaint or a dressing, by the mask that came with the picture; a render's face pass crops too, with no picture
+    cropped = len(images) > 1 and bool(_nodes(g, "InpaintCropImproved")) and "SetLatentNoiseMask" in {n["class_type"] for n in g.values()}
     if _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
         w, h = images[0].size
         out = Image.new("RGB", (w, h))
@@ -102,7 +110,7 @@ async def fake(g, pid):
         out = Image.new("RGB", (latent["inputs"]["width"], latent["inputs"]["height"]), (200, 120, 60))
     size = out.size
     for nid, stage in stages.items():  # each stage once, in the prompt's order, as ComfyUI announces nodes
-        if stage in ("sampling", "dressing", "swapping", "upscaling") and nid in roles.values():
+        if stage in ("sampling", "refining", "dressing", "swapping", "upscaling") and nid in roles.values():
             continue  # the samplers below announce themselves
         yield msg("executing", node=nid)
         await asyncio.sleep(STEP_SECONDS / 4)

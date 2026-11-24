@@ -34,6 +34,10 @@ def samples() -> dict[str, dict]:
         "render gguf": graphs.graph("krea2", "krea2_turbo_Q8_0.gguf", "a cat", "", 512, 768, 1, 8, 1.0, []),
         "render finish face": graphs.graph("zimage", "z_image_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, [], IMG,
                                            {**krea, "denoise": 0.35}),
+        "render face pass": graphs.graph("zimage", "z_image_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, LORAS,
+                                         face_pass=0.35),
+        "render finish face pass": graphs.graph("zimage", "z_image_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, [],
+                                                finish={**raw, "denoise": 0.35}, face_pass=0.35),
         "render face": graphs.graph("krea2", "krea2_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, LORAS, face=IMG),
         "upscale": graphs.upscale(IMG, 4, 1),
         "upscale retouch": graphs.upscale(IMG, 4, 1, {**raw, "denoise": 0.3}),
@@ -46,4 +50,5 @@ def samples() -> dict[str, dict]:
         "mask taps": graphs.mask(IMG, points={"positive": [{"x": 10, "y": 20}], "negative": [{"x": 3, "y": 4}]}),
         "mask text and taps": graphs.mask(IMG, "shoe", {"positive": [{"x": 10, "y": 20}]}),
         "body": graphs.body(IMG),
+        "face": graphs.face(IMG, IMG),
     }

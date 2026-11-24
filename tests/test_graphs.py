@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from comfy_modal import graph
-from tests.samples import samples
+from comfy_modal import graph, graphs
+from tests.samples import IMG, samples
 
 INFO = json.loads((Path(__file__).parent / "object_info.json").read_text())
 FILES = (".safetensors", ".gguf", ".pt", ".pth", ".bin", ".ckpt")
@@ -49,7 +49,10 @@ def test_graph_matches_node_definitions(name):
                 assert value in spec, f"{name}: {cls}.{key}={value!r} is not one of its choices"
 
 
-@pytest.mark.parametrize("name", GRAPHS)
+IMAGE_GRAPHS = [n for n, g in GRAPHS.items() if not any(x["class_type"] == "StudioFaceScore" for x in g.values())]
+
+
+@pytest.mark.parametrize("name", IMAGE_GRAPHS)
 def test_graph_sends_one_image_back(name):
     r = graph.roles(GRAPHS[name])
     assert GRAPHS[name][r["output"]]["class_type"] == "SaveImageWebsocket"
@@ -60,3 +63,15 @@ def test_stages_and_counted_samplers_are_marked():
     assert set(graph.roles(GRAPHS["dress finish face"])) >= {"dresser", "sampler", "swapper", "output"}
     assert graph.roles(GRAPHS["upscale"])["upscaler"]
     assert set(graph.stages(GRAPHS["body"]).values()) >= {"fitting"}
+
+
+def test_face_match_sends_a_score_and_no_image():
+    classes = [n["class_type"] for n in GRAPHS["face"].values()]
+    assert classes.count("StudioFaceScore") == 1 and "SaveImageWebsocket" not in classes
+
+
+def test_face_pass_runs_only_without_a_face_photo():
+    assert "refining" in graph.stages(GRAPHS["render face pass"]).values()
+    assert "refining" in graph.stages(GRAPHS["render finish face pass"]).values()
+    swapped = graphs.graph("krea2", "krea2_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, [], IMG, face_pass=0.35)
+    assert "refining" not in graph.stages(swapped).values() and "swapping" in graph.stages(swapped).values()
