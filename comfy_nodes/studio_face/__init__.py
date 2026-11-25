@@ -204,5 +204,22 @@ class StudioPersonBox:
         return ([[{"x": left, "y": max(0.0, y0), "width": right - left, "height": h - max(0.0, y0), "score": 0.0}]],)
 
 
+class StudioMaskStrip:
+    """Up to four masks of one picture side by side as one image, for the phone to cut apart again: a job sends one image
+    back, and People's areas are one per person."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"mask_0": ("MASK",)}, "optional": {f"mask_{n}": ("MASK",) for n in range(1, REFS)}}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "strip"
+    CATEGORY = "mask"
+
+    def strip(self, **masks):
+        parts = [masks[f"mask_{n}"][:1] for n in range(REFS) if masks.get(f"mask_{n}") is not None]
+        return (torch.cat(parts, dim=2)[..., None].repeat(1, 1, 1, 3),)
+
+
 NODE_CLASS_MAPPINGS = {"StudioFaceScore": StudioFaceScore, "StudioFaceMask": StudioFaceMask, "StudioFaceLabels": StudioFaceLabels,
-                       "StudioPersonBox": StudioPersonBox}
+                       "StudioPersonBox": StudioPersonBox, "StudioMaskStrip": StudioMaskStrip}

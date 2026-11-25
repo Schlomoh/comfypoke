@@ -1,32 +1,45 @@
 // People in the Edit tab: one card per face found on the image, each saying who it is (guessed, a tap to change),
 // whether they get an outfit from their Wearing row and over what, and whether their face is redrawn. The faces are
-// found by themselves the first time People opens on an image.
+// found by themselves on an image the stage stays on for a moment, but only while the GPU is up: passing images by, or
+// opening the Edit tab with the GPU off, never starts it. Then "find faces" does.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
+import { useGpu } from "@/data/queries";
 import { outfitPieces } from "@/domain/outfits";
 import type { Pick } from "@/domain/people";
 import type { Render } from "@/domain/render";
-import { hasArea } from "@/features/edit/mask";
-import { MASK_PART, peopleAtom, pointedAtom, startPick, type PersonRow } from "@/features/edit/people/state";
+import {
+  askedAtom,
+  colorOf,
+  peopleAtom,
+  selectedAtom,
+  startPick,
+  type PersonRow,
+} from "@/features/edit/people/state";
+import { areasLook, isArea, useAreas, wanted } from "@/features/edit/people/use-areas";
 import { useFaces, useFinding } from "@/features/edit/people/use-faces";
 import { Wearing } from "@/features/edit/people/wearing";
-import { masksAtom } from "@/features/edit/state";
+import { maskKey, masksAtom } from "@/features/edit/state";
 import { PARTS } from "@/features/edit/use-find";
+import { useStage } from "@/state/preview";
 import { recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Chip, ChipRow } from "@/ui/chip";
 import { cn } from "@/ui/cn";
 import { Select } from "@/ui/field";
+import { Pressable } from "@/ui/pressable";
 
 const tried = new Set<string>(); // images whose faces were looked for by themselves once: a failure is not retried in a loop
+const SETTLE_MS = 1000; // how long the stage stays on an image before its faces are looked for: a swipe past sends nothing
 
 function Card({ render, index, row }: { render: Render; index: number; row: PersonRow }) {
   const cast = useAtomValue(recipeAtom).cast;
   const setRows = useSetAtom(peopleAtom);
-  const [pointed, setPointed] = useAtom(pointedAtom);
-  const masked = hasArea(useAtomValue(masksAtom)[render.id] ?? []);
+  const setMasks = useSetAtom(masksAtom);
+  const [selected, setSelected] = useAtom(selectedAtom);
+  const on = selected?.id === render.id && selected.index === index;
   const person = cast.find((p) => p.id === row.pick.who);
   const { pick } = row;
   const set = (patch: Partial<Pick>) =>
@@ -37,20 +50,26 @@ function Card({ render, index, row }: { render: Render; index: number; row: Pers
       ),
     }));
   const outfits = person ? outfitPieces(person).length : 0;
-  const parts = [
-    ...PARTS.slice(0, 5).map(([label]) => label),
-    ...(masked || pick.part === MASK_PART ? [MASK_PART] : []),
-  ];
+  const key = maskKey(render.id, index);
+  /** Another part: their area is found again for it, their own strokes stay. */
+  const setPart = (part: string) => {
+    set({ part });
+    setMasks((m) => ({ ...m, [key]: (m[key] ?? []).filter((o) => !isArea(o)) }));
+  };
   return (
     <div
       id={`person-${index}`}
-      onAnimationEnd={() => setPointed(null)}
-      className={cn(
-        "flex flex-col gap-2 border-l-2 py-1 pl-3",
-        pointed === index ? "flash-card border-mask" : "border-line",
-      )}
+      className={cn("flex flex-col gap-2 border-l-4 py-1 pl-3", on ? "bg-raised" : "border-line")}
+      style={{ borderLeftColor: person ? colorOf(index) : undefined }}
     >
-      <span className="label">{row.found ? `Face ${index + 1}` : "Whoever is in the picture"}</span>
+      <Pressable
+        aria-pressed={on}
+        className="flex min-h-8 items-center gap-2"
+        onClick={() => setSelected(on ? null : { id: render.id, index })}
+      >
+        <span className="label">{row.found ? `Face ${index + 1}` : "Whoever is in the picture"}</span>
+        <span className="ml-auto text-xs text-faint">{on ? "editing their area" : "edit their area"}</span>
+      </Pressable>
       <ChipRow>
         {cast.map((p) => (
           <Chip
@@ -78,9 +97,9 @@ function Card({ render, index, row }: { render: Render; index: number; row: Pers
                 className="ml-auto max-w-40"
                 aria-label="What the outfit replaces"
                 value={pick.part}
-                onChange={(e) => set({ part: e.target.value })}
+                onChange={(e) => setPart(e.target.value)}
               >
-                {parts.map((p) => (
+                {PARTS.slice(0, 5).map(([p]) => (
                   <option key={p} value={p}>
                     {p}
                   </option>
@@ -106,15 +125,42 @@ export function PeopleList({ render }: { render: Render }) {
   const rows = useAtomValue(peopleAtom)[render.id];
   const finding = useFinding(render);
   const find = useFaces(render);
+  const latest = useRef(find); // the timer below starts the find as it is then, not as it was when it was set
   useEffect(() => {
-    if (rows || tried.has(render.id)) return;
-    tried.add(render.id);
-    void find();
-  }, [rows, render.id, find]);
+    latest.current = find;
+  });
+  const { gpu } = useGpu();
+  const warm = !!gpu?.booted && (gpu.state === "warm" || gpu.state === "busy");
+  useEffect(() => {
+    if (rows || !warm || tried.has(render.id)) return;
+    const t = setTimeout(() => {
+      tried.add(render.id);
+      void latest.current();
+    }, SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [rows, warm, render.id]);
+  // a dressed person selected without their area: everyone dressed gets theirs found, to see and edit
+  const areas = useAreas(render);
+  const areasNow = useRef(areas);
+  useEffect(() => {
+    areasNow.current = areas;
+  });
+  const selected = useAtomValue(selectedAtom);
+  const asked = useAtomValue(askedAtom);
+  const running = !!useStage(areasLook(render.id));
+  const pick = selected?.id === render.id ? rows?.[selected.index]?.pick : undefined;
+  const dressedOn = !!pick?.who && pick.outfit;
+  const pending = wanted(rows ?? [], render.id, asked)
+    .map(({ key, row }) => `${key}|${row.pick.part}`)
+    .join(",");
+  useEffect(() => {
+    if (dressedOn && pending && !running) void areasNow.current();
+  }, [dressedOn, pending, running]);
   const faces = rows?.filter((r) => r.found).length ?? 0;
   let said = "";
   if (finding) said = `finding faces · ${finding}`;
   else if (rows) said = faces ? `${faces} face${faces === 1 ? "" : "s"} found` : "no face found";
+  else if (!warm) said = "the GPU is off: finding faces starts it";
   return (
     <>
       <div className="flex items-center gap-2">

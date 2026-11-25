@@ -2173,6 +2173,32 @@
    "IMAGE"
   ]
  },
+ "StudioMaskStrip": {
+  "input": {
+   "optional": {
+    "mask_1": [
+     "MASK"
+    ],
+    "mask_2": [
+     "MASK"
+    ],
+    "mask_3": [
+     "MASK"
+    ]
+   },
+   "required": {
+    "mask_0": [
+     "MASK"
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ]
+ },
  "StudioPersonBox": {
   "input": {
    "required": {

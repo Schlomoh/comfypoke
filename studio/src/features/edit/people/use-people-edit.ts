@@ -3,8 +3,9 @@
 // writes them unless that is switched off; each face is redrawn with the picked look, its person's words and LoRAs.
 import { useAtomValue } from "jotai";
 
-import type { PeopleRequest } from "@/data/api";
+import { api, type PeopleRequest } from "@/data/api";
 import { useLoraNotes } from "@/data/db/presets";
+import { imageRef } from "@/data/images";
 import { portrait } from "@/domain/compose";
 import { FACE_PEOPLE, facePerson } from "@/domain/face";
 import { ownedBy, triggersOf } from "@/domain/loras";
@@ -14,32 +15,36 @@ import type { Person } from "@/domain/recipe";
 import type { EditedPerson } from "@/domain/render";
 import { toPass } from "@/domain/setup";
 import { hasArea, maskPng } from "@/features/edit/mask";
-import { MASK_PART, peopleAtom, type PersonRow } from "@/features/edit/people/state";
-import { editAtom, masksAtom } from "@/features/edit/state";
-import { PARTS } from "@/features/edit/use-find";
+import { peopleAtom, type PersonRow } from "@/features/edit/people/state";
+import { useFinding } from "@/features/edit/people/use-faces";
+import { editAtom, maskKey, masksAtom } from "@/features/edit/state";
+import { partWords } from "@/features/edit/use-find";
 import { usePasses } from "@/features/edit/use-passes";
 import { useJobs } from "@/state/jobs";
 import { recipeAtom, stageAtom } from "@/state/studio";
 
-type Picked = PersonRow & { person: Person };
-/** The part as the server takes it: SAM's words for it, or "mask". */
-const partOf = (part: string) =>
-  part === MASK_PART ? "mask" : (PARTS.find(([label]) => label === part)?.[1] ?? part);
+type Picked = PersonRow & { person: Person; index: number };
 
 export function usePeopleEdit() {
   const { render, job } = useAtomValue(stageAtom);
   const recipe = useAtomValue(recipeAtom);
   const c = useAtomValue(editAtom);
   const rows = useAtomValue(peopleAtom)[render?.id ?? ""];
-  const ops = useAtomValue(masksAtom)[render?.id ?? ""] ?? [];
+  const masks = useAtomValue(masksAtom);
+  const finding = useFinding(render);
   const notes = useLoraNotes();
   const { choose } = usePasses(render);
-  const { people } = useJobs();
+  const { edit } = useJobs();
 
-  const picked = (rows ?? []).flatMap((r): Picked[] => {
+  const picked = (rows ?? []).flatMap((r, index): Picked[] => {
     const person = recipe.cast.find((p) => p.id === r.pick.who);
-    return person ? [{ ...r, person }] : [];
+    return person ? [{ ...r, person, index }] : [];
   });
+  /** A person's area as the stage shows it, or none to have it found by their part. */
+  const own = (p: Picked) => {
+    const ops = render ? (masks[maskKey(render.id, p.index)] ?? []) : [];
+    return hasArea(ops) ? ops : null;
+  };
   const dressed = picked.filter((p) => p.pick.outfit);
   const redrawn = picked.filter((p) => p.pick.face && p.found);
   const sent = picked.filter((p) => dressed.includes(p) || redrawn.includes(p)); // the others stay as they are
@@ -53,13 +58,11 @@ export function usePeopleEdit() {
   const blocked = (() => {
     if (job) return "wait for this one to finish, or pick an image";
     if (!render) return "no image to edit yet";
-    if (!rows) return "finding the people on the image";
+    if (!rows) return finding ? "finding the people on the image" : "find the faces first";
     if (!count) return "pick someone to dress or a face to redraw";
     if (sent.length > FACE_PEOPLE) return `at most ${FACE_PEOPLE} people in one edit`;
     const bare = dressed.find((p) => !outfitPieces(p.person).length);
     if (bare) return `say what ${bare.person.name || "they"} wear`;
-    if (dressed.some((p) => p.pick.part === MASK_PART) && !hasArea(ops))
-      return "paint or find the mask first";
     if (dressed.length && !dresser) return "save a Z-Image look to dress with";
     if (redrawn.length && !look) return "pick a look to redraw faces with";
     return null;
@@ -80,9 +83,13 @@ export function usePeopleEdit() {
 
   const send = async () => {
     if (blocked || !render) return;
-    const mask = dressed.some((p) => p.pick.part === MASK_PART)
-      ? await maskPng(ops, render.width, render.height)
-      : null;
+    // each dressed person's own area, drawn once for every render
+    const areas = await Promise.all(
+      sent.map(async (p) => {
+        const ops = dressed.includes(p) ? own(p) : null;
+        return ops ? maskPng(ops, render.width, render.height) : null;
+      }),
+    );
     const dress =
       dressed.length && dresser
         ? {
@@ -101,7 +108,7 @@ export function usePeopleEdit() {
             box: p.found?.box ?? null,
             ...face(p.person),
             outfit: worn.has(p) ? wear(p.person, worn.get(p) ?? []) : null,
-            part: worn.has(p) ? partOf(p.pick.part) : "",
+            part: worn.has(p) ? partWords(p.pick.part) : "",
             redraw: redrawn.includes(p),
           })),
           dress,
@@ -115,7 +122,7 @@ export function usePeopleEdit() {
           face: p.pick.face && !!p.found,
         }));
         const one = dressed.length === 1 ? dressed[0] : null; // one dressed: an outfit like Dress made, to keep or reuse
-        await people(
+        await edit(
           render,
           {
             target: "people",
@@ -134,8 +141,13 @@ export function usePeopleEdit() {
                 }
               : {}),
           },
-          request,
-          mask,
+          async (t, image) => {
+            const people = request.people.map(async (x, i) => {
+              const mask = areas[i];
+              return mask ? { ...x, mask: await imageRef(t, mask) } : x;
+            });
+            return api.people(t.wire, { ...request, image, people: await Promise.all(people) });
+          },
         );
       }
   };

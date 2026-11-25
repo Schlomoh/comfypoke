@@ -4,12 +4,14 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { useState } from "react";
 
-import { FACE_FAMILIES, Locked } from "@/data/api";
+import { api, FACE_FAMILIES, Locked } from "@/data/api";
 import { loadFace } from "@/data/db/faces";
 import { useSpace } from "@/data/db/space";
+import { imageRef } from "@/data/images";
 import { lockApp, useGpu } from "@/data/queries";
 import { portrait } from "@/domain/compose";
 import { errorText, median } from "@/domain/format";
+import { legacyUnet } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { useFaceChoices } from "@/features/edit/face-choices";
 import { hasArea, maskPng } from "@/features/edit/mask";
@@ -38,7 +40,7 @@ function useRepaint() {
   const recipe = useAtomValue(recipeAtom);
   const c = useAtomValue(editAtom);
   const ops = useAtomValue(masksAtom)[render?.id ?? ""] ?? [];
-  const { inpaint } = useJobs();
+  const { edit } = useJobs();
   const { choose } = usePasses(render);
   const faces = useFaceChoices(render);
   const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
@@ -65,12 +67,22 @@ function useRepaint() {
     const found = ops.flatMap((o) => (o.kind === "found" ? [o.text] : []));
     const target = [...found, ...(ops.some((o) => o.kind === "stroke") ? ["painted"] : [])].join(", ");
     const mask = await maskPng(ops, render.width, render.height);
-    const faceBlob = face ? await loadFace(space, face.face) : undefined;
+    const photo = face ? await loadFace(space, face.face) : undefined;
+    const { pass } = repaintWith;
+    const record = { target, prompt: text, setup: repaintWith.name, ...(face ? { face: face.name } : {}) };
     for (let take = 0; take < c.takes; take++)
-      await inpaint(
-        render,
-        { target, prompt: text, setup: repaintWith.name, ...(face ? { face: face.name } : {}) },
-        { mask, face: faceBlob, stopAfter: recipe.stopAfter, pass: repaintWith.pass },
+      await edit(render, record, async (t, image) =>
+        api.inpaint(t.wire, {
+          image,
+          mask: await imageRef(t, mask),
+          target,
+          prompt: text,
+          ...pass,
+          negative: pass.unet === (render.unet ?? legacyUnet(render.model)) ? (render.negative ?? "") : "", // another model's: not its negative
+          seed: null, // a new one each take
+          reference: photo && (await imageRef(t, photo)),
+          stop_after: recipe.stopAfter,
+        }),
       );
   };
 

@@ -13,6 +13,7 @@ import { FIT } from "@/domain/view";
 import { EditCanvas } from "@/features/edit/edit-canvas";
 import { MaskTools } from "@/features/edit/mask-tools";
 import { masksAtom, peekAtom } from "@/features/edit/state";
+import { useMaskKey } from "@/features/edit/use-mask-key";
 import { download } from "@/features/library/files";
 import { ImageActions } from "@/features/library/image-actions";
 import { ZoomBar } from "@/features/stage/zoom-bar";
@@ -135,10 +136,11 @@ function RenderBar({ render }: { render: Render }) {
 
 function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: boolean }) {
   const editing = useAtomValue(tabAtom) === "edit";
-  const steps = useAtomValue(masksAtom)[render?.id ?? ""]?.length ?? 0;
+  const key = useMaskKey(render);
+  const steps = useAtomValue(masksAtom)[key ?? ""]?.length ?? 0;
   if (job?.error) return <FailedBar job={job} />;
   if (job) return <RunningBar job={job} />;
-  if (render && editing) return <MaskTools render={render} steps={steps} />;
+  if (render && editing) return <MaskTools render={render} maskKey={key} steps={steps} />;
   if (render) return <RenderBar render={render} />;
   return <span className="text-faint">{loading ? "" : "Ready"}</span>;
 }

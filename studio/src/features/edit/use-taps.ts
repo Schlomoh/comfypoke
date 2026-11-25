@@ -1,19 +1,17 @@
-// Tap to select: each change to an image's tapped points asks SAM 3.1 for the area they mark (/api/mask with
+// Tap to select: each change to a mask's tapped points asks SAM 3.1 for the area they mark (/api/mask with
 // points, a few seconds on a warm GPU), and the answer replaces that area in the image's mask steps, so the area
 // follows the points until it is kept. Only the latest answer counts: a tap made while one runs supersedes it.
 import { useAtomValue, useStore } from "jotai";
 import { useEffect, useRef } from "react";
 
 import { api, Locked } from "@/data/api";
-import { loadImage } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
-import { imageRef, withImages } from "@/data/images";
 import { lockApp } from "@/data/queries";
 import { errorText } from "@/domain/format";
 import type { Render } from "@/domain/render";
 import { areaOf, type Op } from "@/features/edit/mask";
-import { masksAtom, tapsAtom, tapStageAtom, type Taps } from "@/features/edit/state";
-import { preview } from "@/state/preview";
+import { masksAtom, tapsAtom, type Taps } from "@/features/edit/state";
+import { lookAt, setStage } from "@/state/preview";
 import { notify } from "@/ui/notify";
 
 /** The mask steps with the tapped area put in place of its earlier version, or added at the end; none removes it. */
@@ -24,20 +22,27 @@ const placed = (ops: Op[], id: string, area: ImageBitmap | null): Op[] => {
   return at === -1 ? [...ops, op] : ops.map((o, i) => (i === at ? op : o));
 };
 
+/** The look key of the area being found for the mask `key`'s taps (state/preview.ts). */
+export const tapping = (key: string) => `tap:${key}`;
+
 /** Pixels SAM takes: whole, inside the image. */
 const px = (f: number, size: number) => Math.min(size - 1, Math.max(0, Math.round(f * size)));
 
-export function useTaps(render: Render) {
+/** The tapped points of the mask `key` (features/edit/state maskKey), found on `render`. */
+export function useTaps(render: Render, key: string) {
   const store = useStore();
   const space = useSpace();
-  const taps: Taps | undefined = useAtomValue(tapsAtom)[render.id];
-  const latest = useRef(0);
+  const taps: Taps | undefined = useAtomValue(tapsAtom)[key];
+  const latest = useRef<Record<string, number>>({}); // the newest run of each mask's taps: only it places its area
+  const ran = useRef(new Map<string, Taps>()); // the taps each mask last ran with: coming back to a mask is no new tap
 
   useEffect(() => {
-    if (!taps) return;
-    const run = ++latest.current;
+    if (!taps || ran.current.get(key) === taps) return;
+    ran.current.set(key, taps);
+    const run = (latest.current[key] = (latest.current[key] ?? 0) + 1);
+    const newest = () => run === latest.current[key];
     const set = (area: ImageBitmap | null) =>
-      store.set(masksAtom, (m) => ({ ...m, [render.id]: placed(m[render.id] ?? [], taps.op, area) }));
+      store.set(masksAtom, (m) => ({ ...m, [key]: placed(m[key] ?? [], taps.op, area) }));
     const yes = taps.points.filter((p) => !p.not);
     if (!yes.length) {
       set(null); // only "not this" points, or none left: nothing is marked
@@ -47,31 +52,26 @@ export function useTaps(render: Render) {
       taps.points
         .filter((p) => p.not === not)
         .map((p) => ({ x: px(p.at[0], render.width), y: px(p.at[1], render.height) }));
-    store.set(tapStageAtom, { id: render.id, stage: "queued" });
+    const look = tapping(key);
+    setStage(look, "queued");
     void (async () => {
       try {
-        const b64 = await preview(
+        const b64 = await lookAt(
           space,
-          async () =>
-            withImages(space, async (t) =>
-              api.mask(t.wire, await imageRef(t, await loadImage(space, render.id)), "", {
-                positive: pts(false),
-                negative: pts(true),
-              }),
-            ),
-          (stage) => run === latest.current && store.set(tapStageAtom, { id: render.id, stage }),
+          render.id,
+          (t, image) => api.mask(t.wire, image, "", { positive: pts(false), negative: pts(true) }),
+          (stage) => newest() && setStage(look, stage),
         );
-        if (run !== latest.current) return;
+        if (!newest()) return;
         const area = await areaOf(b64);
         if (!area) notify("Nothing found there; tap the middle of the thing, or paint it");
         set(area);
       } catch (e) {
         if (e instanceof Locked) lockApp();
-        else if (run === latest.current)
-          notify(`Could not find what was tapped: ${errorText(e)}`, { bad: true });
+        else if (newest()) notify(`Could not find what was tapped: ${errorText(e)}`, { bad: true });
       } finally {
-        if (run === latest.current) store.set(tapStageAtom, null);
+        if (newest()) setStage(look, null);
       }
     })();
-  }, [store, space, render.id, render.width, render.height, taps]);
+  }, [store, space, key, render.id, render.width, render.height, taps]);
 }

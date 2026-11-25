@@ -34,21 +34,31 @@ function grouped(ops: Op[]) {
   return out;
 }
 
-export function MaskSummary({ render }: { render: Render }) {
+/** The steps of the mask `maskKey` (features/edit/state maskKey) on `render`, under `title`. */
+export function MaskSummary({
+  render,
+  maskKey: key,
+  title,
+}: {
+  render: Render;
+  maskKey: string;
+  title: string;
+}) {
   const [masks, setMasks] = useAtom(masksAtom);
   const [bodyOf] = useAtom(showBodyAtom);
   const [taps, setTaps] = useAtom(tapsAtom);
   const body = usePreview(`body:${render.id}`);
-  const finding = useFinding(render);
-  const groups = grouped(masks[render.id] ?? []);
+  const finding = useFinding(key);
+  const groups = grouped(masks[key] ?? []);
   const showBody = bodyOf === render.id;
-  // steps are fractions of the image, so the source's mask fits any image of its shape: an upscale, an edit
+  // steps are fractions of the image, so the source's mask fits any image of its shape: an upscale, an edit. Only the
+  // image's own: people are numbered by the faces found on each image, which need not agree.
   const source = (useAtomValue(rendersAtom) ?? []).find((r) => r.id === render.source);
   const sameShape = !!source && Math.abs(source.width / source.height - render.width / render.height) < 0.01;
-  const carried = sameShape ? (masks[source.id] ?? []) : [];
+  const carried = sameShape && key === render.id ? (masks[source.id] ?? []) : [];
   return (
     <Section
-      title="Mask"
+      title={title}
       tip="What the edit changes. Paint it, tap a thing for SAM 3.1 to find it, or find it by words, all from the bar under the image; the eraser takes away. Each step can be taken out here. Body shows the body dressing holds to, under the mask."
     >
       {groups.length === 0 && finding.length === 0 && (
@@ -59,7 +69,7 @@ export function MaskSummary({ render }: { render: Render }) {
           variant="link"
           size="inline"
           className="self-start"
-          onClick={() => setMasks((m) => ({ ...m, [render.id]: carried }))}
+          onClick={() => setMasks((m) => ({ ...m, [key]: carried }))}
         >
           Use the mask of the image it was made from
         </Button>
@@ -68,18 +78,18 @@ export function MaskSummary({ render }: { render: Render }) {
         <ChipRow>
           {groups.map((g) => (
             <Tag
-              key={masks[render.id]?.indexOf(g.ops[0])}
+              key={masks[key]?.indexOf(g.ops[0])}
               tone="mask"
               removeLabel={`Take “${g.label}” out of the mask`}
               onRemove={() => {
                 setMasks((m) => ({
                   ...m,
-                  [render.id]: (m[render.id] ?? []).filter((o) => !g.ops.includes(o)),
+                  [key]: (m[key] ?? []).filter((o) => !g.ops.includes(o)),
                 }));
                 // the tapped area still open: its points go too, or the next tap brings it back
-                const open = taps[render.id]?.op;
+                const open = taps[key]?.op;
                 if (g.ops.some((o) => o.kind === "found" && o.id === open))
-                  setTaps((all) => Object.fromEntries(Object.entries(all).filter(([k]) => k !== render.id)));
+                  setTaps((all) => Object.fromEntries(Object.entries(all).filter(([k]) => k !== key)));
               }}
             >
               {g.label}

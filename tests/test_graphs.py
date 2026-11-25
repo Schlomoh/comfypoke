@@ -91,6 +91,13 @@ def test_people_cut_each_area_to_its_person_and_find_each_part_once():
     assert _count("people dress and faces", "CLIPTextEncode") >= 2
 
 
-def test_people_without_a_face_dress_over_the_mask_and_redraw_nothing():
-    assert _count("people no face over the mask", "StudioFaceMask") == 0
-    assert _count("people no face over the mask", "ImageToMask") == 1
+def test_people_dressed_over_their_own_mask_find_nothing_and_redraw_nothing():
+    assert _count("people no face over their mask", "StudioFaceMask") == 0
+    assert _count("people no face over their mask", "SAM3_Detect") == 0  # their mask as drawn: no find, no cut
+    assert _count("people no face over their mask", "CheckpointLoaderSimple") == 0  # nor a SAM loaded for nothing
+    assert _count("people no face over their mask", "ImageToMask") == 1
+
+
+def test_areas_come_back_as_one_strip_one_area_each():
+    assert _count("areas", "StudioMaskStrip") == 1
+    assert _count("areas", "MaskComposite") == 2

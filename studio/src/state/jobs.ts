@@ -5,7 +5,7 @@
 import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
-import { api, quietly, type ImageRef, type PeopleRequest, type Request, type Started } from "@/data/api";
+import { api, quietly, type ImageRef, type Request, type Started } from "@/data/api";
 import { addPending, dropPending, pendingIds, pendingMeta } from "@/data/db/pending";
 import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
@@ -13,10 +13,9 @@ import { imageRef, openImage, openPreview, pngSize, withImages, type Transport }
 import type { FacePerson } from "@/domain/face";
 import { errorText } from "@/domain/format";
 import { isUpscale, type Job } from "@/domain/job";
-import { legacyUnet } from "@/domain/recipe";
 import { recordOf } from "@/domain/record";
 import type { Edit, JobMeta, Params, Render, Upscale } from "@/domain/render";
-import { passOf, retouchOf, type Pass } from "@/domain/setup";
+import { retouchOf } from "@/domain/setup";
 import { jobsAtom, viewerAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
@@ -187,7 +186,8 @@ function createRunner(store: Store, space: Space) {
     return res;
   };
 
-  /** An edit of a render: `send` gets its image as sent; the result links back to it. */
+  /** An edit of a render (a repaint, People): `send` starts it with the render's image as sent; the result links back
+   * to it in its lineage. */
   const edit = async (r: Render, e: Edit, send: (t: Transport, image: ImageRef) => Promise<Started>) => {
     const png = await loadImage(space, r.id);
     const res = await withImages(space, async (t) => send(t, await imageRef(t, png)));
@@ -196,44 +196,10 @@ function createRunner(store: Store, space: Space) {
     return res;
   };
 
-  /** Repaints the masked part of a render with `o.pass`, its own model unless another is picked. */
-  const inpaint = async (
-    r: Render,
-    e: Edit,
-    o: { mask: Blob; face?: Blob; stopAfter?: boolean; pass?: Pass },
-  ) => {
-    const { mask, face, stopAfter } = o;
-    const pass = o.pass ?? passOf(r);
-    return edit(r, e, async (t, image) =>
-      api.inpaint(t.wire, {
-        image,
-        mask: await imageRef(t, mask),
-        target: e.target,
-        prompt: e.prompt,
-        unet: pass.unet,
-        family: pass.family,
-        negative: pass.unet === (r.unet ?? legacyUnet(r.model)) ? (r.negative ?? "") : "", // another model, not its negative
-        loras: pass.loras,
-        steps: pass.steps,
-        cfg: pass.cfg,
-        seed: null, // a new one each time: Repaint again is how to get another take
-        reference: face && (await imageRef(t, face)),
-        stop_after: stopAfter,
-      }),
-    );
-  };
-
-  /** Everyone on a render at once, dressed and their faces redrawn (the Edit tab's People). */
-  const people = async (r: Render, e: Edit, p: Omit<PeopleRequest, "image" | "mask">, mask?: Blob | null) =>
-    edit(r, e, async (t, image) =>
-      api.people(t.wire, { ...p, image, ...(mask ? { mask: await imageRef(t, mask) } : {}) }),
-    );
-
   return {
     generate,
     upscale,
-    inpaint,
-    people,
+    edit,
     cancel: (id: string) => api.cancel(id).catch(() => finish(id)),
     dismiss: (id: string) => setJobs((js) => js.filter((j) => j.id !== id)),
     resume,
@@ -284,8 +250,7 @@ export function useJobs() {
   return {
     generate: runner?.generate ?? notRunning,
     upscale: runner?.upscale ?? notRunning,
-    inpaint: runner?.inpaint ?? notRunning,
-    people: runner?.people ?? notRunning,
+    edit: runner?.edit ?? notRunning,
     cancel: (id: string) => void runner?.cancel(id),
     dismiss: (id: string) => runner?.dismiss(id),
   };

@@ -1,22 +1,16 @@
 // Finding by words: SAM 3.1 finds what is named (/api/mask, a few seconds on a warm GPU) and the area joins the
-// image's mask as a step. The toolbar asks; the Edit tab's mask summary shows what is still being found.
-import { atom, useAtomValue, useStore } from "jotai";
+// mask being edited (the image's, or a person's in People) as a step. The toolbar asks; the Edit tab's mask summary shows what is still being found.
+import { useStore } from "jotai";
 
 import { api, Locked } from "@/data/api";
-import { loadImage } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
-import { imageRef, withImages } from "@/data/images";
 import { lockApp } from "@/data/queries";
 import { errorText } from "@/domain/format";
 import type { Render } from "@/domain/render";
 import { areaOf } from "@/features/edit/mask";
 import { masksAtom } from "@/features/edit/state";
-import { preview } from "@/state/preview";
+import { lookAt, setStage, stageOf, useStages } from "@/state/preview";
 import { notify } from "@/ui/notify";
-
-/** What is being found right now, on which image, with its stage. */
-export type Finding = { id: string; text: string; stage: string };
-const findingAtom = atom<Finding[]>([]);
 
 /** Garments by name: "clothing" alone found a t-shirt and left the jeans. */
 export const PARTS: [string, string][] = [
@@ -29,6 +23,9 @@ export const PARTS: [string, string][] = [
   ["background", "background"],
 ];
 
+/** A part by its label as SAM is asked for it; words of one's own are asked as they are. */
+export const partWords = (label: string) => PARTS.find(([l]) => l === label)?.[1] ?? label;
+
 /** What the image's people wore, as written: the likeliest things to find again. */
 export const worn = (r: Render) => [
   ...new Set(
@@ -36,38 +33,36 @@ export const worn = (r: Render) => [
   ),
 ];
 
-export function useFinding(render: Render) {
-  return useAtomValue(findingAtom).filter((f) => f.id === render.id);
+const finding = (key: string) => `find:${key}:`;
+
+/** What is being found right now for the mask `key`, by its words, with its stage. */
+export function useFinding(key: string) {
+  return useStages(finding(key)).map(({ rest, stage }) => ({ text: rest, stage }));
 }
 
-export function useFind(render: Render) {
+/** Finding by words on `render`, into the mask `key` (features/edit/state maskKey). */
+export function useFind(render: Render, key: string) {
   const store = useStore();
   const space = useSpace();
-  const set = (text: string, stage: string | null) =>
-    store.set(findingAtom, (all) => [
-      ...all.filter((f) => f.id !== render.id || f.text !== text),
-      ...(stage ? [{ id: render.id, text, stage }] : []),
-    ]);
 
   /** `label` is how the area is listed and recorded, `what` what SAM is asked for. True when it found something. */
   return async (label: string, what = label): Promise<boolean> => {
     const t = label.trim();
-    if (!t || store.get(findingAtom).some((f) => f.id === render.id && f.text === t)) return false;
-    set(t, "queued");
+    const look = finding(key) + t;
+    if (!t || stageOf(look)) return false;
+    setStage(look, "queued");
     try {
-      const b64 = await preview(
+      const b64 = await lookAt(
         space,
-        async () =>
-          withImages(space, async (tr) =>
-            api.mask(tr.wire, await imageRef(tr, await loadImage(space, render.id)), what.trim()),
-          ),
-        (stage) => set(t, stage),
+        render.id,
+        (tr, image) => api.mask(tr.wire, image, what.trim()),
+        (s) => setStage(look, s),
       );
       const area = await areaOf(b64);
       if (!area) throw new Error("nothing found by that name; try other words, tap it, or paint it");
       store.set(masksAtom, (m) => ({
         ...m,
-        [render.id]: [...(m[render.id] ?? []), { kind: "found", id: crypto.randomUUID(), text: t, area }],
+        [key]: [...(m[key] ?? []), { kind: "found", id: crypto.randomUUID(), text: t, area }],
       }));
       return true;
     } catch (e) {
@@ -75,7 +70,7 @@ export function useFind(render: Render) {
       else notify(`Could not find “${t}”: ${errorText(e)}`, { bad: true });
       return false;
     } finally {
-      set(t, null);
+      setStage(look, null);
     }
   };
 }
