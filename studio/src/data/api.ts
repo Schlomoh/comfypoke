@@ -50,13 +50,13 @@ export type DressRequest = { hold: Hold; dresser: Pass; finish: (Pass & { denois
 export type PeopleRequest = {
   image: ImageRef;
   seed: number | null;
-  mask?: ImageRef; // the image's size: whoever is dressed over part "mask"
   people: {
     box: [number, number, number, number] | null; // their face as /api/faces found it; null when no face was found
     text: string; // who they are, for their face
     loras: Lora[]; // their face's
     outfit: string | null;
     part: string;
+    mask?: ImageRef; // their area as the stage shows it, the image's size; none: found by `part` on the server
     redraw: boolean;
   }[];
   dress: DressRequest | null; // when anyone is dressed
@@ -145,6 +145,12 @@ export const api = {
   /** Every face on the picture and whose of `people` (by side, or face photo) it is, as a label image. */
   faces: (key: WrappedKey, image: ImageRef, people: { side: string; face?: ImageRef }[]) =>
     post<Started>("/api/faces", { image, people, key }),
+  /** Each person's area (their face's box, or none, and the part's words), side by side in one image. */
+  areas: (
+    key: WrappedKey,
+    image: ImageRef,
+    people: { box: [number, number, number, number] | null; part: string }[],
+  ) => post<Started>("/api/areas", { image, people, key }),
   people: (key: WrappedKey, p: PeopleRequest) => post<Started>("/api/people", { ...p, key }),
   transport: () => call<{ kid: string; spki: string }>("/api/transport"),
   /** A sealed image, once per image (data/images.ts); a PNG's size goes along, since the studio cannot read it. */

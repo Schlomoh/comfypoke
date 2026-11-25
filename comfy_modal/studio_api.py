@@ -347,9 +347,13 @@ async def _json(request: Request) -> dict:
         body.pop(f"{name}_size", None)  # stated with the upload only
         if body.get(name):
             body[name], body[f"{name}_size"] = stored(body[name], name)
-    for person in [*(body.get("face_people") or []), *(body.get("people") or [])]:  # face photos, to tell people apart
-        if isinstance(person, dict) and person.get("face"):
+    for person in [*(body.get("face_people") or []), *(body.get("people") or [])]:  # face photos, a person's own mask
+        if not isinstance(person, dict):
+            continue
+        if person.get("face"):
             person["face"] = stored(person["face"], "face photo")[0]
+        if person.get("mask"):
+            person["mask"], person["mask_size"] = stored(person["mask"], "mask")
     key = body.get("key")
     if not isinstance(key, dict) or not isinstance(key.get("key"), str):
         raise HTTPException(400, "the request has no image key")
@@ -575,13 +579,32 @@ async def find_faces(request: Request):
     return _start(body, params, graphs.faces(b64, cast), queued=False)
 
 
+@api.post("/api/areas")
+async def find_areas(request: Request):
+    """Each person's area as /api/people would find it (graphs.areas): `people` are 1 to 4, each their face's `box` in
+    pixels (or none) and the `part` to find, sent back side by side in one image for the phone to show and edit. Runs
+    outside stop-after, like the other looks ahead of an edit."""
+    body = await _json(request)
+    b64 = str(body.get("image", ""))
+    if not b64 or len(b64) > MAX_IMAGE:
+        raise HTTPException(400, "missing image, or larger than 40 MB")
+    w, h = _png_size(body)
+    raw = body.get("people")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= graphs.FACE_PEOPLE:
+        raise HTTPException(400, f"send 1 to {graphs.FACE_PEOPLE} people")
+    who = [_who({**x, "outfit": "area", "redraw": False}, w, h) for x in raw]
+    params = {"kind": "areas", "unet": "sam3.1_multiplex_fp16.safetensors", "family": "sam", "prompt": "", "negative": "",
+              "width": w * len(who), "height": h, "steps": 1, "cfg": 1.0, "seed": 0, "loras": []}
+    return _start(body, params, graphs.areas(b64, who), queued=False)
+
+
 @api.post("/api/people")
 async def edit_people(request: Request):
     """Everyone on a picture at once (graphs.people): each of `people` (their face's `box` in pixels as /api/faces found
     it, `text`, `loras`, and `outfit` with `part`, or `redraw`) dressed and their face redrawn. `dress` is hold,
-    dresser and finish as /api/inpaint's; `face` the face pass's setup with its strength as `denoise`; `mask`, the image's
-    size, for whoever is dressed over part "mask". A person without a box is whoever RT-DETR finds, for a picture with
-    no face found."""
+    dresser and finish as /api/inpaint's; `face` the face pass's setup with its strength as `denoise`. A dressed person
+    with a `mask` (the image's size, as the phone shows their area) is dressed over it, else over `part` as found. A
+    person without a box is whoever RT-DETR finds, for a picture with no face found."""
     body = await _json(request)
     b64 = str(body.get("image", ""))
     if not b64 or len(b64) > MAX_IMAGE:
@@ -595,11 +618,6 @@ async def edit_people(request: Request):
     if not isinstance(raw, list) or not 1 <= len(raw) <= graphs.FACE_PEOPLE:
         raise HTTPException(400, f"send 1 to {graphs.FACE_PEOPLE} people")
     who = [_who(x, w, h) for x in raw]
-    mask = str(body.get("mask") or "") or None
-    if mask and _png_size(body, "mask") != (w, h):
-        raise HTTPException(400, "the mask must be the image's size")
-    if any(p["outfit"] and p["part"] == "mask" for p in who) and not mask:
-        raise HTTPException(400, "someone is dressed over the mask, and none was sent")
     dressing, redrawing = any(p["outfit"] for p in who), any(p["redraw"] for p in who)
     if not (dressing or redrawing):
         raise HTTPException(400, "nothing to do: dress someone or redraw a face")
@@ -623,7 +641,7 @@ async def edit_people(request: Request):
     # the job's model is what drew the last pixels: the face pass's when it runs, else the dressing's
     p = _params({**last, "prompt": "; ".join(x["outfit"] or x["text"] for x in who)[:4000] or "people", "seed": seed, "width": 1024, "height": 1024})
     params = {**p, "kind": "people", "width": w, "height": h, "people": len(who)}
-    return _start(body, params, graphs.people(b64, who, seed, dress, face, mask))
+    return _start(body, params, graphs.people(b64, who, seed, dress, face))
 
 
 def _who(x, w: int, h: int) -> dict:
@@ -639,10 +657,13 @@ def _who(x, w: int, h: int) -> dict:
         raise HTTPException(400, "a face's box lies outside the picture")
     if not box and x.get("redraw"):
         raise HTTPException(400, "a face is redrawn by its box")
-    if len(outfit) > 2000 or (outfit and not 0 < len(part) <= 200):
+    mask = str(x.get("mask") or "") or None
+    if mask and tuple(x.get("mask_size") or ()) != (w, h):
+        raise HTTPException(400, "a person's mask must be the image's size")
+    if len(outfit) > 2000 or (outfit and not mask and not 0 < len(part) <= 200):
         raise HTTPException(400, "an outfit is up to 2000 characters and needs the part it replaces, in up to 200")
     return {**person, "box": ",".join(map(str, box)) if box else None, "outfit": outfit or None, "part": part,
-            "redraw": bool(x.get("redraw"))}
+            "mask": mask, "redraw": bool(x.get("redraw"))}
 
 
 def _points(raw: dict, w: int, h: int) -> dict:

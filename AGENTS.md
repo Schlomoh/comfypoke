@@ -95,10 +95,15 @@ explains where things are and how to change them without breaking the deployment
   stitch, LanPaint) with a picked look, the person's Who, Look and Wearing after the words. People
   (`edit/people/`) works on everyone at once: `/api/faces` (`graphs.faces`, StudioFaceLabels) finds every face and
   guesses whose it is by face photo, then side (`comfy_nodes/studio_face/assign.py`), as one sealed label image the
-  phone reads (`facesOf` in `domain/people.ts`); the faces are outlined on the stage and each gets a card: who, a new
-  outfit over a part ("all clothes" and the like, or the mask), its face redrawn. `/api/people` (`graphs.people`)
-  sends it as one render: each dressed person's part is SAM's find by words cut to their silhouette (SAM with their
-  RT-DETR box and no words, `StudioPersonBox`; with words a box is only an example), dressed by workflow 08's chain
+  phone reads (`facesOf` in `domain/people.ts`); the faces are outlined on the stage in each person's color and each
+  gets a card: who, a new outfit over a part ("all clothes" and the like), its face redrawn. Every mask is kept by a
+  key (`maskKey` in `edit/state.ts`): the image's own for Repaint, `<render id>:<face>` for a person, and the bar's
+  tools, taps, finds and the mask list edit whichever key is current (`use-mask-key.ts`: the selected person in
+  People). Selecting a dressed person finds every dressed person's area at once (`/api/areas`, `graphs.areas`, one
+  strip of masks the phone cuts apart, `use-areas.ts`) as the first step of their mask, to edit. `/api/people`
+  (`graphs.people`) sends it as one render: a person's area is their mask as shown when it has anything, otherwise
+  SAM's find by words cut to their silhouette (SAM with their RT-DETR box and no words, `StudioPersonBox`; with words
+  a box is only an example), dressed by workflow 08's chain
   (`_dressed`: SAM 3D Body's mesh for that person as depth into Z-Image's Fun Controlnet, optionally a light LanPaint
   finish), then each face picked gets the face pass with its own words and LoRAs (`facePerson` in `domain/face.ts`).
   Outfits are a person's Wearing row of the Prompt tab (`domain/outfits.ts`); versions go side by side
@@ -107,7 +112,9 @@ explains where things are and how to change them without breaking the deployment
   results land in its lineage (`edit/edit-lineage.tsx`, from `Job.source`), a finished job never takes the stage,
   and an image without a mask can take its source's. "before"
   (or C held) shows the source under the mask (`peekAtom`). The passes are chips (`edit/passes.tsx`). `/api/mask`,
-  `/api/faces` and `/api/body` run outside stop-after. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
+  `/api/faces`, `/api/areas` and `/api/body` (everyone's fitted body) run outside stop-after; every look of that kind
+  goes through `lookAt` and keeps its stage by a key in `state/preview.ts`, and every edit through `edit` in
+  `state/jobs.ts`. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
   Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,
   managed from the Look tab's head (`model/look-sheet.tsx`) and picked per pass. A LoRA in the stack belongs to
   the look or to a saved character in the cast (`StackLora.from`, the character's `loras[family]`); its row's tag

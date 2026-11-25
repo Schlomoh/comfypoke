@@ -342,10 +342,11 @@ def _mesh(shader: str, opacity: float = 1.0) -> dict:
 
 
 def body(image_b64: str) -> dict:
-    """The fitted body drawn over the picture, for the phone to show before anything is dressed."""
+    """Everyone's fitted body drawn over the picture, for the phone to show before anything is dressed."""
     g = G()
     image = _image(g, image_b64)
-    _save(g, g.add("SAM3DBody_Render", _mesh("normals", 0.75), pose_data=_body(g, image), background=image, stage="fitting"))
+    pose = _body(g, image, _people(g, image, most=8))
+    _save(g, g.add("SAM3DBody_Render", _mesh("normals", 0.75), pose_data=pose, background=image, stage="fitting"))
     return g.prompt()
 
 
@@ -379,8 +380,9 @@ def _dressed(g: G, image: Ref, mask: Ref, outfit: str, seed: int, hold: str, dre
 
 
 # People: everyone on a picture at once (the Edit tab's People). First the faces and whose each is, as one label image
-# the phone reads (assign.levels); then, with the people the phone settled on, each one's outfit and face. Everything is
-# found in the picture as it came, so a person dressed first does not move anyone else's box.
+# the phone reads (assign.levels); then each person's area as the phone shows it to edit (areas); then, with the people
+# the phone settled on, each one's outfit and face. Everything is found in the picture as it came, so a person dressed
+# first does not move anyone else's box.
 
 def faces(image_b64: str, people: list[dict]) -> dict:
     """Every face on the picture and whose it is: `people` (side, face: a photo or None) as StudioFaceMask takes them."""
@@ -393,36 +395,58 @@ def faces(image_b64: str, people: list[dict]) -> dict:
     return g.prompt()
 
 
-def people(image_b64: str, who: list[dict], seed: int, dress_with: dict | None, face_with: dict | None,
-           mask_b64: str | None = None) -> dict:
+class _Finder:
+    """What finding people's areas in one picture shares: RT-DETR's people, the SAM model, and one find per part."""
+
+    def __init__(self, g: G, source: Ref):
+        self.g, self.source = g, source
+        self.found = _people(g, source, most=8)
+        self.sam: Ref | None = None  # loaded with the first area found here: one drawn on the phone needs none
+        self.clothes: dict[str, Ref] = {}
+
+    def person(self, box: str | None) -> Ref:
+        """The person whose face is at `box`, or without one the likeliest, as a BOUNDING_BOX of one."""
+        return self.g.add("StudioPersonBox", image=self.source, people=self.found, box=box or "", stage="masking")
+
+    def area(self, person: Ref, part: str) -> Ref:
+        """What `part` names on `person`. SAM with a box and no words is the person in it; with words it would take the
+        box for an example of what to find and mark everyone's clothes, so the clothes found by words are cut to them."""
+        g = self.g
+        self.sam = self.sam or g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
+        alone = g.add("SAM3_Detect", threshold=0.4, refine_iterations=2, individual_masks=False, model=self.sam, image=self.source,
+                      bboxes=person, stage="masking")
+        if part not in self.clothes:
+            self.clothes[part] = _sam(g, self.source, part, 0.4, 12)
+        return g.add("MaskComposite", x=0, y=0, operation="multiply", destination=self.clothes[part],
+                     source=g.add("GrowMask", expand=12, tapered_corners=True, mask=alone), stage="masking")
+
+
+def areas(image_b64: str, who: list[dict]) -> dict:
+    """Each of `who`'s (box, part) area as People would find it, side by side in one image (StudioMaskStrip)."""
+    g = G()
+    find = _Finder(g, _image(g, image_b64))
+    masks = {f"mask_{n}": find.area(find.person(p["box"]), p["part"]) for n, p in enumerate(who)}
+    _save(g, g.add("StudioMaskStrip", stage="masking", **masks))
+    return g.prompt()
+
+
+def people(image_b64: str, who: list[dict], seed: int, dress_with: dict | None, face_with: dict | None) -> dict:
     """Each of `who` (box: their face's "x0,y0,x1,y1", or None for whoever RT-DETR likes best when no face was found;
-    text, loras; `outfit` over `part`, the words SAM finds their clothes by, or over the phone's mask with part "mask";
-    `redraw` for their face) dressed and redrawn. Every area is cut to its person's silhouette. `dress_with` is hold, dresser and finish as in `dress`
-    (the finish's text is each person's outfit); `face_with` is the face pass's setup (family, unet, negative, steps,
-    cfg) and strength (denoise), each face with its person's own text and LoRAs on loaders they share."""
+    text, loras; `outfit` over their own `mask` as the phone shows it, or over `part`, the words SAM finds their clothes
+    by, cut to their silhouette; `redraw` for their face) dressed and redrawn. `dress_with` is hold, dresser and finish
+    as in `_dressed` (the finish's text is each person's outfit); `face_with` is the face pass's setup (family, unet,
+    negative, steps, cfg) and strength (denoise), each face with its person's own text and LoRAs on loaders they share."""
     g = G()
     source = image = _image(g, image_b64)
     dressing = [p for p in who if p.get("outfit")]
-    if dressing:
-        found = _people(g, source, most=8)
-        sam = g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
-        clothes: dict[str, Ref] = {}  # one find per part, shared by everyone dressed in it
-        if mask_b64:
-            clothes["mask"] = g.add("ImageToMask", channel="red", image=_image(g, mask_b64))
-        for p in dressing:
-            person = (g.add("StudioPersonBox", image=source, people=found, box=p["box"], stage="masking") if p["box"]
-                      else g.add("StudioPersonBox", image=source, people=_people(g, source), box="", stage="masking"))
-            # SAM with a box and no words: the person in it. With words it would take the box for an example of what
-            # to find and mark everyone's clothes, so the clothes found by words are cut to this person.
-            alone = g.add("SAM3_Detect", threshold=0.4, refine_iterations=2, individual_masks=False, model=sam, image=source,
-                          bboxes=person, stage="masking")
-            if p["part"] not in clothes:
-                clothes[p["part"]] = _sam(g, source, p["part"], 0.4, 12)
-            area = g.add("MaskComposite", x=0, y=0, operation="multiply", destination=clothes[p["part"]],
-                         source=g.add("GrowMask", expand=12, tapered_corners=True, mask=alone), stage="masking")
-            d = dress_with
-            finish = d["finish"] and {**d["finish"], "text": p["outfit"]}
-            image, _ = _dressed(g, image, area, p["outfit"], seed, d["hold"], d["dresser"], finish, person, source)
+    find = _Finder(g, source) if dressing else None
+    for p in dressing:
+        person = find.person(p["box"])
+        area = (g.add("ImageToMask", channel="red", image=_image(g, p["mask"])) if p.get("mask")
+                else find.area(person, p["part"]))
+        d = dress_with
+        finish = d["finish"] and {**d["finish"], "text": p["outfit"]}
+        image, _ = _dressed(g, image, area, p["outfit"], seed, d["hold"], d["dresser"], finish, person, source)
     f, b = face_with, None
     for p in (x for x in who if x.get("redraw") and x["box"]):
         b = (_rebase(g, b, f["family"], p["text"], f["negative"], f["cfg"], p["loras"]) if b

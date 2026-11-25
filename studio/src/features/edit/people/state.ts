@@ -10,16 +10,20 @@ import type { Person } from "@/domain/recipe";
 export type PersonRow = { found: Found | null; pick: Pick };
 export const peopleAtom = atom<Readonly<Record<string, PersonRow[]>>>({});
 
-/** The images whose faces are being found right now, each with its stage. */
-export const findingAtom = atom<Readonly<Record<string, string>>>({});
+/** The person selected on an image (their face's place, left to right): whose area the bar under the stage edits. */
+export const selectedAtom = atom<{ id: string; index: number } | null>(null);
 
-/** The row a tap on a face's tag points at, briefly marked in the panel. */
-export const pointedAtom = atom<number | null>(null);
+/** Each person's color, by their face's place: their tag, their card's edge and their area on the stage. */
+const COLORS = ["#ff3ea5", "#3ec5ff", "#ffd23e", "#7ee36a"] as const;
+export const colorOf = (index: number) => COLORS[index % COLORS.length];
 
-/** The clothes a person's outfit replaces: the words SAM finds them by (as features/edit/use-find's PARTS), or the
- * mask as it is painted. */
+/** The clothes a person's outfit replaces, by the words SAM finds them by (features/edit/use-find's PARTS). */
 export const DEFAULT_PART = "all clothes";
-export const MASK_PART = "the mask";
+/** A person's area as found for them (use-areas.ts): the first step of their mask, replaced when found again. */
+export const AREA_STEP = "area";
+/** The areas asked for, as "<mask key>|<part>": each person's is found once a part, so taking it out of their mask
+ * leaves it out, and nothing found is not asked again in a loop. Finding the faces again forgets an image's. */
+export const askedAtom = atom<ReadonlySet<string>>(new Set<string>());
 
 /** What a found face starts with: the person it was taken for, dressed when their Wearing row has something, and their
  * face redrawn when there is a face to redraw. */

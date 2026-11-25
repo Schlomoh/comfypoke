@@ -7,8 +7,15 @@ import type { Hold } from "@/domain/render";
 import type { Op } from "@/features/edit/mask";
 import type { At } from "@/features/stage/zoom-view";
 
-/** Each image's mask, by render id: going to another image and back finds it as it was left. */
+/** Each mask, by its key (maskKey): an image's own, for a repaint, or one person's on it, in People. Going to another
+ * image and back finds them as they were left. */
 export const masksAtom = atom<Readonly<Record<string, Op[]>>>({});
+
+/** Whose mask: the image's own, or the person of People at face `person` (left to right) on it. */
+export const maskKey = (renderId: string, person?: number | null) =>
+  person === undefined || person === null ? renderId : `${renderId}:${person}`;
+/** The keys of every person's mask on an image. */
+export const isPersonKey = (key: string, renderId: string) => key.startsWith(`${renderId}:`);
 
 /** The brush's diameter in screen pixels, so it looks the same at any zoom: zoom in for fine work. */
 export const BRUSH = { min: 4, max: 160 } as const;
@@ -21,9 +28,7 @@ export const toolAtom = atom<Tool>("brush");
  * mask step the found area is (features/edit/use-taps.ts). Done, or another tool, keeps the area and clears these. */
 export type Tap = { at: At; not: boolean }; // not: a "not this" point, from a hold or Alt
 export type Taps = { op: string; points: Tap[] };
-export const tapsAtom = atom<Readonly<Record<string, Taps>>>({});
-/** The image whose tapped area is being found right now, with its stage; null when nothing runs. */
-export const tapStageAtom = atom<{ id: string; stage: string } | null>(null);
+export const tapsAtom = atom<Readonly<Record<string, Taps>>>({}); // by mask key
 /** The image whose fitted body the stage shows instead of it, to check what dressing will hold; null for none. */
 export const showBodyAtom = atom<string | null>(null);
 /** While held (the "before" button, or C), the image held on: the stage shows the image it was made from, under its

@@ -7,11 +7,12 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { portrait } from "@/domain/compose";
 import type { Person } from "@/domain/recipe";
 import { EditLineage } from "@/features/edit/edit-lineage";
-import { hasArea } from "@/features/edit/mask";
 import { MaskSummary } from "@/features/edit/mask-summary";
 import { Passes } from "@/features/edit/passes";
 import { PeopleList } from "@/features/edit/people/people-list";
-import { editAtom, masksAtom, optionsOpenAtom, TAKES, type EditChoice } from "@/features/edit/state";
+import { peopleAtom, selectedAtom } from "@/features/edit/people/state";
+import { editAtom, optionsOpenAtom, TAKES, type EditChoice } from "@/features/edit/state";
+import { useMaskKey } from "@/features/edit/use-mask-key";
 import { recipeAtom, stageAtom } from "@/state/studio";
 import { Checkbox } from "@/ui/checkbox";
 import { Chip, ChipRow } from "@/ui/chip";
@@ -121,8 +122,12 @@ export function EditPanel() {
   const recipe = useAtomValue(recipeAtom);
   const [c, setC] = useAtom(editAtom);
   const [optionsOpen, setOptionsOpen] = useAtom(optionsOpenAtom);
-  const masked = hasArea(useAtomValue(masksAtom)[render?.id ?? ""] ?? []);
+  const key = useMaskKey(render);
+  const selected = useAtomValue(selectedAtom);
+  const rows = useAtomValue(peopleAtom)[render?.id ?? ""];
   const people = c.mode === "people";
+  const whose = recipe.cast.find((p) => p.id === rows?.[selected?.index ?? -1]?.pick.who);
+  const maskTitle = people ? `${whose?.name || "Their"}${whose?.name ? "'s" : ""} area` : "Mask";
   const person = recipe.cast.find((p) => p.id === c.person) ?? recipe.cast[0];
   return (
     <div>
@@ -147,8 +152,8 @@ export function EditPanel() {
           />
         )}
       </Section>
-      {/* the mask: what Repaint replaces, and in People an area someone can be dressed over */}
-      {render && (!people || masked) && <MaskSummary key={render.id} render={render} />}
+      {/* the mask being edited: what Repaint replaces, or in People the selected person's area */}
+      {render && key && <MaskSummary key={key} render={render} maskKey={key} title={maskTitle} />}
       <Passes />
       <Section title="Options">
         <Disclosure

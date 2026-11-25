@@ -1,4 +1,5 @@
-// The mask over the stage's image, tinted, with the brush's ring where the finger or cursor is. Drawn at the
+// A mask over the stage's image, tinted (the theme's mask color, or a person's in People), with the brush's ring where
+// the finger or cursor is when it is the mask being edited; the others are drawn dimmed and take no strokes. Drawn at the
 // image's own size and stretched over it by CSS, so a deep zoom never asks for a giant canvas.
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
@@ -8,6 +9,7 @@ import { brushAtom, toolAtom, type Tap } from "@/features/edit/state";
 import type { LayerHandle } from "@/features/edit/use-painter";
 
 const ALPHA = 0.55;
+const DIM = 0.22;
 
 const canvas2d = (w: number, h: number) => {
   const c = new OffscreenCanvas(w, h);
@@ -22,12 +24,14 @@ export function MaskLayer({
   width,
   height,
   bind,
+  tint,
 }: {
   ops: Op[];
   taps?: Tap[]; // points tapped for SAM, shown as dots until their area is kept
   width: number;
   height: number;
-  bind: (h: LayerHandle | null) => void; // how the painter draws onto this layer
+  bind?: (h: LayerHandle | null) => void; // how the painter draws onto this layer; none: shown dimmed, not edited
+  tint?: string; // the theme's mask color when none
 }) {
   const shown = useRef<HTMLCanvasElement>(null);
   const brush = useAtomValue(brushAtom);
@@ -41,9 +45,9 @@ export function MaskLayer({
     const el = shown.current;
     const ctx = el?.getContext("2d");
     if (!el || !ctx) return;
-    const tint = getComputedStyle(el).color; // the theme's mask color, from the class
+    const color = tint ?? getComputedStyle(el).color; // the theme's mask color, from the class
     const done = canvas2d(width, height); // the steps so far, tinted
-    done.ctx.fillStyle = done.ctx.strokeStyle = tint;
+    done.ctx.fillStyle = done.ctx.strokeStyle = color;
     drawOps(done.ctx, ops, width, height);
     done.ctx.globalCompositeOperation = "source-in"; // found areas arrive white: take the tint
     done.ctx.fillRect(0, 0, width, height);
@@ -53,10 +57,10 @@ export function MaskLayer({
       work.ctx.clearRect(0, 0, width, height);
       work.ctx.globalCompositeOperation = "source-over";
       work.ctx.drawImage(done.c, 0, 0);
-      work.ctx.strokeStyle = tint;
+      work.ctx.strokeStyle = color;
       if (live) drawStroke(work.ctx, live, width, height);
       ctx.clearRect(0, 0, width, height);
-      ctx.globalAlpha = ALPHA;
+      ctx.globalAlpha = bind ? ALPHA : DIM;
       ctx.drawImage(work.c, 0, 0);
       ctx.globalAlpha = 1;
       const px = width / el.clientWidth; // canvas pixels per screen pixel
@@ -79,10 +83,10 @@ export function MaskLayer({
       ctx.strokeStyle = "#fff";
       ctx.stroke();
     };
-    bind({ redraw });
+    bind?.({ redraw });
     redraw(null, null);
-    return () => bind(null);
-  }, [ops, taps, tapping, width, height, bind]);
+    return () => bind?.(null);
+  }, [ops, taps, tapping, width, height, bind, tint]);
 
   return (
     <canvas

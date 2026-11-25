@@ -90,6 +90,14 @@ async def fake(g, pid):
         for k, cx in enumerate((w // 3, 2 * w // 3)):
             level = k + 1 if k < cast else 5 + k - min(k, cast)
             ImageDraw.Draw(out).rectangle((cx - w // 14, h // 10, cx + w // 14, h // 10 + w // 7), fill=(level * 25,) * 3)
+    elif _nodes(g, "StudioMaskStrip"):  # People's areas: each person's column below their face, side by side
+        w, h = images[0].size
+        people = _nodes(g, "StudioPersonBox")
+        out = Image.new("RGB", (w * len(people), h))
+        for k, n in enumerate(people):
+            box = n["inputs"]["box"] or f"{w // 3},0,{2 * w // 3},0"
+            x0, y0, x1, y1 = (int(v) for v in box.split(","))
+            ImageDraw.Draw(out).rectangle((k * w + x0 - (x1 - x0), y1, k * w + x1 + (x1 - x0), h), fill=(255, 255, 255))
     elif _nodes(g, "StudioPersonBox") or boxes:  # People: each dressed person's column tinted violet, each redrawn face pink
         out = images[0].convert("RGB")
         d = ImageDraw.Draw(out, "RGBA")
@@ -108,15 +116,16 @@ async def fake(g, pid):
         if texts:  # by text: one of five bands, top to bottom
             k = sum(map(ord, texts[0])) % 5
             ImageDraw.Draw(out).ellipse((w // 4, h * k // 5, 3 * w // 4, h * (k + 1) // 5), fill=(255, 255, 255))
-    elif _nodes(g, "SAM3DBody_Render") and not cropped:  # the body preview: a stick figure over the picture
+    elif _nodes(g, "SAM3DBody_Render") and not cropped:  # the body preview: stick figures over the picture
         out = images[0].convert("RGB")
         w, h = out.size
         d = ImageDraw.Draw(out)
-        x, line = w // 2, dict(fill=(140, 194, 224), width=max(3, w // 120))
-        d.ellipse((x - w // 16, h // 8, x + w // 16, h // 8 + w // 8), outline=line["fill"], width=line["width"])
-        for a, b in [((x, h // 4), (x, h * 3 // 5)), ((x - w // 6, h // 3), (x + w // 6, h // 3)), ((x, h * 3 // 5), (x - w // 8, h * 9 // 10)),
-                     ((x, h * 3 // 5), (x + w // 8, h * 9 // 10))]:
-            d.line((a, b), **line)
+        line = dict(fill=(140, 194, 224), width=max(3, w // 120))
+        for x in (w // 3, 2 * w // 3):  # everyone, where the face finder puts its two faces
+            d.ellipse((x - w // 16, h // 8, x + w // 16, h // 8 + w // 8), outline=line["fill"], width=line["width"])
+            for a, b in [((x, h // 4), (x, h * 3 // 5)), ((x - w // 8, h // 3), (x + w // 8, h // 3)),
+                         ((x, h * 3 // 5), (x - w // 12, h * 9 // 10)), ((x, h * 3 // 5), (x + w // 12, h * 9 // 10))]:
+                d.line((a, b), **line)
     elif cropped:  # an inpaint or a dressing: the source back, with what would be repainted tinted
         src, mask = images[0].convert("RGB"), images[1].convert("L")
         tint = (150, 80, 220) if "dresser" in roles else (60, 140, 230)
