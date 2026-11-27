@@ -37,8 +37,8 @@ export function Tabs<T extends string>({
           aria-selected={o === value}
           onClick={() => onChange(o)}
           className={cn(
-            "h-11 shrink-0 border-b-2 px-2.5 font-mono text-[11px] tracking-wider whitespace-nowrap uppercase fine:h-8",
-            o === value ? "border-warn text-ink" : "border-transparent text-faint hover:text-muted",
+            "h-11 shrink-0 border-b-2 px-2.5 text-xs font-medium whitespace-nowrap fine:h-8",
+            o === value ? "border-accent text-ink" : "border-transparent text-faint hover:text-muted",
           )}
         >
           {o}

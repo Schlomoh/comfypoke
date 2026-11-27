@@ -37,7 +37,7 @@ export function Step({
     >
       {url && <img src={url} alt="" className="size-full object-cover" />}
       {branches > 1 && (
-        <span className="absolute top-0 right-0 bg-warn px-0.5 font-mono text-[9px] leading-3 text-bg">
+        <span className="absolute top-0 right-0 bg-accent px-0.5 font-mono text-[9px] leading-3 text-bg">
           ⑂{branches}
         </span>
       )}

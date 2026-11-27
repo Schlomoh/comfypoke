@@ -2,7 +2,7 @@
 // was made with. Drawn on the phone; nothing leaves it.
 import { loadImage } from "@/data/db/renders";
 import type { Space } from "@/data/db/space";
-import { shortName } from "@/domain/format";
+import { modelName } from "@/domain/format";
 import type { Render } from "@/domain/render";
 import { outfitOf } from "@/features/library/keep-outfit";
 
@@ -25,7 +25,7 @@ const caption = (r: Render) =>
 const detail = (r: Render) =>
   (r.uploaded && !r.edit
     ? [`${r.width}×${r.height}`]
-    : [r.unet && shortName(r.unet), `${r.width}×${r.height}`, r.seed != null && `seed ${r.seed}`]
+    : [r.unet && modelName(r.unet), `${r.width}×${r.height}`, r.seed != null && `seed ${r.seed}`]
   )
     .filter(Boolean)
     .join(" · ");

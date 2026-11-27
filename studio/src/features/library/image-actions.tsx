@@ -2,17 +2,20 @@
 // labeled, and the rest in a menu under "⋯"; the settings it was made with are in the viewer's info. Upscale is always the first: the same
 // picture, bigger. A draft's second is Re-render (full size, same seed), anything else's is Edit.
 import { useAtomValue } from "jotai";
+import { useState } from "react";
 
 import { useSpace } from "@/data/db/space";
 import type { Render } from "@/domain/render";
 import { BestButton } from "@/features/library/best-button";
 import { saveImage } from "@/features/library/files";
 import { keepOutfit, outfitOf } from "@/features/library/keep-outfit";
+import { TagEditor } from "@/features/tags/tag-editor";
 import { useImageActions } from "@/state/actions";
 import { useGenerate } from "@/state/generate";
 import { recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
+import { Sheet } from "@/ui/modal";
 import { MenuItem, Popover } from "@/ui/popover";
 
 /** Render a draft again at the dock's size with the same seed: sharper than an upscale, though the composition may
@@ -59,18 +62,25 @@ function UpscaleConfirm({ render, className }: { render: Render; className?: str
 function More({ render }: { render: Render }) {
   const space = useSpace();
   const { reuse, edit, remove } = useImageActions();
+  const [tagging, setTagging] = useState(false);
   return (
-    <Popover trigger="⋯" aria-label="More: reuse, save, delete" className="w-12 shrink-0">
-      <MenuItem onClick={() => reuse(render)} disabled={!!render.uploaded}>
-        Reuse settings
-      </MenuItem>
-      <MenuItem onClick={() => void saveImage(space, render)}>Save to device</MenuItem>
-      {render.draft && <MenuItem onClick={() => edit(render)}>Edit</MenuItem>}
-      {outfitOf(render) && <MenuItem onClick={() => void keepOutfit(space, render)}>Keep outfit</MenuItem>}
-      <MenuItem onClick={() => void remove(render)} className="text-bad">
-        Delete
-      </MenuItem>
-    </Popover>
+    <>
+      <Popover trigger="⋯" aria-label="More: tag, reuse, save, delete" className="w-12 shrink-0">
+        <MenuItem onClick={() => setTagging(true)}>Tag…</MenuItem>
+        <MenuItem onClick={() => reuse(render)} disabled={!!render.uploaded}>
+          Reuse settings
+        </MenuItem>
+        <MenuItem onClick={() => void saveImage(space, render)}>Save to device</MenuItem>
+        {render.draft && <MenuItem onClick={() => edit(render)}>Edit</MenuItem>}
+        {outfitOf(render) && <MenuItem onClick={() => void keepOutfit(space, render)}>Keep outfit</MenuItem>}
+        <MenuItem onClick={() => void remove(render)} className="text-bad">
+          Delete
+        </MenuItem>
+      </Popover>
+      <Sheet open={tagging} onClose={() => setTagging(false)} title="Tags">
+        <TagEditor targets={[render]} />
+      </Sheet>
+    </>
   );
 }
 

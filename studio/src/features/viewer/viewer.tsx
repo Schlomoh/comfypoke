@@ -82,7 +82,7 @@ function RenderView({ render, onClose }: { render: Render; onClose: () => void }
         >
           {/* the clamp on a span: Safari does not clamp a button's own box */}
           <span className="line-clamp-3">
-            {render.draft && <span className="mr-1.5 bg-warn px-1 text-bg">draft</span>}
+            {render.draft && <span className="mr-1.5 bg-accent px-1 text-bg">draft</span>}
             {render.prompt}
           </span>
         </Pressable>

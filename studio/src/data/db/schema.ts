@@ -1,11 +1,13 @@
 // The device's database. A workspace's renders, characters, draft and pending jobs are sealed with its
-// key (crypto.ts), so one workspace never shows another's and a locked one is ciphertext. Section
-// presets and LoRA trigger words are tools rather than work, shared by all workspaces and stored in the
-// clear. A schema change is a new db.version(n), never an edit of an old one: phones keep their data.
+// key (crypto.ts), so one workspace never shows another's and a locked one is ciphertext. The prompt
+// catalog, model setups and LoRA trigger words are tools rather than work, shared by all workspaces and stored in
+// the clear. A schema change is a new db.version(n), never an edit of an old one: phones keep their data.
 import { Dexie, type EntityTable } from "dexie";
 
 import type { Lock, Sealed } from "@/data/crypto";
+import { fromLegacy, sync, type LegacyPreset } from "@/domain/built-ins";
 import { LEGACY_ROW } from "@/domain/parse";
+import { NO_PRESETS, type Chunk, type Sub } from "@/domain/prompt-catalog";
 import type { Render } from "@/domain/render";
 import type { PresetRow } from "@/domain/rows";
 import type { Setup } from "@/domain/setup";
@@ -13,7 +15,8 @@ import type { Setup } from "@/domain/setup";
 /** What is known about a LoRA file, shared by all workspaces: its trigger words, and the model family it was trained
  * for, when said (a LoRA for another family is skipped when sent). */
 export type LoraNote = { name: string; trigger: string; family?: string };
-// block: the row it is offered in; group: its subcategory there (none: More); hidden: a built-in one removed
+// Before the catalog (version 8): a preset added to a row (block) and a subcategory there (group; none: More), or with
+// hidden, a built-in one removed. Read only by the upgrade and by imports of older backups.
 export type Preset = {
   id: string;
   block: PresetRow;
@@ -43,7 +46,7 @@ export const db = new Dexie("studio") as Dexie & {
   renders: EntityTable<Legacy, "id">; // before workspaces; emptied by migrate()
   characters: EntityTable<{ id: string }, "id">; // the same
   loraNotes: EntityTable<LoraNote, "name">;
-  presets: EntityTable<Preset, "id">;
+  presets: EntityTable<Preset, "id">; // before the catalog; emptied by version 8
   workspaces: EntityTable<Workspace, "id">;
   shots: EntityTable<Shot, "id">; // a render's settings; its pixels are in thumbs and images, read one at a time
   thumbs: EntityTable<Bytes, "id">;
@@ -53,6 +56,9 @@ export const db = new Dexie("studio") as Dexie & {
   pending: EntityTable<Row, "id">;
   faces: EntityTable<Row, "id">; // face reference photos, sealed: a person or character points at one by id
   setups: EntityTable<Setup, "id">; // model setups, shared like presets: model files and LoRAs are the volume's, not a workspace's
+  subs: EntityTable<Sub, "id">; // the catalog's subcategories, shared and in the clear (domain/prompt-catalog.ts)
+  chunks: EntityTable<Chunk, "id">; // and the presets in them
+  meta: EntityTable<{ key: string; value: unknown }, "key">; // "seen": the built-in presets seeded already
 };
 
 // The chips a device used to start with, by the block ids of the time. Version 5 takes them out again:
@@ -150,6 +156,18 @@ db.version(5)
 db.version(6).stores({ faces: "id, ws" });
 // Model setups, saved from the Model tab and picked per pass of an edit.
 db.version(7).stores({ setups: "id, at" });
+// The catalog: built-in presets seeded in, and the old ones moved over (a removed built-in one taken out). A new
+// device gets its seed from syncBuiltIns() instead, which also brings presets added in later releases.
+db.version(8)
+  .stores({ subs: "id, row", chunks: "id, row, sub", meta: "key" })
+  .upgrade(async (tx) => {
+    const [seeded, seen] = sync(NO_PRESETS, []);
+    const cat = fromLegacy(seeded, (await tx.table("presets").toArray()) as LegacyPreset[], true);
+    await tx.table("subs").bulkAdd(cat.subs);
+    await tx.table("chunks").bulkAdd(cat.chunks);
+    await tx.table("meta").put({ key: "seen", value: seen });
+    await tx.table("presets").clear();
+  });
 // Another tab purged everything (deleted the database): this one must not quietly recreate it
 // with its own draft or jobs. Reloading drops all of its state.
 db.on("versionchange", () => {

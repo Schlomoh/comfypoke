@@ -1,7 +1,7 @@
 // One sheet per row: its phrases to edit in the body, and the picker that adds in the footer under it.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 
-import { usePresets } from "@/data/db/presets";
+import { usePresets } from "@/data/db/prompt-catalog";
 import { nameOf, ownerOf, phrasesOf, rowDef, rowLens } from "@/domain/cast";
 import { moved } from "@/domain/loras";
 import { PhraseCard } from "@/features/prompt/phrase-card";
@@ -9,12 +9,15 @@ import { RowPicker } from "@/features/prompt/row-picker";
 import { openAtom } from "@/features/prompt/state";
 import { useClearEmptied } from "@/features/prompt/use-clear-emptied";
 import { recipeAtom } from "@/state/studio";
+import { useWide } from "@/ui/media";
 import { Sheet } from "@/ui/modal";
+import { Pane } from "@/ui/pane";
 import { useReorder } from "@/ui/reorder";
 import { Note } from "@/ui/text";
 
 export function RowSheet() {
   const [open, setOpen] = useAtom(openAtom);
+  const Shell = useWide() ? Pane : Sheet; // on a desktop, in the editor's column beside the image
   const recipe = useAtomValue(recipeAtom);
   const setRecipe = useSetAtom(recipeAtom);
   const presets = usePresets(); // read here, always mounted: the picker opens with your own presets already in place
@@ -38,7 +41,7 @@ export function RowSheet() {
   });
 
   return (
-    <Sheet
+    <Shell
       open={!!shown}
       onClose={close}
       title={shown && def ? `${nameOf(recipe, shown.key)} · ${def.label}` : ""}
@@ -60,7 +63,7 @@ export function RowSheet() {
         <Note>Nothing in {def.label} yet. Pick from below or type one.</Note>
       )}
       {shown && phrases.length > 0 && (
-        <div ref={list} className="flex flex-col gap-3">
+        <div ref={list} className="flex flex-col gap-px border border-line bg-line">
           {phrases.map((p, i) => (
             <PhraseCard
               key={p.id}
@@ -74,9 +77,12 @@ export function RowSheet() {
           ))}
         </div>
       )}
+      {shown && phrases.length > 0 && (
+        <Note>The box puts a phrase in the prompt or leaves it out; × removes it.</Note>
+      )}
       {phrases.some((p) => p.versions.length) && (
         <Note>Each version is a separate render with the same seed; nothing else changes between them.</Note>
       )}
-    </Sheet>
+    </Shell>
   );
 }

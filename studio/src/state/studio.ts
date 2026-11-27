@@ -5,9 +5,17 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 import type { Job } from "@/domain/job";
+import {
+  applyFilter,
+  characterNames,
+  inEffect,
+  NO_FILTER,
+  type LibraryFilter,
+} from "@/domain/library-filter";
 import { depthFirst, stacks, trail, visible } from "@/domain/lineage";
 import { EMPTY, type Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
+import { vocabulary } from "@/domain/tags";
 import { FIT, type View } from "@/domain/view";
 
 export type Tab = "prompt" | "look" | "edit" | "library";
@@ -27,8 +35,8 @@ export const viewerAtom = atom<string | null>(null);
 export const infoAtom = atom(false); // the viewer's info panel
 /** One zoom for the stage and the viewer, kept across images, so two seeds compare at the same spot. */
 export const viewAtom = atom<View>(FIT);
-export const characterFilterAtom = atom("");
-export const bestOnlyAtom = atom(false);
+/** The library's filter as picked: best, a character, tags (domain/library-filter.ts). */
+export const filterAtom = atom<LibraryFilter>(NO_FILTER);
 /** The renders being picked among (features/pick); null when not picking. */
 export const pickAtom = atom<string[] | null>(null);
 /** Every image blanked to a plain tile, for working where others can see the screen. Kept across reloads. */
@@ -46,26 +54,14 @@ export const liveJobsAtom = atom((get) => {
   return get(jobsAtom).filter((j) => !(j.saved && ids.has(j.id)));
 });
 
-export const characterNamesAtom = atom((get) => [
-  ...new Set(get(allRendersAtom).flatMap((r) => (r.characterName ? [r.characterName] : []))),
-]);
-
-/** The filter as applied: the last render of a character may be gone. */
-const activeCharacterAtom = atom((get) => {
-  const f = get(characterFilterAtom);
-  return get(characterNamesAtom).includes(f) ? f : "";
-});
-
-const ofCharacterAtom = atom((get) => {
-  const c = get(activeCharacterAtom);
-  return get(allRendersAtom).filter((r) => !c || r.characterName === c);
-});
+export const characterNamesAtom = atom((get) => characterNames(get(allRendersAtom)));
+/** The workspace's tags, the most used first. */
+export const tagsAtom = atom((get) => vocabulary(get(allRendersAtom)));
+/** The filter as applied: the last image of a character, or with a tag, may be gone. */
+export const libraryFilterAtom = atom((get) => inEffect(get(filterAtom), get(allRendersAtom)));
 
 /** What the library shows, in its order. */
-export const shownAtom = atom((get) => {
-  const best = get(bestOnlyAtom);
-  return get(ofCharacterAtom).filter((r) => !best || r.best);
-});
+export const shownAtom = atom((get) => applyFilter(get(allRendersAtom), get(libraryFilterAtom)));
 /** What the library shows as stacks (domain/lineage.ts): one tile per image and everything made from it. */
 export const stacksAtom = atom((get) => stacks(get(shownAtom)));
 /** Batches showing the stacks picked over in them, which otherwise fold away. */
@@ -82,11 +78,11 @@ export const orderOfAtom = atom(
       }),
     ),
 );
-export const bestCountAtom = atom((get) => get(ofCharacterAtom).filter((r) => r.best).length);
-export const libraryFilterAtom = atom((get) => ({
-  character: get(activeCharacterAtom),
-  best: get(bestOnlyAtom),
-}));
+/** How many images the ★ would leave, with the rest of the filter as it is. */
+export const bestCountAtom = atom(
+  (get) =>
+    applyFilter(get(allRendersAtom), { ...get(libraryFilterAtom), best: false }).filter((r) => r.best).length,
+);
 
 /** What the stage shows: the focused job, else the focused render, else the newest of either. */
 export const stageAtom = atom((get) => {
@@ -96,6 +92,17 @@ export const stageAtom = atom((get) => {
   const job = focus ? live.find((j) => j.id === focus) : live[0];
   if (job) return { job, render: undefined };
   return { job: undefined, render: all.find((r) => r.id === focus) ?? all[0] };
+});
+
+/** The batch the stage shows side by side, to mark the best (features/stage/compare.tsx): only while it is the shown
+ * render's, so another image, or a new Generate, shows alone again. */
+export const compareAtom = atom<string | null>(null);
+
+/** The renders of the stage's batch, oldest first, when there are two or more to compare. */
+export const batchAtom = atom((get) => {
+  const batch = get(stageAtom).render?.batch;
+  const xs = batch ? get(allRendersAtom).filter((r) => r.batch === batch) : [];
+  return xs.length > 1 ? xs.toReversed() : [];
 });
 
 /** What the viewer shows: always the stored version of a render (Best changes it), or a job in flight. */

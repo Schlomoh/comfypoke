@@ -157,7 +157,7 @@ export function SeedsSheet() {
               <span>{run.seedLabel}</span>
             </div>
             {run.changes.length > 0 && (
-              <div className="text-xs text-warn">
+              <div className="text-xs text-accent">
                 {run.changes.map((c) => (
                   <div key={c}>{c}</div>
                 ))}

@@ -6,7 +6,6 @@
 import { useStore } from "jotai";
 import { useEffect, useRef } from "react";
 
-import { wide } from "@/app/platform";
 import { toggleBest } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
 import { FIT } from "@/domain/view";
@@ -27,6 +26,7 @@ import {
   viewerAtom,
   viewerItemAtom,
 } from "@/state/studio";
+import { wide } from "@/ui/media";
 
 const typingIn = (t: EventTarget | null) =>
   t instanceof Element && !!t.closest("input, textarea, select, [contenteditable]");

@@ -1,9 +1,9 @@
 // Closing a sheet drops the phrases emptied in it, with an Undo for any that had something to lose.
 import { useStore } from "jotai";
 
-import { insertAt, type Lens } from "@/domain/cast";
+import { insertAt, rowLens, togetherLens, type Lens } from "@/domain/cast";
 import type { Phrase } from "@/domain/recipe";
-import { emptiedAtom } from "@/features/prompt/state";
+import { emptiedAtom, openAtom } from "@/features/prompt/state";
 import { recipeAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
@@ -35,5 +35,17 @@ export function useClearEmptied() {
         action: { label: "Undo", run: () => store.set(recipeAtom, (r) => lens.edit(r, putBack)) },
       },
     );
+  };
+}
+
+/** Closes whatever sheet is open over the prompt as its Done would: a row's or Together's drops what was emptied in it. */
+export function useCloseSheet() {
+  const store = useStore();
+  const clear = useClearEmptied();
+  return () => {
+    const open = store.get(openAtom);
+    if (open?.kind === "row") clear(rowLens(open));
+    else if (open?.kind === "together") clear(togetherLens);
+    store.set(openAtom, null);
   };
 }

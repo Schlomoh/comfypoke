@@ -3,6 +3,18 @@ import type { Render } from "@/domain/render";
 
 export const shortName = (file: string) => file.replace(/\.(safetensors|gguf)$/, "");
 
+/** What precision and packing a file name says, which a person does not need to read: bf16, fp8_e4m3fn, q8_0. */
+const PACKING = /^(bf16|fp16|fp32|fp8|fp4|e4m3fn|e5m2|scaled|q\d(_\w+)?|gguf|pruned|ema|nf4|int8|mixed)$/i;
+
+/** A model file as a name to read: "krea2_turbo_bf16.safetensors" is "Krea2 Turbo". The file stays in the record. */
+export function modelName(file: string) {
+  const words = shortName(file.split("/").at(-1) ?? file)
+    .replace(/[_-]q\d+(_[a-z0-9]+)*$/i, "") // a GGUF quantization: Q8_0, Q4_K_M
+    .split(/[_\-\s]+/)
+    .filter((w) => w && !PACKING.test(w));
+  return words.length ? words.map((w) => w[0].toUpperCase() + w.slice(1)).join(" ") : shortName(file);
+}
+
 type Described = {
   unet?: string;
   model?: string;
@@ -18,7 +30,7 @@ export const describe = (p: Described) =>
   p.uploaded
     ? `photo · ${p.width}×${p.height}`
     : [
-        p.unet ? shortName(p.unet) : p.model,
+        p.unet ? modelName(p.unet) : p.model,
         `${p.width}×${p.height}`,
         p.steps && `${p.steps} st`,
         p.cfg && `cfg ${p.cfg}`,

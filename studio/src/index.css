@@ -19,7 +19,8 @@
   --color-muted: #a4a4ac;
   --color-faint: #8c8c94; /* the dimmest text: 5.6:1 on panels, above WCAG 1.4.3's 4.5 */
   --color-ok: #5fd08a;
-  --color-warn: #e8b84a;
+  --color-warn: #e8b84a; /* real warnings only: unverified, starting, a cost to know about */
+  --color-accent: #e8b84a; /* the one accent: where you are adding, what is picked or varied */
   --color-bad: #f0716a;
   --color-mask: #ff3ea5; /* painted inpaint masks: magenta is rare in photos, so it shows on most of them */
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -42,7 +43,7 @@ body {
     sans-serif;
 }
 
-/* Section and field labels: the one typographic device the interface leans on. */
+/* Section titles, and nothing that is tapped: mono is for titles and data (seed, size, cost, the prompt). */
 @utility label {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -112,7 +113,7 @@ html.locked {
 }
 @keyframes flash-card {
   from {
-    background: color-mix(in srgb, var(--color-warn) 18%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {

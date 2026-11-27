@@ -8,10 +8,11 @@ import { useSpace } from "@/data/db/space";
 import { shortName } from "@/domain/format";
 import { parameters } from "@/domain/png";
 import type { Render } from "@/domain/render";
+import { TagEditor } from "@/features/tags/tag-editor";
 import { FaceMatch } from "@/features/viewer/face-match";
 import { Linked } from "@/features/viewer/linked";
 import { Button } from "@/ui/button";
-import { Input, Labeled, Textarea } from "@/ui/field";
+import { CommitInput, Labeled, Textarea } from "@/ui/field";
 import { notify } from "@/ui/notify";
 import { Heading, Note } from "@/ui/text";
 
@@ -35,18 +36,19 @@ function Field({
     setWas(value);
     setDraft(value);
   }
-  const commit = () => draft !== value && onCommit(draft);
-  const common = { value: draft, placeholder, onBlur: commit, className: "w-full" };
   return (
     <Labeled label={label}>
       {multiline ? (
-        <Textarea {...common} rows={2} onChange={(e) => setDraft(e.target.value)} />
-      ) : (
-        <Input
-          {...common}
+        <Textarea
+          value={draft}
+          placeholder={placeholder}
+          rows={2}
+          className="w-full"
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          onBlur={() => draft !== value && onCommit(draft)}
         />
+      ) : (
+        <CommitInput value={value} placeholder={placeholder} className="w-full" onCommit={onCommit} />
       )}
     </Labeled>
   );
@@ -154,23 +156,9 @@ export function Inspector({ render }: { render: Render }) {
         placeholder="what works, what to change"
         onCommit={(n) => edit({ notes: n.trim() || undefined })}
       />
-      <Field
-        label="Tags"
-        value={(render.tags ?? []).join(", ")}
-        placeholder="comma separated"
-        onCommit={(t) =>
-          edit({
-            tags: [
-              ...new Set(
-                t
-                  .split(",")
-                  .map((x) => x.trim())
-                  .filter(Boolean),
-              ),
-            ],
-          })
-        }
-      />
+      <Labeled label="Tags">
+        <TagEditor targets={[render]} />
+      </Labeled>
       <Field
         label="Character"
         value={render.characterName ?? ""}

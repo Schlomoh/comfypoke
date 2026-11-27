@@ -45,7 +45,7 @@ export function Row({
               <span className="min-w-0 break-words">{say(p)}</span>
               {p.on && valuesOf(p).length > 1 && (
                 <span
-                  className="bg-warn/15 px-1.5 font-mono text-[10.5px] text-warn no-underline"
+                  className="bg-accent/15 px-1.5 font-mono text-[10.5px] text-accent no-underline"
                   title={`${valuesOf(p).length} versions: one render each`}
                 >
                   {valuesOf(p).length}

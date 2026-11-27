@@ -1,4 +1,4 @@
-// The workspace dialog behind the name in the header: rename, password, delete, switch.
+// The workspace dialog behind its name in the Library's header: switch, hide images, rename, password, delete.
 import { useAtom } from "jotai";
 import { useState } from "react";
 
@@ -14,8 +14,9 @@ import {
 import { errorText } from "@/domain/format";
 import { NewPassword, NO_RESET } from "@/features/workspaces/new-password";
 import { Purge } from "@/features/workspaces/purge";
-import { layerAtom } from "@/state/studio";
+import { layerAtom, veilAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/field";
 import { Sheet } from "@/ui/modal";
 import { notify } from "@/ui/notify";
@@ -41,6 +42,7 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
   const [repeat, setRepeat] = useState("");
   const [note, setNote] = useState("");
   const [sure, setSure] = useState(""); // the name, typed again to delete
+  const [veil, setVeil] = useAtom(veilAtom);
 
   const guard = async (pw: string) => {
     await setPassword(space, pw);
@@ -53,6 +55,18 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
   return (
     // the sections are ruled edge to edge, past the sheet's own margin
     <div className="-mx-4 flex flex-col">
+      <div className="flex flex-col gap-2 border-b border-line px-4 pb-4">
+        <Button onClick={onSwitch} className="w-full">
+          Switch workspace
+        </Button>
+        <Checkbox
+          on={veil}
+          onChange={setVeil}
+          label={
+            <span className="text-xs text-muted">Hide all images, for working where others can see (H)</span>
+          }
+        />
+      </div>
       <Section title="Name">
         <form
           className="flex gap-2"
@@ -128,11 +142,6 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
         <Note>Removes its {count} images, characters and draft from this device. This cannot be undone.</Note>
       </Section>
       <Purge />
-      <div className="p-4">
-        <Button onClick={onSwitch} className="w-full">
-          Switch workspace
-        </Button>
-      </div>
     </div>
   );
 }

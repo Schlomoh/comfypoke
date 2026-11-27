@@ -1,8 +1,10 @@
-// Renders, characters, the draft and pending jobs from before workspaces move into one called Default.
-// WebCrypto cannot run inside a Dexie upgrade, so this runs once per page before the start screen.
+// Renders, characters, the draft and pending jobs from before workspaces move into one called Default, and the
+// catalog takes in built-in presets it has not seen. WebCrypto cannot run inside a Dexie upgrade, so this runs once
+// per page before the start screen.
 import { importKey } from "@/data/crypto";
 import { saveDraft } from "@/data/db/drafts";
 import { addPending } from "@/data/db/pending";
+import { syncBuiltIns } from "@/data/db/prompt-catalog";
 import { putShot } from "@/data/db/renders";
 import { putSaved } from "@/data/db/saved";
 import { db } from "@/data/db/schema";
@@ -14,12 +16,17 @@ let migrating: Promise<void> | undefined;
 
 /** Once per page: two runs at the same time would each create a Default. */
 export const migrate = () =>
-  (migrating ??= (
-    navigator.locks ? navigator.locks.request("studio-migrate", moveLegacy) : moveLegacy()
-  ).catch((e: unknown) => {
-    migrating = undefined; // a reload tries again
-    throw e;
-  }));
+  (migrating ??= (navigator.locks ? navigator.locks.request("studio-migrate", run) : run()).catch(
+    (e: unknown) => {
+      migrating = undefined; // a reload tries again
+      throw e;
+    },
+  ));
+
+async function run() {
+  await syncBuiltIns();
+  await moveLegacy();
+}
 
 const parsed = (text: string | null): unknown => (text ? JSON.parse(text) : null);
 

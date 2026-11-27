@@ -4,7 +4,7 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { useState } from "react";
 
-import { useLoraNotes } from "@/data/db/presets";
+import { useLoraNotes } from "@/data/db/lora-notes";
 import { useSaved } from "@/data/db/saved";
 import { useCatalog } from "@/data/queries";
 import { resolve } from "@/domain/catalog";

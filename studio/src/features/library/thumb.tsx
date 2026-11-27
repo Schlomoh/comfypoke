@@ -44,7 +44,7 @@ export function Thumb({
         />
       )}
       {render.best && (
-        <span className="absolute top-0 right-0 bg-bg/80 px-1 text-[11px] leading-4 text-warn" aria-hidden>
+        <span className="absolute top-0 right-0 bg-bg/80 px-1 text-[11px] leading-4 text-accent" aria-hidden>
           ★
         </span>
       )}

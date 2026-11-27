@@ -1,7 +1,8 @@
-// One phrase in its row's sheet: on or off, its text, its versions, and the switch that sends the picker
-// below to add versions of it.
+// One phrase in its row's sheet, on one line: on or off, its text, how many versions, ×. Its versions open under it
+// on a tap of that count, with the switch that sends the picker below to add more; a phrase without any goes
+// straight to adding them.
 import { useAtom, useSetAtom } from "jotai";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { insertAt, type Lens } from "@/domain/cast";
 import type { Phrase } from "@/domain/recipe";
@@ -19,9 +20,9 @@ import type { useReorder } from "@/ui/reorder";
 
 type Reorder = ReturnType<typeof useReorder>;
 
-function targetLabel(p: Phrase, picked: boolean) {
-  if (picked) return "adding versions below";
-  return p.versions.length ? "+ version" : "+ versions to compare";
+function countLabel(p: Phrase, shown: boolean) {
+  if (!p.versions.length) return "+ version";
+  return `${p.versions.length} more ${shown ? "▴" : "▾"}`;
 }
 
 export function PhraseCard<T extends Phrase>({
@@ -46,6 +47,8 @@ export function PhraseCard<T extends Phrase>({
   const setRecipe = useSetAtom(recipeAtom);
   const [emptied, setEmptied] = useAtom(emptiedAtom);
   const guard = useTapGuard();
+  const [open, setOpen] = useState(false);
+  const shown = picked || (open && p.versions.length > 0);
   const edit = (c: (xs: T[]) => T[]) => setRecipe((r) => lens.edit(r, c));
   const change = (f: (p: T) => T) => edit((xs) => xs.map((x) => (x.id === p.id ? f(x) : x)));
 
@@ -89,13 +92,19 @@ export function PhraseCard<T extends Phrase>({
     change((x) => ({ ...x, versions: x.versions.map((y) => (y === v ? t : y)) }));
   };
 
+  const toggle = () => {
+    if (!p.versions.length) return onPick(picked ? null : p.id);
+    if (shown && picked) onPick(null);
+    setOpen(!shown);
+  };
+
   return (
     <div
       id={`card-${p.id}`}
       {...drag?.row}
       className={cn(
-        "shrink-0 border bg-bg data-dragging:relative data-dragging:z-10 data-dragging:shadow-lg",
-        picked ? "border-warn" : "border-line",
+        "shrink-0 border-l-2 bg-bg data-dragging:relative data-dragging:z-10 data-dragging:shadow-lg",
+        picked ? "border-l-accent" : "border-l-transparent",
       )}
     >
       {children}
@@ -125,31 +134,48 @@ export function PhraseCard<T extends Phrase>({
           }}
           aria-label="Phrase"
           placeholder="empty: removed when the sheet closes"
-          className={cn("flex-1 fine:min-h-8 fine:py-1.5", !p.on && "text-faint line-through")}
+          className={cn("min-w-0 flex-1 fine:min-h-8 fine:py-1.5", !p.on && "text-faint line-through")}
         />
+        <Button
+          variant="text"
+          size="inline"
+          onClick={toggle}
+          aria-expanded={p.versions.length ? shown : undefined}
+          aria-pressed={picked}
+          className={cn(picked && "text-accent aria-pressed:text-accent")}
+          title={
+            p.versions.length
+              ? `${p.versions.length} more version${p.versions.length === 1 ? "" : "s"}: one render each`
+              : "Add versions to compare: one render each"
+          }
+        >
+          {countLabel(p, shown)}
+        </Button>
         <Button variant="icon" size="square" onClick={remove} aria-label={`Remove ${p.t}`}>
           ×
         </Button>
       </div>
-      <ChipRow className="pr-2 pb-2 pl-11">
-        {p.versions.map((v, i) => (
-          <Tag
-            key={v}
-            onRemove={() => removeVersion(v, i)}
-            removeLabel={`Remove the version ${v}`}
-            edit={{ value: v, label: "Version", onSave: (t) => saveVersion(v, i, t) }}
+      {shown && (
+        <ChipRow className="pr-2 pb-2 pl-11">
+          {p.versions.map((v, i) => (
+            <Tag
+              key={v}
+              onRemove={() => removeVersion(v, i)}
+              removeLabel={`Remove the version ${v}`}
+              edit={{ value: v, label: "Version", onSave: (t) => saveVersion(v, i, t) }}
+            >
+              or {v}
+            </Tag>
+          ))}
+          <Chip
+            tone={picked ? "warn" : "add"}
+            onClick={() => onPick(picked ? null : p.id)}
+            aria-pressed={picked}
           >
-            or {v}
-          </Tag>
-        ))}
-        <Chip
-          tone={picked ? "warn" : "add"}
-          onClick={() => onPick(picked ? null : p.id)}
-          aria-pressed={picked}
-        >
-          {targetLabel(p, picked)}
-        </Chip>
-      </ChipRow>
+            {picked ? "adding versions below" : "+ version"}
+          </Chip>
+        </ChipRow>
+      )}
     </div>
   );
 }

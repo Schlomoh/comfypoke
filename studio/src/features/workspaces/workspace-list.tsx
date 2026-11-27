@@ -66,7 +66,13 @@ export function WorkspaceList({ onOpen }: { onOpen: (space: Space, draft: Recipe
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-12">
-      <h1 className="font-mono text-xs font-semibold tracking-[0.2em]">STUDIO</h1>
+      <div className="flex flex-col gap-1.5">
+        <h1 className="font-mono text-xs font-semibold tracking-[0.2em]">STUDIO</h1>
+        <p className="text-[13px] text-muted">
+          Describe people and a scene in rows of phrases, render them on your GPU, and compare, edit and keep
+          the best. Everything stays on this device.
+        </p>
+      </div>
       {sorted.length > 0 && (
         <section className="flex flex-col border border-line bg-panel">
           <h2 className="border-b border-line px-4 py-3 label">Workspaces</h2>
@@ -173,7 +179,6 @@ export function WorkspaceList({ onOpen }: { onOpen: (space: Space, draft: Recipe
           New workspace
         </Button>
       )}
-      <Note>Section presets and LoRA trigger words are shared by all workspaces.</Note>
     </main>
   );
 }

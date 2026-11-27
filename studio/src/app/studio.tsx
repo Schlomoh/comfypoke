@@ -1,13 +1,14 @@
 // An open workspace. On a phone one column: the tab bar on top, the stage, the open tab, and the
 // dock fixed at the bottom (the edit's action in the Edit tab). On a desktop three: editor, stage, library.
-import { useAtomValue } from "jotai";
-import { useEffect } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
+import { useEffect, useRef } from "react";
 
 import { Dock } from "@/app/dock";
 import { ShortcutsSheet } from "@/app/shortcuts-sheet";
 import { TabBar } from "@/app/tab-bar";
 import { useShortcuts } from "@/app/use-shortcuts";
 import { useUpdateNotice } from "@/app/use-update-notice";
+import { FIT } from "@/domain/view";
 import { ActivitySheet } from "@/features/activity/activity-sheet";
 import { EditPanel } from "@/features/edit/edit-panel";
 import { useEdit } from "@/features/edit/use-edit";
@@ -18,6 +19,7 @@ import { LinkSheet } from "@/features/prompt/link-sheet";
 import { PromptPanel } from "@/features/prompt/prompt-panel";
 import { RowSheet } from "@/features/prompt/row-sheet";
 import { TogetherSheet } from "@/features/prompt/together-sheet";
+import { useCloseSheet } from "@/features/prompt/use-clear-emptied";
 import { SeedsSheet } from "@/features/run/seeds-sheet";
 import { Stage } from "@/features/stage/stage";
 import { Viewer } from "@/features/viewer/viewer";
@@ -26,8 +28,9 @@ import { useRendersSync } from "@/state/actions";
 import { useGenerate } from "@/state/generate";
 import { useJobRunner } from "@/state/jobs";
 import { useCastLoras, useDraftAutosave } from "@/state/recipe";
-import { stripTab, tabAtom, veilAtom } from "@/state/studio";
+import { stripTab, tabAtom, veilAtom, viewAtom } from "@/state/studio";
 import { cn } from "@/ui/cn";
+import { PaneSlot } from "@/ui/pane";
 
 /** H: the images stay where they are, as blank tiles, until shown again (index.css). */
 function useVeilClass() {
@@ -40,7 +43,7 @@ function useVeilClass() {
 function Tabs() {
   const tab = useAtomValue(tabAtom);
   return (
-    <div className="order-2 pb-32 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-0">
+    <div className="pb-32 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-0">
       {/* all of them stay mounted, so a half-typed field survives a tab switch */}
       <div
         className={cn((tab === "look" || tab === "edit") && "hidden", tab === "library" && "hidden lg:block")}
@@ -60,6 +63,25 @@ function Tabs() {
   );
 }
 
+/** Another tab starts afresh: the zoom set while painting does not follow into the library, and a row's pane (on a
+ * desktop) closes with the tab it was opened from. */
+function useTabChange() {
+  const tab = useAtomValue(tabAtom);
+  const setView = useSetAtom(viewAtom);
+  const closeSheet = useCloseSheet();
+  const close = useRef(closeSheet);
+  useEffect(() => {
+    close.current = closeSheet;
+  });
+  const last = useRef(tab);
+  useEffect(() => {
+    if (last.current === tab) return;
+    last.current = tab;
+    setView(FIT);
+    close.current();
+  }, [tab, setView]);
+}
+
 export function Studio({ onClose }: { onClose: () => void }) {
   useJobRunner();
   useDraftAutosave();
@@ -67,6 +89,7 @@ export function Studio({ onClose }: { onClose: () => void }) {
   useRendersSync();
   useVeilClass();
   useUpdateNotice();
+  useTabChange();
   const generate = useGenerate();
   const edit = useEdit();
   const tab = useAtomValue(tabAtom);
@@ -79,7 +102,11 @@ export function Studio({ onClose }: { onClose: () => void }) {
         {/* on a phone the aside's parts join the page column: the tab bar first, then the stage */}
         <aside className="contents lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-line">
           <TabBar />
-          <Tabs />
+          {/* on a desktop a row's sheet opens over the tab, in this column (ui/pane.tsx) */}
+          <div className="relative order-2 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+            <Tabs />
+            <PaneSlot />
+          </div>
           <Dock g={generate} edit={editing ? edit : undefined} />
         </aside>
         <main

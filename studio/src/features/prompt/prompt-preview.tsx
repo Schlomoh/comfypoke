@@ -48,7 +48,7 @@ export function PromptPreview() {
           ? marked.split(new RegExp(`(${OPEN}[^${CLOSE}]*${CLOSE})`)).map((part, i) =>
               part.startsWith(OPEN) ? (
                 // oxlint-disable-next-line react/no-array-index-key -- the parts of one string, in order; nothing reorders them
-                <span key={i} className="bg-warn/15 text-warn">
+                <span key={i} className="bg-accent/15 text-accent">
                   [{part.slice(1, -1)}]
                 </span>
               ) : (

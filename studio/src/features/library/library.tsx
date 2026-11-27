@@ -1,27 +1,25 @@
-// Everything rendered in this workspace, filterable by character and by the Best mark, with a
-// selection mode for working on many at once (best, upscale, download, delete), the download of
-// what is shown (into a folder, or as a zip), and the library backup (characters, presets and
-// LoRA notes as one JSON file).
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+// Everything rendered in this workspace, filterable by the Best mark, character and tags, with a
+// selection mode for working on many at once (best, tag, upscale, download, delete). Its header names the
+// workspace (switch, rename, hide images) and opens Export: what is shown as files or a zip, and the backup.
+import { useAtomValue, useSetAtom } from "jotai";
 import { useRef, useState } from "react";
 
 import { addPhoto } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
+import { useWorkspace } from "@/data/db/workspaces";
 import { errorText } from "@/domain/format";
+import type { LibraryFilter } from "@/domain/library-filter";
 import type { Render } from "@/domain/render";
-import { BackupSection } from "@/features/library/backup-section";
-import { DownloadSection } from "@/features/library/download-section";
+import { ExportSheet } from "@/features/library/export-sheet";
+import { FilterBar } from "@/features/library/filter-bar";
 import { SelectionBar } from "@/features/library/selection-bar";
 import { StackGrid } from "@/features/library/stack-grid";
 import { Pending } from "@/features/library/thumb";
 import { useExport } from "@/features/library/use-export";
 import { useImageActions } from "@/state/actions";
 import {
-  bestCountAtom,
-  bestOnlyAtom,
-  characterFilterAtom,
-  characterNamesAtom,
   focusAtom,
+  layerAtom,
   libraryFilterAtom,
   liveJobsAtom,
   shownAtom,
@@ -30,20 +28,20 @@ import {
   viewerAtom,
 } from "@/state/studio";
 import { Button } from "@/ui/button";
-import { Input, Select } from "@/ui/field";
+import { Input } from "@/ui/field";
 import { notify } from "@/ui/notify";
-import { Segmented } from "@/ui/segmented";
-import { Heading } from "@/ui/text";
+
+function emptyText(f: LibraryFilter) {
+  if (f.tags.length) return "Nothing here carries every picked tag.";
+  if (f.best) return "Nothing marked best here. Press B or ★ on an image to mark it.";
+  return "Nothing here yet. Renders, and photos you add to edit or dress, are kept on this device only.";
+}
 
 /** column: the desktop's right column, beside the stage. A tap there only puts an image on the stage, and the job on the stage is not listed again. */
 export function Library({ column = false }: { column?: boolean }) {
   const shown = useAtomValue(shownAtom);
   const covers = useAtomValue(visibleStacksAtom).map((s) => s.cover);
-  const names = useAtomValue(characterNamesAtom);
   const filter = useAtomValue(libraryFilterAtom);
-  const setFilter = useSetAtom(characterFilterAtom);
-  const [best, setBest] = useAtom(bestOnlyAtom);
-  const bestCount = useAtomValue(bestCountAtom);
   const live = useAtomValue(liveJobsAtom);
   const stage = useAtomValue(stageAtom);
   const setFocus = useSetAtom(focusAtom);
@@ -54,6 +52,9 @@ export function Library({ column = false }: { column?: boolean }) {
   const out = useExport(target, !!picked);
   const space = useSpace();
   const file = useRef<HTMLInputElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const workspace = useWorkspace(space.id);
+  const setLayer = useSetAtom(layerAtom);
 
   const jobs = column ? live.filter((j) => j !== stage.job) : live;
   const focus = (stage.job ?? stage.render)?.id ?? null;
@@ -85,7 +86,21 @@ export function Library({ column = false }: { column?: boolean }) {
           grows a scrollbar */}
       <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
         <div className="flex items-center gap-2">
-          <Heading className="flex-1 whitespace-nowrap">Library · {shown.length}</Heading>
+          <Button
+            variant="text"
+            className="min-w-0 flex-1 justify-start px-0 text-[13px] text-ink"
+            onClick={() => setLayer("workspace")}
+            title="This workspace: switch, rename, hide images"
+          >
+            <span className="truncate">{workspace?.name ?? "Workspace"}</span>
+            <span className="text-faint tabular-nums">{shown.length}</span>
+            <span aria-hidden className="text-faint">
+              ▾
+            </span>
+          </Button>
+          <Button onClick={() => setExporting(true)} title="Download images, back up or restore">
+            Export…
+          </Button>
           <Button onClick={() => file.current?.click()} title="Add a photo from this device to edit or dress">
             Photo
           </Button>
@@ -108,32 +123,7 @@ export function Library({ column = false }: { column?: boolean }) {
             {picked ? "Done" : "Select"}
           </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <Segmented
-            value={best ? "best" : "all"}
-            options={[
-              { value: "all", label: "All" },
-              { value: "best", label: `★ ${bestCount}` },
-            ]}
-            onChange={(v) => setBest(v === "best")}
-            className="w-28"
-          />
-          {names.length > 0 && (
-            <Select
-              value={filter.character}
-              onChange={(e) => setFilter(e.target.value)}
-              aria-label="Character"
-              className="min-w-0 flex-1"
-            >
-              <option value="">All characters</option>
-              {names.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </Select>
-          )}
-        </div>
+        <FilterBar />
       </div>
       {picked ? (
         <SelectionBar visible={covers} chosen={chosen} setPicked={setPicked} out={out} />
@@ -143,19 +133,20 @@ export function Library({ column = false }: { column?: boolean }) {
         </p>
       )}
       {jobs.length + shown.length === 0 ? (
-        <p className="px-4 py-6 font-mono text-xs text-faint">
-          {best
-            ? "Nothing marked best here. Press B or ★ on an image to mark it."
-            : "Nothing here yet. Renders, and photos you add to edit or dress, are kept on this device only."}
-        </p>
+        <p className="px-4 py-6 font-mono text-xs text-faint">{emptyText(filter)}</p>
       ) : (
         <div className="grid grid-cols-3 gap-px bg-line p-px sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
           {!picked && jobs.map((j) => <Pending key={j.id} job={j} active={j.id === focus} onFocus={show} />)}
           <StackGrid focus={focus} picked={picked} onSelect={picked ? toggle : (x) => showImage(x.id)} />
         </div>
       )}
-      <DownloadSection count={target.length} selected={!!picked} out={out} />
-      <BackupSection />
+      <ExportSheet
+        open={exporting}
+        onClose={() => setExporting(false)}
+        count={target.length}
+        selected={!!picked}
+        out={out}
+      />
     </div>
   );
 }

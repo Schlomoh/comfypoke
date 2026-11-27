@@ -6,8 +6,8 @@ import { cn } from "@/ui/cn";
 
 const band = cva("col-span-full grid grid-cols-subgrid gap-px", {
   variants: {
-    // renders that belong together, such as one Generate's: tinted, with a warn edge
-    tone: { plain: "", batch: "border-l-2 border-warn bg-warn/8" },
+    // renders that belong together, such as one Generate's: set off by a rule, the thumbnails carry the color
+    tone: { plain: "", batch: "border-t border-edge bg-bg" },
   },
   defaultVariants: { tone: "plain" },
 });

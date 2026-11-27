@@ -35,7 +35,7 @@ export function TabBar() {
           onClick={() => setTab(t.id)}
           aria-pressed={tab === t.id}
           className={cn(
-            "h-11 min-w-0 flex-1 truncate border-b-2 border-transparent px-1 text-center label lg:h-10",
+            "h-11 min-w-0 flex-1 truncate border-b-2 border-transparent px-1 text-center text-xs font-medium text-muted lg:h-10",
             t.id === "library" && "lg:hidden",
             marked(t.id) && "border-ink text-ink",
             t.id === "prompt" && tab === "library" && "max-lg:border-transparent max-lg:text-muted",
