@@ -26,6 +26,7 @@ import time
 import uuid
 from collections import OrderedDict
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import modal
 from fastapi import FastAPI, HTTPException, Request
@@ -37,7 +38,10 @@ from . import config, graph, graphs, seal
 KEY = os.environ.get("COMFY_ACCESS_KEY", "")
 TRANSPORT = os.environ.get(config.TRANSPORT_PUBLIC_ENV, "")  # the worker's public key, which the phone wraps its image key with
 TRANSPORT_KID = seal.kid(TRANSPORT) if TRANSPORT else ""
-COOKIE = "studio_key"
+TOKEN = hmac.new(KEY.encode(), b"studio-v1", hashlib.sha256).hexdigest()  # the cookie: opens the studio, not the GUI
+COOKIE = "__Host-studio_key"  # __Host-: no other *.modal.run host can plant or shadow it
+OLD_COOKIE = "studio_key"  # held the raw key before the rename; cleared at the next sign-in
+COOKIE_DAYS = 90
 TERMINAL = ("execution_success", "execution_error", "execution_interrupted")
 STREAM_SECONDS = 100  # Modal ends any HTTP response at 150 s; ending it first lets EventSource resume cleanly
 PREVIEW, PNG = 1, 2  # ComfyUI's binary frame: event type PREVIEW_IMAGE, then 1 for a JPEG preview or 2 for the PNG
@@ -204,23 +208,54 @@ def _job(job_id: str) -> Job:
     return jobs[job_id]
 
 
-# ---- auth: the GUI's key, kept in an httpOnly cookie -------------------------------------------------------
+# ---- auth: a token derived from the GUI's key, kept in an httpOnly cookie -----------------------------------
+# Every *.modal.run host is the same site as this one (modal.run is not on the Public Suffix List), so SameSite=Strict
+# still sends the cookie with a request another Modal app's page forges. Anything that can change state must come from
+# this origin, and JSON must be sent as JSON: a text/plain body needs no CORS preflight, and request.json() would parse
+# it all the same.
+
+def _cross_origin(request: Request) -> bool:
+    """Not a GET from anywhere, nor a request from a page on this origin. Browsers send Origin on every POST and
+    DELETE; without one, Sec-Fetch-Site must say same-origin. A client sending neither is not a browser, so it cannot
+    be riding the owner's cookie."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return False
+    origin = request.headers.get("origin")
+    if origin is None:
+        return request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none")
+    return urlsplit(origin).netloc != request.headers.get("host")
+
+
+async def _json_body(request: Request):
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        raise HTTPException(415, "send the body as application/json")
+    try:
+        return await request.json()
+    except ValueError:
+        raise HTTPException(400, "the body is not JSON")
+
 
 @api.middleware("http")
 async def gate(request: Request, call_next):
-    if KEY and request.url.path.startswith("/api/") and request.url.path != "/api/login":
-        if not hmac.compare_digest(request.cookies.get(COOKIE, ""), KEY):
-            return JSONResponse({"error": "locked"}, status_code=401)
-    return await call_next(request)
+    if _cross_origin(request):
+        resp = JSONResponse({"error": "cross-origin request refused"}, status_code=403)
+    elif (KEY and request.url.path.startswith("/api/") and request.url.path != "/api/login"
+          and not hmac.compare_digest(request.cookies.get(COOKIE, "").encode(), TOKEN.encode())):
+        resp = JSONResponse({"error": "locked"}, status_code=401)
+    else:
+        resp = await call_next(request)
+    if OLD_COOKIE in request.cookies:  # it held the raw key: cleared on whatever answers a phone that still sends it
+        resp.delete_cookie(OLD_COOKIE)
+    return resp
 
 
 @api.post("/api/login")
 async def login(request: Request):
-    body = await request.json()
-    if KEY and not hmac.compare_digest(str(body.get("key", "")), KEY):
+    body = await _json_body(request)
+    if KEY and not hmac.compare_digest(str(body.get("key", "")).encode(), KEY.encode()):
         return JSONResponse({"error": "That key is not right."}, status_code=401)
     resp = JSONResponse({"ok": True})
-    resp.set_cookie(COOKIE, KEY, max_age=365 * 86400, httponly=True, secure=True, samesite="strict")
+    resp.set_cookie(COOKIE, TOKEN, max_age=COOKIE_DAYS * 86400, path="/", httponly=True, secure=True, samesite="strict")
     return resp
 
 
@@ -333,7 +368,7 @@ async def put_image(request: Request, w: int | None = None, h: int | None = None
 async def _json(request: Request) -> dict:
     """The request's JSON with every image given as {"ref": sha} replaced by the sealed image itself, and its stated
     size as "<name>_size". `key` must be the phone's image key wrapped for this deploy's worker."""
-    body = await request.json()
+    body = await _json_body(request)
     def stored(v, name: str):
         if not isinstance(v, dict):
             raise HTTPException(400, f"send the {name} as a reference from /api/images, sealed")

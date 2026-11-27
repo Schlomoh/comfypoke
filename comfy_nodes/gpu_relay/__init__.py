@@ -68,6 +68,13 @@ def _finish(item_id, hist, messages):
         logging.exception("gpu_relay: could not finish job %s", item_id)
 
 
+def _not_json(request):
+    """A body sent as anything but application/json: a page on another origin can send text/plain without a CORS
+    preflight, and request.json() would parse it all the same. The access gate refuses such requests by their
+    Origin already; this keeps a body of the wrong type from counting as JSON."""
+    return request.can_read_body and request.content_type != "application/json"
+
+
 def _unavailable(e):
     """A stale worker container (WorkerUnavailable, possibly undeserializable here) or a lost Modal connection."""
     import modal
@@ -152,6 +159,8 @@ async def _relay_middleware(request, handler):
     cancel = path.startswith("/jobs/") and path.endswith("/cancel")
     if request.method != "POST" or not (path in ("/prompt", "/interrupt", "/queue") or cancel):
         return await handler(request)
+    if _not_json(request):
+        return web.json_response({"error": "send the body as application/json"}, status=415)
     try:
         body = await request.json()
     except json.JSONDecodeError:
@@ -294,6 +303,8 @@ async def gpu_wake(request):
 
 @server.routes.post("/gpu/keep_warm")
 async def gpu_keep_warm(request):
+    if _not_json(request):
+        return web.json_response({"error": "send the body as application/json"}, status=415)
     body = await request.json()
     minutes = float(body.get("minutes", 0))
     _keep["until"] = time.time() + minutes * 60 if minutes > 0 else 0

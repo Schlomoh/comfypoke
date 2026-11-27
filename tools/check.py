@@ -21,7 +21,7 @@ import uuid
 
 import aiohttp
 
-from render import MODAL, REPO, config, default_url, turbo_prompt
+from render import MODAL, REPO, config, default_url, session, turbo_prompt
 
 # `modal container exec` does not propagate exit codes, so the probe prints its verdict.
 PROBE = "import socket; print('alive' if any(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in (%d, %d)) else 'dead')" % (
@@ -74,6 +74,25 @@ async def check_unauthenticated(url):
             check("unauthenticated GET /ws is 401", r.status == 401, str(r.status))
         async with s.post(f"{url}/api/prompt", json={"prompt": {}}) as r:
             check("unauthenticated POST /api/prompt is 401", r.status == 401, str(r.status))
+
+
+async def check_cross_origin(url, key):
+    """With the key, a POST or a websocket from another *.modal.run page is still refused (security review S1)."""
+    evil = {"Origin": "https://evil--x.modal.run", "Sec-Fetch-Site": "same-site"}
+    async with aiohttp.ClientSession(auth=aiohttp.BasicAuth("comfypoke", key)) as s:
+        async with s.post(f"{url}/api/prompt", data='{"prompt":{}}', headers={**evil, "Content-Type": "text/plain"}) as r:
+            check("POST /api/prompt from another origin is 403", r.status == 403, str(r.status))
+        async with s.post(f"{url}/gpu/keep_warm", data='{"minutes":1}', headers={**evil, "Content-Type": "text/plain"}) as r:
+            check("POST /gpu/keep_warm from another origin is 403", r.status == 403, str(r.status))
+        try:
+            async with s.ws_connect(f"{url}/ws?clientId={uuid.uuid4()}", headers=evil):
+                status = 101
+        except aiohttp.WSServerHandshakeError as e:
+            status = e.status
+        check("websocket from another origin is 403", status == 403, str(status))
+    async with aiohttp.ClientSession() as s:  # no Basic auth: that alone would sign in
+        async with s.get(f"{url}/?key={key}", allow_redirects=False, headers={"Accept": "text/html"}) as r:
+            check("?key= in the URL no longer signs in", r.status == 200 and not r.cookies, f"{r.status} {list(r.cookies)}")
 
 
 async def check_websocket(s, url):
@@ -280,7 +299,8 @@ async def main(url, timeout):
         f.flush()
         subprocess.run([MODAL, "volume", "put", "--force", config.VOLUME_MODELS, f.name, f"extra/loras/{DUMMY_LORA}"], check=True, capture_output=True)
     try:
-        async with aiohttp.ClientSession(cookies={"comfy_key": key}) as s:
+        await check_cross_origin(url, key)
+        async with session(url, key) as s:
             await check_websocket(s, url)
             await check_extra_models(s, url)
             await check_render(s, url, timeout)
