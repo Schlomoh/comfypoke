@@ -378,6 +378,13 @@ no charge, and the default models are about 80 GB. Modal's Starter plan is also 
 month with $30 of compute included, so the occasional-use row above sits inside the free tier.
 Check [modal.com/pricing](https://modal.com/pricing) for current rates.
 
+**Set a cap in Modal.** Nothing in comfypoke stops GPU spend: the credits shown in the GUI and the
+studio are a reading, not a limit, and a leaked access key could run the GPU around the clock (an
+L40S kept awake is about $47 a day). Modal can stop it: on the workspace's Usage & Billing page,
+set a **workspace budget** (a monthly cap on usage) and, if you pay beyond the included credits, a
+**spend limit** (a monthly cap on what you pay after credits). Only the workspace's owners and
+managers can change them. See [Modal's budgets guide](https://modal.com/docs/guide/budgets).
+
 ## Why not something else
 
 Worth being straight about, because the answer is not always this.
