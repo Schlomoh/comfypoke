@@ -105,6 +105,9 @@ image = (
     .run_commands(*[f"comfy --skip-prompt node registry-install {pack}" for pack in NODE_PACKS])
     .uv_pip_install("insightface==2.1", "onnxruntime==1.31.1")  # the face match (comfy_nodes/studio_face), on the CPU
     .uv_pip_install("cryptography==50.0.2")  # the worker opens and seals the studio's images (seal.py); last, so it rebuilds nothing above
+    # Security fixes over what ComfyUI's requirements resolved to: aiohttp is its web server, which faces the internet.
+    # Dependabot reads only uv.lock, so these are raised by hand; last for the same reason.
+    .uv_pip_install("aiohttp==3.14.5", "multidict==6.9.1", "certifi==2026.10.19")
     # Mounted at container start (copy=False): editing these needs no image rebuild.
     .add_local_dir("comfy_nodes", f"{config.COMFY_DIR}/custom_nodes", copy=False)
     .add_local_python_source("comfy_modal", copy=False)
