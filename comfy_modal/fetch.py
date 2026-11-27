@@ -1,8 +1,9 @@
 """Model downloads that stay in the data center: a small CPU function with the models volume mounted pulls a file
 from Civitai or Hugging Face straight into extra/<folder>/, so a 12 GB checkpoint never crosses the laptop's
-connection twice. tools/fetch.py calls it (tools/sync.sh civitai|hf and the console do); a token travels as a
-header with that one call and is stored nowhere on Modal. New files appear in the GUI's and the studio's model
-lists like hand-uploaded ones (comfy_nodes/extra_models)."""
+connection twice. tools/fetch.py calls it (tools/sync.sh civitai|hf and the console do). It takes no token: the
+laptop turns a download that needs one into the signed CDN link the host redirects to, and only that link, which
+opens that one file for a while, is a call input here. New files appear in the GUI's and the studio's model lists
+like hand-uploaded ones (comfy_nodes/extra_models)."""
 import re
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -30,19 +31,22 @@ def _name(response, url: str) -> str:
 
 
 @app.function(image=image, volumes={config.CACHE_DIR: volumes.models}, cpu=1, memory=1024, timeout=3 * 3600)
-def fetch(url: str, folder: str, headers: dict | None = None, name: str | None = None):
+def fetch(url: str, folder: str, name: str | None = None, allow_pickle: bool = False):
     """Streams `url` to extra/<folder>/<name> on the models volume and yields progress lines; the last one is
     "done <name> <bytes>". Writes to <name>.part first, so a failed download never leaves a half file under the
-    real name. Authorization is dropped by requests on a redirect to another host (Civitai's and HF's CDNs)."""
+    real name. Only config.SAFE_MODEL_TYPES, unless allow_pickle."""
     import time
 
     import requests
 
     if not FOLDER.match(folder):
         raise ValueError(f"not a models folder: {folder!r}")
-    with requests.get(url, headers=headers or {}, stream=True, timeout=60) as r:
+    with requests.get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
         name = Path(name).name if name else _name(r, url)
+        if not allow_pickle and not name.lower().endswith(config.SAFE_MODEL_TYPES):
+            raise ValueError(f"{name} is not {' or '.join(config.SAFE_MODEL_TYPES)}: a pickle can run code when it is "
+                             "loaded. Pass --allow-pickle if you trust it.")
         dest = Path(config.CACHE_DIR, config.CONTAINER_ENV["COMFY_EXTRA_MODELS"], folder)
         dest.mkdir(parents=True, exist_ok=True)
         part = dest / f"{name}.part"
