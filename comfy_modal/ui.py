@@ -14,7 +14,11 @@ from .app import app
 def read_access_key() -> str:
     if not modal.is_local():
         return ""
-    return (Path(__file__).resolve().parents[1] / config.ACCESS_KEY_FILE).read_text().strip()
+    key = (Path(__file__).resolve().parents[1] / config.ACCESS_KEY_FILE).read_text().strip()
+    if len(key) < config.ACCESS_KEY_MIN_LENGTH:
+        raise SystemExit(f"{config.ACCESS_KEY_FILE} holds {len(key)} characters; it needs at least {config.ACCESS_KEY_MIN_LENGTH}. "
+                         "An empty key would leave the GUI and the studio open to anyone. See README > Setup.")
+    return key
 
 
 @app.cls(

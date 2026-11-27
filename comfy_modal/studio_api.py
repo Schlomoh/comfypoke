@@ -18,6 +18,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -104,8 +105,17 @@ class Job:
         self.task: asyncio.Task | None = None
         self.stages: dict[str, str] = {}  # node id to the stage the phone shows, from the prompt (graph.stages)
         self.counted: set[str] = set()  # the samplers whose steps are the step counter (graph.COUNTED)
+        self.bytes = 0  # the base64 its events hold, for STUDIO_JOB_MEMORY_MB
+        self.preview = -1  # the index of its latest preview: an older one is dropped, a stream replays only the last
 
     def emit(self, name: str, data):
+        if name == "preview":
+            if self.preview >= 0:
+                self.bytes -= len(self.events[self.preview][1])
+                self.events[self.preview] = ("preview", None)  # its index stays, as the SSE ids count on it
+            self.preview = len(self.events)
+        if isinstance(data, str):
+            self.bytes += len(data)
         self.events.append((name, data))
         changed, self.changed = self.changed, asyncio.Event()
         changed.set()
@@ -200,6 +210,12 @@ def _purge():
     now = time.time()
     for jid in [j.id for j in jobs.values() if j.ended and now - j.ended > config.STUDIO_JOB_TTL]:
         del jobs[jid]
+    held = sum(j.bytes for j in jobs.values())
+    for j in sorted((j for j in jobs.values() if j.ended), key=lambda j: j.ended):  # oldest ended first
+        if held <= config.STUDIO_JOB_MEMORY_MB * 2**20:
+            break
+        held -= j.bytes
+        del jobs[j.id]
 
 
 def _job(job_id: str) -> Job:
@@ -226,13 +242,38 @@ def _cross_origin(request: Request) -> bool:
     return urlsplit(origin).netloc != request.headers.get("host")
 
 
-async def _json_body(request: Request):
+MAX_BODY = config.STUDIO_MAX_BODY_MB * 2**20
+
+
+def _too_long(request: Request, cap: int) -> bool:
+    try:
+        return int(request.headers.get("content-length", 0)) > cap
+    except ValueError:
+        return True
+
+
+async def _read(request: Request, cap: int) -> bytes:
+    """The body, refused with a 413 as soon as it passes `cap`: this one container must not buffer whatever it is sent."""
+    if _too_long(request, cap):
+        raise HTTPException(413, f"the body is over {cap} bytes")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > cap:
+            raise HTTPException(413, f"the body is over {cap} bytes")
+    return bytes(data)
+
+
+async def _json_body(request: Request, cap: int = MAX_BODY) -> dict:
     if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
         raise HTTPException(415, "send the body as application/json")
     try:
-        return await request.json()
+        body = json.loads(await _read(request, cap))
     except ValueError:
         raise HTTPException(400, "the body is not JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "the body must be a JSON object")
+    return body
 
 
 # Script from this origin only, nothing sent anywhere else, never framed. fetch() of a data: URL turns a mask's base64
@@ -249,9 +290,14 @@ HEADERS = {
 
 @api.middleware("http")
 async def gate(request: Request, call_next):
+    api_call = request.url.path.startswith("/api/")
     if _cross_origin(request):
         resp = JSONResponse({"error": "cross-origin request refused"}, status_code=403)
-    elif (KEY and request.url.path.startswith("/api/") and request.url.path != "/api/login"
+    elif api_call and not KEY:  # fails closed: the deploy refuses an empty .access_key, and this keeps it so
+        resp = JSONResponse({"error": "this deployment has no access key"}, status_code=503)
+    elif api_call and _too_long(request, MAX_BODY):
+        resp = JSONResponse({"error": "the body is too large"}, status_code=413)
+    elif (api_call and request.url.path != "/api/login"
           and not hmac.compare_digest(request.cookies.get(COOKIE, "").encode(), TOKEN.encode())):
         resp = JSONResponse({"error": "locked"}, status_code=401)
     else:
@@ -271,8 +317,8 @@ async def crashed(request: Request, e: Exception):
 
 @api.post("/api/login")
 async def login(request: Request):
-    body = await _json_body(request)
-    if KEY and not hmac.compare_digest(str(body.get("key", "")).encode(), KEY.encode()):
+    body = await _json_body(request, 4096)
+    if not hmac.compare_digest(str(body.get("key", "")).encode(), KEY.encode()):
         return JSONResponse({"error": "That key is not right."}, status_code=401)
     resp = JSONResponse({"ok": True})
     resp.set_cookie(COOKIE, TOKEN, max_age=COOKIE_DAYS * 86400, path="/", httponly=True, secure=True, samesite="strict")
@@ -313,6 +359,7 @@ def _params(body: dict) -> dict:
         raise HTTPException(400, f"unknown model family {family!r}")
     d = graphs.VERIFIED.get(unet) if graphs.VERIFIED.get(unet, {}).get("family") == family else graphs.FAMILIES[family]
     text = str(body.get("prompt", "")).strip()
+    negative = str(body.get("negative", "")).strip()
     try:  # None means the default; 0 is a value, and gets the range error below
         width, height = int(body.get("width", 1024)), int(body.get("height", 1024))
         steps = d["steps"] if body.get("steps") is None else float(body["steps"])
@@ -320,22 +367,46 @@ def _params(body: dict) -> dict:
         loras = [(str(x["name"]), float(x["strength"])) for x in body.get("loras") or []]
     except (TypeError, ValueError, KeyError) as e:
         raise HTTPException(400, f"malformed number or LoRA: {e}")
-    if steps != int(steps):
+    if not math.isfinite(steps) or steps != int(steps):
         raise HTTPException(400, "steps must be a whole number")
     steps = int(steps)
     if not text:
         raise HTTPException(400, "the prompt is empty")
+    if len(text) > MAX_PROMPT or len(negative) > MAX_PROMPT:
+        raise HTTPException(400, f"the prompt and the negative are up to {MAX_PROMPT} characters each")
+    if not all(_lora_name(n) for n, _ in loras):
+        raise HTTPException(400, "a LoRA is a file name, without a folder")
     if not all(256 <= v <= 2048 and v % 16 == 0 for v in (width, height)):
         raise HTTPException(400, "width and height must be multiples of 16 between 256 and 2048")
     if not (1 <= steps <= 100 and 0 < cfg <= 20):
         raise HTTPException(400, "steps must be 1 to 100 and cfg above 0 and at most 20")
     if len(loras) > 8 or any(not -8 <= w <= 8 for _, w in loras):
         raise HTTPException(400, "at most 8 LoRAs, strengths between -8 and 8")
-    seed = body.get("seed")
-    return {"unet": unet, "family": family, "prompt": text, "negative": str(body.get("negative", "")).strip() if cfg > 1 else "",
-            "width": width, "height": height, "steps": steps, "cfg": cfg,
-            "seed": random.randrange(2**50) if seed is None else int(seed),  # 2**50 stays exact in JavaScript
+    return {"unet": unet, "family": family, "prompt": text, "negative": negative if cfg > 1 else "",
+            "width": width, "height": height, "steps": steps, "cfg": cfg, "seed": _seed(body.get("seed")),
             "loras": [{"name": n, "strength": w} for n, w in loras]}
+
+
+MAX_PROMPT = 4000
+
+
+def _lora_name(name: str) -> bool:
+    return bool(name) and not name.startswith(".") and "/" not in name and "\\" not in name
+
+
+def _seed(raw) -> int:
+    """A seed as sent, or a new one; 2**53 stays exact in JavaScript, and ComfyUI takes up to 2**64."""
+    if raw is None:
+        return random.randrange(2**50)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise HTTPException(400, "the seed must be a whole number")
+    try:
+        seed = int(raw)
+    except (ValueError, OverflowError):  # json reads NaN and Infinity as numbers
+        raise HTTPException(400, "the seed must be a whole number")
+    if not 0 <= seed < 2**53 or (isinstance(raw, float) and raw != seed):
+        raise HTTPException(400, "the seed must be a whole number from 0 to 2**53")
+    return seed
 
 
 MAX_REFERENCE = 4 * 2**20  # base64 characters; the phone sends the photo at most 768 px a side
@@ -365,22 +436,24 @@ def _reference(body: dict, family: str) -> str | None:
 # a PNG's size from its header: the phone states it with the upload (?w=&h=, none for a JPEG face photo). Only the
 # phone that holds the key could state it wrong, and it could as well send any other picture.
 
-IMAGE_CACHE = 600 * 2**20  # base64 characters
+IMAGE_CACHE = config.STUDIO_IMAGE_CACHE_MB * 2**20  # base64 characters
 _images: OrderedDict[str, tuple[str, tuple[int, int] | None]] = OrderedDict()  # sha: (sealed image, base64; its size)
+_cached = {"bytes": 0}  # the base64 _images holds
 
 
 @api.post("/api/images")
 async def put_image(request: Request, w: int | None = None, h: int | None = None):
-    data = await request.body()
-    if not data or len(data) * 4 // 3 > MAX_IMAGE:
+    data = await _read(request, MAX_IMAGE * 3 // 4)
+    if not data:
         raise HTTPException(400, "missing image, or larger than 40 MB")
     if len(data) <= seal.IV + 16:  # iv and tag
         raise HTTPException(400, "not a sealed image")
     sha = hashlib.sha256(data).hexdigest()
     if sha not in _images:
         _images[sha] = (base64.b64encode(data).decode(), _size(w, h) if w is not None and h is not None else None)
-        while sum(len(b64) for b64, _ in _images.values()) > IMAGE_CACHE and len(_images) > 1:
-            _images.popitem(last=False)
+        _cached["bytes"] += len(_images[sha][0])
+        while _cached["bytes"] > IMAGE_CACHE and len(_images) > 1:
+            _cached["bytes"] -= len(_images.popitem(last=False)[1][0])
     _images.move_to_end(sha)
     return {"ref": sha}
 
@@ -472,8 +545,8 @@ def _person(x) -> dict:
         raise HTTPException(400, f"malformed person: {e}")
     if len(text) > 2000 or side not in SIDES:
         raise HTTPException(400, "a person's description is up to 2000 characters, their side left, center or right")
-    if len(loras) > 8 or any(not -8 <= w <= 8 or "/" in n for n, w in loras):
-        raise HTTPException(400, "at most 8 LoRAs a person, strengths between -8 and 8")
+    if len(loras) > 8 or any(not -8 <= w <= 8 or not _lora_name(n) for n, w in loras):
+        raise HTTPException(400, "at most 8 LoRAs a person, file names, strengths between -8 and 8")
     return {"text": text, "side": side, "loras": loras}
 
 
@@ -519,7 +592,7 @@ async def upscale(request: Request):
     try:
         w, h = _png_size(body)
         mp = float(body.get("megapixels", 4))
-        seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
+        seed = _seed(body.get("seed"))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, f"malformed image or number: {e}")
     if mp not in graphs.UPSCALE_MEGAPIXELS:
@@ -562,7 +635,7 @@ async def inpaint(request: Request):
     try:
         w, h = _png_size(body)
         mw, mh = _png_size(body, "mask")
-        seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
+        seed = _seed(body.get("seed"))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, f"malformed image, mask or number: {e}")
     if (mw, mh) != (w, h):
@@ -591,6 +664,8 @@ def _retouch(p: dict) -> dict:
 
 def _start(body: dict, params: dict, prompt: dict, queued: bool = True) -> dict:
     _purge()
+    if sum(not j.ended for j in jobs.values()) >= config.STUDIO_MAX_JOBS:
+        raise HTTPException(429, f"{config.STUDIO_MAX_JOBS} jobs are running or queued already; wait for some to finish")
     job = Job(params)
     jobs[job.id] = job
     job.emit("queued", {**params, "started": job.started})  # replayed on every reconnect
@@ -692,7 +767,7 @@ async def edit_people(request: Request):
         raise HTTPException(400, "missing image, or larger than 40 MB")
     try:
         w, h = _png_size(body)
-        seed = random.randrange(2**50) if body.get("seed") is None else int(body["seed"])
+        seed = _seed(body.get("seed"))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, f"malformed image or number: {e}")
     raw = body.get("people")
@@ -817,7 +892,8 @@ async def events(job_id: str, request: Request):
             changed = job.changed
             while i < len(job.events):
                 name, data = job.events[i]
-                yield f"id: {i}\nevent: {name}\ndata: {json.dumps(data)}\n\n"
+                if data is not None or name != "preview":  # a preview a later one replaced
+                    yield f"id: {i}\nevent: {name}\ndata: {json.dumps(data)}\n\n"
                 i += 1
             if job.ended:
                 return

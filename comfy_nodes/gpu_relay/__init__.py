@@ -15,6 +15,7 @@ GUI (js/gpu_status.js): the worker's heartbeat lives in a Modal Dict.
 import asyncio
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -306,7 +307,12 @@ async def gpu_keep_warm(request):
     if _not_json(request):
         return web.json_response({"error": "send the body as application/json"}, status=415)
     body = await request.json()
-    minutes = float(body.get("minutes", 0))
+    try:
+        minutes = float(body.get("minutes", 0))
+    except (AttributeError, TypeError, ValueError):
+        minutes = math.nan
+    if not (math.isfinite(minutes) and 0 <= minutes <= KEEP_WARM_MAX):  # json reads Infinity as a number
+        return web.json_response({"error": f"minutes must be a number from 0 to {KEEP_WARM_MAX}"}, status=400)
     _keep["until"] = time.time() + minutes * 60 if minutes > 0 else 0
     if _keep["task"] and not _keep["task"].done():
         _keep["task"].cancel()
@@ -340,6 +346,7 @@ if os.environ.get("COMFY_RELAY") == "1":
     IDLE = float(os.environ["COMFY_WORKER_IDLE"])
     RATE = float(os.environ["COMFY_GPU_RATE"])
     CREDITS = float(os.environ["COMFY_MONTHLY_CREDITS"])
+    KEEP_WARM_MAX = float(os.environ["COMFY_KEEP_WARM_MAX_MINUTES"])
     GPU = os.environ.get("COMFY_GPU", "GPU")
     server.app.middlewares.append(_relay_middleware)  # access_key's gate is inserted at 0, so it runs before this
 

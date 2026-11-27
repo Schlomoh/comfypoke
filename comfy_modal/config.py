@@ -53,11 +53,20 @@ WORKER_CALL_TIMEOUT = 3600
 # running render is not a Modal input, so a phone locked mid-render sends nothing and the window
 # below is all that keeps the container: it must outlast WORKER_TIMEOUT_SECONDS plus a cold boot.
 # Idle, a quarter CPU for 20 minutes is about a cent.
+# The GUI's "Keep awake" holds the GPU warm and billed; the relay refuses anything longer. Its longest option is 2 h.
+KEEP_WARM_MAX_MINUTES = 120
+
 STUDIO_IDLE_SECONDS = 1200
 STUDIO_JOB_TTL = 900  # seconds a finished image waits in memory for a phone that lost the stream
 # "Stop the GPU when the queue is done" waits this long after the last job: an automatic upscale is
 # sent by the phone a moment after its render is stored, and should not boot a fresh worker.
 STUDIO_STOP_GRACE_SECONDS = 20
+# The studio runs in one container of 2 GB (studio.py), and an OOM there loses every job and cached image at once.
+# Its memory is the image cache, the jobs' events (a 4 MP PNG is 10 to 20 MB of base64) and what a request holds.
+STUDIO_IMAGE_CACHE_MB = 400  # sealed images sent once and referred to by hash (studio_api.put_image)
+STUDIO_JOB_MEMORY_MB = 600  # finished jobs' images and previews; the oldest ended jobs go first past it
+STUDIO_MAX_JOBS = 32  # running and queued at once; more get a 429
+STUDIO_MAX_BODY_MB = 64  # any request to /api/*; an image upload has its own, lower cap
 
 VOLUME_MODELS = f"{APP_NAME}-models"
 VOLUME_DATA = f"{APP_NAME}-data"
@@ -65,6 +74,7 @@ VOLUME_IO = f"{APP_NAME}-io"
 
 HF_SECRET_NAME = "huggingface-secret"  # optional, only for gated repos
 ACCESS_KEY_FILE = ".access_key"  # repo root, git-ignored, read at deploy time only
+ACCESS_KEY_MIN_LENGTH = 16  # a deploy with a shorter key stops: an empty or truncated file would publish both apps
 
 # Minted once per `modal deploy` on the laptop and shipped to both classes, so a
 # worker container left over from the previous deploy rejects the new UI's
@@ -94,6 +104,7 @@ CONTAINER_ENV = {
     "COMFY_WORKER_IDLE": str(WORKER_IDLE_SECONDS),  # gpu_relay: idle window shown as a countdown in the GUI
     "COMFY_GPU_RATE": str(GPU_RATES_PER_HOUR.get(GPUS[0], 0)),  # gpu_relay: cost estimate in the GUI, same caveat
     "COMFY_MONTHLY_CREDITS": str(MONTHLY_CREDITS),  # gpu_relay: credits left this month, in the GUI
+    "COMFY_KEEP_WARM_MAX_MINUTES": str(KEEP_WARM_MAX_MINUTES),  # gpu_relay: the longest keep-warm it accepts
 }
 
 
