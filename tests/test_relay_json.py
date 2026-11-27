@@ -41,3 +41,23 @@ def test_no_body_and_json_get_through():
         assert (await c.post("/api/interrupt", json={"prompt_id": "p"})).status == 200
         assert interrupted == [None, "p"]
     run(check)
+
+
+def test_keep_warm_takes_finite_minutes_up_to_the_cap():
+    relay.KEEP_WARM_MAX = 120.0
+
+    async def check(c, interrupted):
+        for body in ('{"minutes": Infinity}', '{"minutes": NaN}', '{"minutes": 121}', '{"minutes": -1}', '{"minutes": "x"}', "[]"):
+            r = await c.post("/gpu/keep_warm", data=body, headers={"Content-Type": "application/json"})
+            assert r.status == 400, body
+    run(check)
+
+
+def test_keep_warm_refuses_bad_json_and_booleans():
+    relay.KEEP_WARM_MAX = 120.0
+
+    async def check(c, interrupted):
+        for body in ("{nope", '{"minutes": true}'):
+            r = await c.post("/gpu/keep_warm", data=body, headers={"Content-Type": "application/json"})
+            assert r.status == 400, body
+    run(check)

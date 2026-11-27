@@ -5,7 +5,8 @@ for a page gets a small login form; anything else (the API, the websocket, curl)
 with a Basic-auth challenge, so tools can send the key in an Authorization header. Either way
 a correct key sets a cookie and every later request is checked against it. The cookie holds a
 token derived from the key, never the key itself, so it opens this GUI and nothing else (the
-studio derives its own). No key configured means no gate, so the container always starts.
+studio derives its own). The GUI container without a key answers every request with a 503, and
+the deploy refuses a key shorter than config.ACCESS_KEY_MIN_LENGTH.
 
 Every *.modal.run host is the same site as this one (modal.run is not on the Public Suffix
 List), so SameSite cookies and ComfyUI's Sec-Fetch-Site check do not stop another Modal app's
@@ -200,6 +201,16 @@ async def _headers(request, response):
 
 
 PromptServer.instance.app.on_response_prepare.append(_headers)  # every response, the websocket's and errors included
+
+@web.middleware
+async def _no_key(request, handler):
+    raise web.HTTPServiceUnavailable(text="this deployment has no access key; set .access_key and deploy again")
+
+
+if not KEY and os.environ.get("COMFY_RELAY") == "1":
+    # The GUI container without a key fails closed. Raising here would not: ComfyUI logs a node pack that fails to
+    # import and serves on without it. (The worker loads this pack too, without a key and on localhost only.)
+    PromptServer.instance.app.middlewares.insert(0, _no_key)
 
 if KEY:
     # First in the list, so it runs outside ComfyUI's origin_only_middleware: the relabel above

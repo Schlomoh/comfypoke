@@ -124,3 +124,10 @@ def test_a_policy_of_comfyuis_own_keeps_its_rules():
         await gate._headers(None, r)
         assert r.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'self'"
     run(check)
+
+
+def test_the_gui_without_a_key_fails_closed():
+    bare = comfy_stub.load("access_key", {"COMFY_ACCESS_KEY": "", "COMFY_RELAY": "1"})
+    assert bare.PromptServer.instance.app.middlewares == [bare._no_key]
+    worker = comfy_stub.load("access_key", {"COMFY_ACCESS_KEY": ""})  # the worker's ComfyUI, on localhost only
+    assert worker.PromptServer.instance.app.middlewares == []

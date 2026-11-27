@@ -52,8 +52,9 @@ modal deploy modal_app.py     # the first run downloads about 80 GB of models to
 tools/sync.sh workflows       # upload the workflows in workflows/
 ```
 
-The `.access_key` step is not optional: without the file the deploy fails, and an empty file
-starts the container with no login gate, so the GUI is public.
+The `.access_key` step is not optional: without the file, or with a key shorter than 16
+characters, the deploy stops. A container that somehow starts without a key answers every
+request with a 503 rather than serving without a login.
 
 Open the URL the deploy prints. A login page asks for the key: paste the contents of
 `.access_key`. A cookie keeps you signed in for 30 days; it holds a token derived from the key,
@@ -356,8 +357,10 @@ after ten idle minutes; the worker is an L40S by default at about $1.95 per hour
 sleeps five minutes after its last render. The studio endpoint is a quarter of a CPU that sleeps
 after ten idle minutes, a fraction of a cent each time. When Modal has no L40S free it boots an A100 40 GB
 instead, at about $2.10 per hour, and that one sleeps after two idle minutes so the next boot
-can go back to an L40S. Estimates from measured times at list prices,
-compute only:
+can go back to an L40S. Both URLs are public, so any request to them, signed in or not, wakes
+or holds the GUI or studio container (never the GPU): a script that hits them every few minutes
+keeps those CPU containers up at your cost. That is cents a day. Estimates from measured times at
+list prices, compute only:
 
 | Session | GPU time billed | About |
 |---|---|---|
