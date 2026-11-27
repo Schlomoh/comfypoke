@@ -11,6 +11,7 @@ import { useGpu } from "@/data/queries";
 import { outfitPieces } from "@/domain/outfits";
 import type { Pick } from "@/domain/people";
 import type { Render } from "@/domain/render";
+import { keptAtom } from "@/features/edit/keep";
 import { hasArea } from "@/features/edit/mask";
 import {
   bodiesAtom,
@@ -209,14 +210,15 @@ export function PeopleList({ render }: { render: Render }) {
   });
   const { gpu } = useGpu();
   const warm = !!gpu?.booted && (gpu.state === "warm" || gpu.state === "busy");
+  const read = useAtomValue(keptAtom).has(render.id); // the faces kept from before come first
   useEffect(() => {
-    if (rows || !warm || tried.has(render.id)) return;
+    if (rows || !read || !warm || tried.has(render.id)) return;
     const t = setTimeout(() => {
       tried.add(render.id);
       void latest.current();
     }, SETTLE_MS);
     return () => clearTimeout(t);
-  }, [rows, warm, render.id]);
+  }, [rows, read, warm, render.id]);
   const faces = rows?.filter((r) => r.found).length ?? 0;
   let said = "";
   if (finding) said = `finding faces · ${finding}`;

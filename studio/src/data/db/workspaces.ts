@@ -45,7 +45,7 @@ export const renameWorkspace = (id: string, name: string) => db.workspaces.updat
 export async function deleteWorkspace(id: string) {
   await db.transaction(
     "rw",
-    [db.workspaces, db.shots, db.thumbs, db.images, db.chars, db.drafts, db.pending, db.faces],
+    [db.workspaces, db.shots, db.thumbs, db.images, db.chars, db.drafts, db.pending, db.faces, db.edits],
     async () => {
       const shots = await db.shots.where("ws").equals(id).primaryKeys();
       await Promise.all([
@@ -57,6 +57,7 @@ export async function deleteWorkspace(id: string) {
         db.chars.where("ws").equals(id).delete(),
         db.pending.where("ws").equals(id).delete(),
         db.faces.where("ws").equals(id).delete(),
+        db.edits.where("ws").equals(id).delete(),
       ]);
       await Promise.all([db.drafts.delete(id), db.workspaces.delete(id)]);
     },
@@ -79,9 +80,10 @@ export async function purge(inputs: boolean) {
       // storage blocked: nothing of ours is in it then
     }
   } else {
-    await db.transaction("rw", [db.shots, db.thumbs, db.images, db.pending, db.renders], () =>
+    await db.transaction("rw", [db.shots, db.thumbs, db.images, db.pending, db.renders, db.edits], () =>
       Promise.all([
         db.shots.clear(),
+        db.edits.filter((e) => e.id !== e.ws).delete(), // masks and bodies are made from the images; the choices stay
         db.thumbs.clear(),
         db.images.clear(),
         db.pending.clear(),

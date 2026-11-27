@@ -11,6 +11,7 @@ import { useUpdateNotice } from "@/app/use-update-notice";
 import { FIT } from "@/domain/view";
 import { ActivitySheet } from "@/features/activity/activity-sheet";
 import { EditPanel } from "@/features/edit/edit-panel";
+import { useKeepEdits } from "@/features/edit/keep";
 import { useEdit } from "@/features/edit/use-edit";
 import { Library } from "@/features/library/library";
 import { LookPanel } from "@/features/model/look-panel";
@@ -85,6 +86,7 @@ function useTabChange() {
 export function Studio({ onClose }: { onClose: () => void }) {
   useJobRunner();
   useDraftAutosave();
+  useKeepEdits();
   useCastLoras();
   useRendersSync();
   useVeilClass();

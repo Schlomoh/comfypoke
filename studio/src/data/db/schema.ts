@@ -59,6 +59,7 @@ export const db = new Dexie("studio") as Dexie & {
   subs: EntityTable<Sub, "id">; // the catalog's subcategories, shared and in the clear (domain/prompt-catalog.ts)
   chunks: EntityTable<Chunk, "id">; // and the presets in them
   meta: EntityTable<{ key: string; value: unknown }, "key">; // "seen": the built-in presets seeded already
+  edits: EntityTable<Row, "id">; // what the Edit tab made on each image, by its id, and the tab's choices (edits.ts)
 };
 
 // The chips a device used to start with, by the block ids of the time. Version 5 takes them out again:
@@ -168,6 +169,8 @@ db.version(8)
     await tx.table("meta").put({ key: "seen", value: seen });
     await tx.table("presets").clear();
   });
+// What the Edit tab made on each image (masks, the people found, fitted bodies), so a reload keeps them.
+db.version(9).stores({ edits: "id, ws" });
 // Another tab purged everything (deleted the database): this one must not quietly recreate it
 // with its own draft or jobs. Reloading drops all of its state.
 db.on("versionchange", () => {

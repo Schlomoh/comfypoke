@@ -101,7 +101,9 @@ explains where things are and how to change them without breaking the deployment
   gets a card: who, a new outfit over a part ("all clothes" and the like), its face redrawn (off to start). Every mask is kept by a
   key (`maskKey` in `edit/state.ts`): the image's own for Repaint, `<render id>:<face>` for a person, and the bar's
   tools, taps, finds and the mask list edit whichever key is current (`use-mask-key.ts`: the selected person in
-  People). A dressed person's card has two steps, each run only when asked for and seen before it is used. Their area
+  People). The masks, the people found and their fitted bodies are kept on the phone per image (`edit/keep.ts`, Dexie
+  table `edits`, sealed), read when the image first comes on the stage, and the tab's choices with the workspace; People
+  looks for faces by itself only after that read. A dressed person's card has two steps, each run only when asked for and seen before it is used. Their area
   (required: Dress stays off without one) is found by "find area" (`/api/areas`, `graphs.areas`: SAM's find by words
   cut to their silhouette, SAM with their RT-DETR box and no words, `StudioPersonBox`; `use-areas.ts`) as the first
   step of their mask, to edit, or painted. Their body (optional) is fitted by "fit body" (`/api/body`, `graphs.body`:
