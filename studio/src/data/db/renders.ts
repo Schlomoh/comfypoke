@@ -75,8 +75,8 @@ export const toggleBest = (space: Space, r: Render) =>
   updateRender(space, r.id, (s) => ({ ...s, best: !s.best }));
 
 export async function removeRender(id: string) {
-  await db.transaction("rw", db.shots, db.thumbs, db.images, () =>
-    Promise.all([db.shots.delete(id), db.thumbs.delete(id), db.images.delete(id)]),
+  await db.transaction("rw", [db.shots, db.thumbs, db.images, db.edits], () =>
+    Promise.all([db.shots.delete(id), db.thumbs.delete(id), db.images.delete(id), db.edits.delete(id)]),
   );
 }
 
