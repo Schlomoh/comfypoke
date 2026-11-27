@@ -1,9 +1,9 @@
-// The dock along the bottom: what the next run is set to, as chips, what it costs, and Generate; in the Edit tab
+// The dock along the bottom: what the next run is set to, as one line, what it costs, and Generate; in the Edit tab
 // the edit's line and its button instead.
 import { MOD } from "@/app/platform";
 import { duration } from "@/domain/format";
 import type { EditAction } from "@/features/edit/use-edit";
-import { RunChips } from "@/features/run/run-chips";
+import { RunLine } from "@/features/run/run-line";
 import type { Generate } from "@/state/generate";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
@@ -33,7 +33,7 @@ function buttonLabel(g: Generate, edit?: EditAction) {
   return edit.sending ? "Sending…" : edit.button;
 }
 
-/** Generate's own: the run's chips, then the estimate and the button. An edit has no chips: its passes are set in
+/** Generate's own: the run's line, then the estimate and the button. An edit has no run line: its passes are set in
  * the Edit tab, so its line says what it will do. */
 export function Dock({ g: generate, edit }: { g: Generate; edit?: EditAction }) {
   const g = edit ?? generate;
@@ -44,7 +44,7 @@ export function Dock({ g: generate, edit }: { g: Generate; edit?: EditAction }) 
           {g.error}
         </Note>
       )}
-      {!edit && <RunChips />}
+      {!edit && <RunLine />}
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1 font-mono text-xs leading-snug text-faint tabular-nums">
           {edit && <div className="truncate text-muted">{edit.label}</div>}

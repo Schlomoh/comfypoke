@@ -17,7 +17,7 @@
   --color-ink: #e6e6e8;
   --color-control: #606068; /* borders of inputs and checkboxes: 3:1 against the background (WCAG 1.4.11) */
   --color-muted: #a4a4ac;
-  --color-faint: #7e7e86; /* the dimmest text: 4.5:1 on panels (WCAG 1.4.3) */
+  --color-faint: #8c8c94; /* the dimmest text: 5.6:1 on panels, above WCAG 1.4.3's 4.5 */
   --color-ok: #5fd08a;
   --color-warn: #e8b84a;
   --color-bad: #f0716a;
@@ -45,8 +45,8 @@ body {
 /* Section and field labels: the one typographic device the interface leans on. */
 @utility label {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-muted);
 }

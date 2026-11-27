@@ -119,6 +119,8 @@ export const api = {
   inpaint: (key: WrappedKey, i: InpaintRequest) => post<Started>("/api/inpaint", { ...i, key }),
   body: (key: WrappedKey, image: ImageRef) => post<Started>("/api/body", { image, key }), // the fitted body drawn over the picture
   /** What SAM finds by text, by tapped points (pixels) or both, white on black. */
+  face: (key: WrappedKey, image: ImageRef, reference: ImageRef) =>
+    post<Started>("/api/face", { image, reference, key }), // a score
   mask: (key: WrappedKey, image: ImageRef, text: string, points?: { positive: Pt[]; negative: Pt[] }) =>
     post<Started>("/api/mask", { image, text, points, key }),
   transport: () => call<{ kid: string; spki: string }>("/api/transport"),

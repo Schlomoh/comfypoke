@@ -9,7 +9,7 @@ import { useSetups } from "@/data/db/setups";
 import { useSpace } from "@/data/db/space";
 import { lockApp, useCatalog, useGpu } from "@/data/queries";
 import { plan, runCount, summary } from "@/domain/batch";
-import { faceFor } from "@/domain/cast";
+import { faceFor, inPicture } from "@/domain/cast";
 import { resolve } from "@/domain/catalog";
 import { compose } from "@/domain/compose";
 import { errorText, median, shortName } from "@/domain/format";
@@ -17,7 +17,6 @@ import { runnable, triggersOf } from "@/domain/loras";
 import { DRAFT_MP, legacyUnet, size, type Recipe } from "@/domain/recipe";
 import type { Render, Upscale } from "@/domain/render";
 import { toPass } from "@/domain/setup";
-import { surprises } from "@/domain/shuffle";
 import { useJobs } from "@/state/jobs";
 import { useTriggers } from "@/state/recipe";
 import { focusAtom, recipeAtom, rendersAtom } from "@/state/studio";
@@ -71,16 +70,10 @@ export function useGenerate() {
   const aspect = size(recipe.aspect, recipe.draft ? Math.min(recipe.mp, DRAFT_MP) : recipe.mp);
   const blocked = blockedBy(recipe, catalog, prompt);
 
-  /** One job per version and seed of `r`, sharing a batch; a draft renders small, `from` is the draft made big.
-   * `more` are other recipes like it sent in the same batch, each with its title (Surprise me). */
+  /** One job per version and seed of `r`, sharing a batch; a draft renders small, `from` is the draft made big. */
   const send = async (
     r: Recipe,
-    {
-      draft,
-      from,
-      more,
-      title,
-    }: { draft: boolean; from?: Render; more?: { recipe: Recipe; label: string }[]; title?: string },
+    { draft, from, title }: { draft: boolean; from?: Render; title?: string },
   ): Promise<boolean> => {
     const sent = resolve(r, catalog.catalog);
     if (sending || !sent.family) return false;
@@ -102,9 +95,7 @@ export function useGenerate() {
     try {
       const photo = face ? await loadFace(space, face) : undefined;
       // one job per version and seed; stop_after rides on each, so the last one sent decides
-      const jobs = more
-        ? more.flatMap((m) => plan(m.recipe, words).map((run) => ({ ...run, title: m.label })))
-        : plan(r, words).map((run) => ({ ...run, title }));
+      const jobs = plan(r, words).map((run) => ({ ...run, title }));
       for (const [i, run] of jobs.entries()) {
         const started = await generate(
           {
@@ -120,6 +111,8 @@ export function useGenerate() {
             loras: active,
             stop_after: r.stopAfter,
             finish,
+            // one face only: with two, the box around both faces is most of the picture; the server skips it under a photo
+            face_pass: inPicture(run.recipe).length === 1 ? r.facePass : null,
           },
           {
             recipe: run.recipe,
@@ -159,20 +152,9 @@ export function useGenerate() {
       );
   };
 
-  /** Surprise me: `count` renders, each with one row changed to a preset (domain/shuffle.ts), in one batch. */
-  const surprise = async (presets: { block: string; text: string }[]) => {
-    const r = store.get(recipeAtom);
-    const more = surprises(r, presets, r.count);
-    // judged by what is sent: an empty recipe is blocked, its surprises each have a phrase
-    const first = more[0]?.recipe;
-    if (!first || blockedBy(first, catalog, compose(first, triggers))) return 0;
-    return (await send(r, { draft: r.draft, more })) ? more.length : 0;
-  };
-
   return {
     submit,
     rerender,
-    surprise,
     sending,
     error: error || (catalog.error ? errorText(catalog.error) : ""),
     blocked,

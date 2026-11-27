@@ -183,7 +183,10 @@ class Worker:
                 raise WorkerUnavailable(str(e)) from e
             async with aiohttp.ClientSession() as s:
                 if key and (stray := seal.stray_outputs(payload["prompt"], await self._output_nodes(s))):
-                    yield _error(pid, f"a sealed run may only output through {seal.OUTPUT_NODE}, not {', '.join(stray)}", "SealError")
+                    yield _error(pid, f"a sealed run may only output through {' or '.join(seal.OUTPUT_NODES)}, not {', '.join(stray)}", "SealError")
+                    return
+                if key and (why := seal.score_shape(payload["prompt"])):
+                    yield _error(pid, why, "SealError")
                     return
                 # aiohttp caps a message at 4 MB by default; an upscaled PNG arrives as one binary frame larger than that
                 async with s.ws_connect(f"{BASE}/ws?clientId={cid}", max_msg_size=0) as ws:
@@ -216,7 +219,9 @@ class Worker:
                             break
                         if d.get("prompt_id") not in (None, pid):
                             continue
-                        if key and msg["type"] not in SEALED_MESSAGES:
+                        if msg["type"] == seal.SCORE_MESSAGE:
+                            msg = seal.score_message(pid, d)
+                        elif key and msg["type"] not in SEALED_MESSAGES:
                             continue
                         if msg["type"] == "status":
                             d.pop("sid", None)  # the browser would adopt the worker's socket id as its own

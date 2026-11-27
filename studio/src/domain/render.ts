@@ -17,6 +17,7 @@ export type Params = {
   loras: Lora[];
   reference?: boolean; // made with a face reference photo
   finish?: (Omit<Pass, "loras"> & { loras: Lora[]; denoise: number }) | null; // a second pass with another setup
+  face_pass?: number | null; // the face pass's strength, when one ran
 };
 
 export type Upscale = { megapixels: number; prompt: string; denoise: number }; // prompt "" means no retouch
@@ -55,7 +56,10 @@ export type Render = Params & {
   draft?: boolean; // small and quick, made to be made big (state/generate.ts rerender, or an upscale)
   batch?: string; // the renders one Generate sent: compared and picked among (features/pick)
   passed?: boolean; // passed over when picking: dimmed in the library
+  faceMatch?: FaceMatch; // how much its face looks like a character's face photo, once asked (domain/face.ts)
 };
+/** A face match as kept: against which face photo, and the score, null when either had no face. */
+export type FaceMatch = { face: string; score: number | null };
 
 /** The model an uploaded photo is repainted and dressed with: there is no render behind it to take one from. */
 const UPLOAD_MODEL = { unet: "krea2_turbo_bf16.safetensors", family: "krea2", steps: 8, cfg: 1 };
@@ -90,7 +94,7 @@ export type JobMeta = {
   batch?: string;
   draft?: boolean;
   from?: Render; // the draft a render was made big from
-  title?: string; // what the library calls it: a surprise says what it changed
+  title?: string; // what the library calls it: a draft made big keeps the draft's
 };
 
 /** Every upscale and edit made from these renders, and from those, with the renders themselves. A render made big

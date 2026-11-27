@@ -1,8 +1,8 @@
 // The prompt as it will be sent, with the phrases that vary shown with all their versions.
 import { useAtomValue, useSetAtom } from "jotai";
 
+import { runCount } from "@/domain/batch";
 import { compose } from "@/domain/compose";
-import { axes } from "@/domain/versions";
 import { useTriggers } from "@/state/recipe";
 import { layerAtom, recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
@@ -23,7 +23,7 @@ export function PromptPreview() {
   const recipe = useAtomValue(recipeAtom);
   const triggers = useTriggers();
   const setLayer = useSetAtom(layerAtom);
-  const varied = axes(recipe).length > 0;
+  const many = runCount(recipe) > 1; // versions or seeds: the list of every render is worth opening
   // the varied phrases inline with all their versions, marked so they can be drawn apart
   const marked = compose(recipe, triggers, (p) =>
     p.versions.length ? `${OPEN}${[p.t, ...p.versions].join(" / ")}${CLOSE}` : p.t,
@@ -33,7 +33,7 @@ export function PromptPreview() {
     <section className="flex flex-col gap-2 border-b border-line px-4 py-4">
       <div className="flex items-center justify-between gap-2">
         <Heading>Prompt · {plain.length} chars</Heading>
-        {varied ? (
+        {many ? (
           <Button variant="text" onClick={() => setLayer("renders")} className="underline underline-offset-4">
             see each render
           </Button>

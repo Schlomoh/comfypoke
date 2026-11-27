@@ -20,6 +20,8 @@ import { jobsAtom, viewerAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
+/** Stages that count steps of their own: a step keeps them on screen instead of reading as the render's sampling. */
+const STEPPED = new Set(["swapping", "refining"]);
 
 function createRunner(store: Store, space: Space) {
   const sources = new Map<string, EventSource>();
@@ -98,7 +100,13 @@ function createRunner(store: Store, space: Space) {
     });
     on("stage", (stage: string) => update(id, { stage }));
     on("progress", (p: { value: number; max: number }) =>
-      update(id, { stage: "sampling", step: p.value, steps: p.max }),
+      setJobs((js) =>
+        js.map((j) =>
+          j.id === id
+            ? { ...j, stage: STEPPED.has(j.stage ?? "") ? j.stage : "sampling", step: p.value, steps: p.max }
+            : j,
+        ),
+      ),
     );
     on("preview", (sealed: string) => openPreview(space, sealed, (preview) => update(id, { preview })));
     on("image", (b64: string) => (image = b64));

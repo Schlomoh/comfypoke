@@ -42,6 +42,14 @@ export function plan(r: Recipe, triggers: Triggers, base = r.seed ?? randomSeed(
 /** How many renders Generate sends. */
 export const runCount = (r: Recipe) => axes(r).reduce((m, a) => m * a.values.length, 1) * r.count;
 
+/** How the run count comes about, in words: "5 versions × 2 seeds", "3 seeds", "1 render". */
+export function runsSaid(r: Recipe) {
+  const versions = runCount(r) / r.count;
+  if (versions > 1 && r.count > 1) return `${versions} versions × ${r.count} seeds`;
+  if (versions > 1) return `${versions} versions`;
+  return r.count > 1 ? `${r.count} seeds` : "1 render";
+}
+
 /** "6 renders: 3 wearing × 2 shot", or null for a single render. */
 export function summary(r: Recipe) {
   const n = runCount(r);

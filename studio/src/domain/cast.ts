@@ -81,14 +81,16 @@ export const setGender = (r: Recipe, id: string, g: Gender) =>
     return { ...p, gender: g, who: fix("who"), look: fix("look"), wear: fix("wear"), doing: fix("doing") };
   });
 
-/** The person whose face photo a render swaps in: the first one in the picture with a photo. The head swap takes one. */
-export const faceFor = (r: Recipe) =>
-  r.cast.find(
+/** The people a recipe puts in the picture: described by a row of their own, or in something done together. */
+export const inPicture = (r: Recipe) =>
+  r.cast.filter(
     (c) =>
-      c.face &&
-      (PERSON_ROWS.some((row) => c[row.id].some((p) => p.on && p.t.trim())) ||
-        r.together.some((i) => i.on && i.t.trim() && involves(i, c.id))),
+      PERSON_ROWS.some((row) => c[row.id].some((p) => p.on && p.t.trim())) ||
+      r.together.some((i) => i.on && i.t.trim() && involves(i, c.id)),
   );
+
+/** The person whose face photo a render swaps in: the first one in the picture with a photo. The head swap takes one. */
+export const faceFor = (r: Recipe) => inPicture(r).find((c) => c.face);
 
 // ---- what people do with each other
 

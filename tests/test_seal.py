@@ -72,9 +72,29 @@ def test_open_prompt_refuses_data_that_is_not_a_sealed_image():
             seal.open_prompt(KEY, {"1": {"class_type": seal.IMAGE_NODE, "inputs": {"data": data}}})
 
 
-def test_stray_outputs_allow_only_the_websocket_save():
-    outputs = {"SaveImageWebsocket", "SaveImage", "PreviewImage", "PreviewAny"}
+def test_stray_outputs_allow_only_the_websocket_save_and_the_score():
+    outputs = {"SaveImageWebsocket", "StudioFaceScore", "SaveImage", "PreviewImage", "PreviewAny"}
     for name, g in samples().items():  # every studio graph passes
         assert seal.stray_outputs(g, outputs) == [], name
     g = {"1": {"class_type": "SaveImageWebsocket"}, "2": {"class_type": "SaveImage"}, "3": {"class_type": "PreviewImage"}}
     assert seal.stray_outputs(g, outputs) == ["PreviewImage", "SaveImage"]
+    assert seal.stray_outputs({"1": {"class_type": "StudioFaceScore"}}, outputs) == []
+
+
+def test_score_message_keeps_only_the_rounded_number():
+    sent = {"prompt_id": "other", "score": 0.61234, "image": "aGVsbG8=", "extra": [1, 2]}
+    assert seal.score_message("p1", sent) == {"type": "studio_face", "data": {"prompt_id": "p1", "score": 0.61}}
+    for bad in ("0.5", True, 3.0, float("nan"), None, [0.5]):
+        assert seal.score_message("p1", {"score": bad})["data"]["score"] is None, bad
+
+
+def test_score_node_only_in_the_face_graphs_shape():
+    assert seal.score_shape(samples()["face"]) is None
+    assert seal.score_shape(samples()["render krea2"]) is None  # no score node: not this check's business
+    img = {"class_type": "StudioImageBase64", "inputs": {"data": "x"}}
+    score = {"class_type": "StudioFaceScore", "inputs": {"image": ["1", 0], "reference": ["2", 0]}}
+    two = {"1": img, "2": img, "3": score, "4": {**score}}
+    cropped = {"1": img, "2": img, "3": {"class_type": "ImageCrop", "inputs": {}}, "4": score}
+    for g in (two, cropped):
+        assert seal.score_shape(g), g
+

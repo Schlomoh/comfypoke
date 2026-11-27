@@ -88,6 +88,11 @@ MODELS = [
     # huggingface.co/Alissonerdx/BFS-Best-Face-Swap, workflows/Head Swap Krea 2 - V1 Simple Workflow.json.
     # krea2-reid stood here before; one photo gave it a lookalike, not the person.
     Model("Alissonerdx/BFS-Best-Face-Swap", "bfs_head_swap_v1.1_krea2.safetensors", "loras"),
+    # --- InsightFace buffalo_l: the studio's face match (comfy_nodes/studio_face) ---
+    # The SCRFD detector and the ArcFace recognizer only; the pack's landmark and age models are not used. The weights
+    # are for non-commercial use, which is what this deploy is. public-data/insightface mirrors the official release.
+    Model("public-data/insightface", "models/buffalo_l/det_10g.onnx", "insightface/models/buffalo_l"),
+    Model("public-data/insightface", "models/buffalo_l/w600k_r50.onnx", "insightface/models/buffalo_l"),
     # --- SeedVR2 7B: one-step restoration upscaler (Apache 2.0), workflow 03 ---
     Model("Comfy-Org/SeedVR2", "diffusion_models/seedvr2_7b_fp16.safetensors", "diffusion_models"),
     Model("Comfy-Org/SeedVR2", "vae/seedvr2_ema_vae_fp16.safetensors", "vae"),

@@ -26,7 +26,7 @@ import { useRendersSync } from "@/state/actions";
 import { useGenerate } from "@/state/generate";
 import { useJobRunner } from "@/state/jobs";
 import { useCastLoras, useDraftAutosave } from "@/state/recipe";
-import { tabAtom, veilAtom } from "@/state/studio";
+import { stripTab, tabAtom, veilAtom } from "@/state/studio";
 import { cn } from "@/ui/cn";
 
 /** H: the images stay where they are, as blank tiles, until shown again (index.css). */
@@ -69,19 +69,25 @@ export function Studio({ onClose }: { onClose: () => void }) {
   useUpdateNotice();
   const generate = useGenerate();
   const edit = useEdit();
-  const editing = useAtomValue(tabAtom) === "edit";
+  const tab = useAtomValue(tabAtom);
+  const editing = tab === "edit";
   useShortcuts(() => void (editing ? edit.submit() : generate.submit()));
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
-      <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[400px_minmax(0,1fr)_360px]">
+      <div className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[minmax(420px,30vw)_minmax(0,1fr)_minmax(320px,24vw)]">
         {/* on a phone the aside's parts join the page column: the tab bar first, then the stage */}
         <aside className="contents lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-line">
           <TabBar />
           <Tabs />
           <Dock g={generate} edit={editing ? edit : undefined} />
         </aside>
-        <main className="order-1 h-[56svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0">
+        <main
+          className={cn(
+            "order-1 h-[56svh] border-b border-line lg:order-none lg:h-auto lg:min-h-0 lg:border-b-0",
+            stripTab(tab) && "h-[22svh]",
+          )}
+        >
           <Stage />
         </main>
         <aside className="hidden lg:block lg:min-h-0 lg:[scrollbar-gutter:stable] lg:overflow-y-auto lg:border-l lg:border-line">

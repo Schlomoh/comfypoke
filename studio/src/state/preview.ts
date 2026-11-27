@@ -1,5 +1,5 @@
-// A look at a render before an edit is sent: the fitted body (/api/body) or what SAM finds by text (/api/mask).
-// Each is one GPU job with one image, outside the library and never stored. The body is kept for the session by
+// A look at a render before an edit is sent: the fitted body (/api/body) or what SAM finds by text (/api/mask), and the
+// face match (/api/face). Each is one GPU job with one image (or a score), outside the library and never stored. The body is kept for the session by
 // its render, so it keeps running when the tab that asked for it closes, and reopening it finds the same one.
 import { useEffect, useReducer } from "react";
 
@@ -18,11 +18,14 @@ const put = (key: string, e: Entry) => {
 };
 const RETRIES = 5; // reconnects in a row with nothing heard before giving up on the stream
 
-/** The job's one image as base64, still sealed, or why there is none; the stage as it goes. */
+type Result = { image: string; score?: number | null }; // the image as base64, still sealed; a face match's score
+
+/** The job's result, or why it failed; the stage as it goes. */
 function follow(id: string, onStage: (stage: string) => void) {
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<Result>((resolve, reject) => {
     const es = new EventSource(`/api/jobs/${id}/events`);
     let image = "";
+    let score: number | null | undefined;
     let lost = 0;
     const on = (name: string, fn: (data: never) => void) =>
       es.addEventListener(name, (e) => {
@@ -31,10 +34,10 @@ function follow(id: string, onStage: (stage: string) => void) {
       });
     on("stage", onStage);
     on("image", (b64: string) => (image = b64));
+    on("score", (s: number | null) => (score = s));
     on("done", () => {
       es.close();
-      if (image) resolve(image);
-      else reject(new Error("the preview finished but no image came back"));
+      resolve({ image, score });
     });
     on("failed", ({ message }: { message: string }) => {
       es.close();
@@ -55,10 +58,21 @@ export const preview = async (
   start: () => Promise<Started>,
   onStage: (stage: string) => void = () => {},
 ) => {
-  const sealed = await follow((await start()).id, onStage);
-  return openBase64(space, sealed).catch(() => {
+  const { image } = await follow((await start()).id, onStage);
+  if (!image) throw new Error("the preview finished but no image came back");
+  return openBase64(space, image).catch(() => {
     throw new Error("the preview came back but did not open with this workspace's key");
   });
+};
+
+/** A face match from start to its score: null when either picture had no face. */
+export const faceScore = async (
+  start: () => Promise<Started>,
+  onStage: (stage: string) => void = () => {},
+) => {
+  const { score } = await follow((await start()).id, onStage);
+  if (score === undefined) throw new Error("the face match finished but no score came back");
+  return score;
 };
 
 /** The preview for `key` as it stands, and `run` to start it unless it is there or on its way. */

@@ -56,7 +56,11 @@ export function Thumb({
           ↑{render.upscale.megapixels}MP
         </span>
       )}
-      {kindOf(render) && (
+      {/* a draft is a small mark in the corner, not a word on every tile; an upscale says its size above */}
+      {render.draft && !render.upscale && (
+        <span className="absolute bottom-1 left-1 size-2 bg-warn" title="draft" aria-hidden />
+      )}
+      {!render.draft && !render.upscale && kindOf(render) && (
         <span
           className="absolute bottom-0 left-0 bg-bg/80 px-1 font-mono text-[10px] leading-4 text-ink"
           aria-hidden

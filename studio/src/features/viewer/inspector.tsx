@@ -8,6 +8,7 @@ import { useSpace } from "@/data/db/space";
 import { shortName } from "@/domain/format";
 import { parameters } from "@/domain/png";
 import type { Render } from "@/domain/render";
+import { FaceMatch } from "@/features/viewer/face-match";
 import { Linked } from "@/features/viewer/linked";
 import { Button } from "@/ui/button";
 import { Input, Labeled, Textarea } from "@/ui/field";
@@ -97,6 +98,7 @@ function facts(render: Render, bytes?: number): [string, ReactNode][] {
     ["File", file],
   ];
   if (render.reference) rows.push(["Face", "swapped in from a face photo"]);
+  else if (render.face_pass) rows.push(["Face", `redrawn at ${render.face_pass}`]);
   const e = render.edit;
   if (e?.dress) {
     const d = e.dress;
@@ -199,6 +201,8 @@ export function Inspector({ render }: { render: Render }) {
           </div>
         ))}
       </dl>
+
+      <FaceMatch key={render.id} render={render} />
 
       <Linked render={render} />
 

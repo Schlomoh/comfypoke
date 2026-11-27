@@ -24,7 +24,10 @@ from . import config
 
 IV = 12
 IMAGE_NODE = "StudioImageBase64"  # comfy_nodes/studio_image: the only node that carries an image in the prompt
-OUTPUT_NODE = "SaveImageWebsocket"  # the only output a sealed run may have: its frames are sealed on the way out
+OUTPUT_NODE = "SaveImageWebsocket"  # the only image output a sealed run may have: its frames are sealed on the way out
+SCORE_NODE = "StudioFaceScore"  # comfy_nodes/studio_face: outputs one number, as a message rebuilt by score_message
+SCORE_MESSAGE = "studio_face"
+OUTPUT_NODES = (OUTPUT_NODE, SCORE_NODE)
 
 
 class SealError(ValueError):
@@ -110,10 +113,30 @@ def open_prompt(key: bytes, prompt: dict) -> dict:
 
 
 def stray_outputs(prompt: dict, output_nodes: set[str]) -> list[str]:
-    """The prompt's output node classes, by ComfyUI's definitions (`output_nodes`), other than OUTPUT_NODE. Whoever
+    """The prompt's output node classes, by ComfyUI's definitions (`output_nodes`), other than OUTPUT_NODES. Whoever
     sends the prompt chooses the graph: a SaveImage or a preview node would put the opened image on the io volume or
     in a message, so a sealed run with any of these is refused (Worker.run)."""
-    return sorted({n.get("class_type") for n in prompt.values()} & (output_nodes - {OUTPUT_NODE}))
+    return sorted({n.get("class_type") for n in prompt.values()} & (output_nodes - set(OUTPUT_NODES)))
+
+
+def score_shape(prompt: dict) -> str | None:
+    """Why a sealed prompt with the score node is refused, or None. Its number is the one thing a sealed run sends in the
+    clear, so it may only compare two images exactly as they came (graphs.face): with more score nodes, or crops and
+    transforms before them, a graph could read an opened image out piece by piece, or match it against a gallery."""
+    classes = [n.get("class_type") for n in prompt.values()]
+    if SCORE_NODE not in classes:
+        return None
+    if classes.count(SCORE_NODE) != 1 or set(classes) != {SCORE_NODE, IMAGE_NODE} or len(classes) != 3:
+        return f"a sealed run with {SCORE_NODE} may hold only it and its two {IMAGE_NODE} images"
+    return None
+
+
+def score_message(pid: str, data: dict) -> dict:
+    """The face match's message as the worker passes it on, sealed run or not: the score, a number between -1 and 1 or
+    None, and nothing else the node put in, so no part of an opened image can ride along."""
+    score = data.get("score")
+    ok = isinstance(score, (int, float)) and not isinstance(score, bool) and -1.0 <= score <= 1.0
+    return {"type": SCORE_MESSAGE, "data": {"prompt_id": pid, "score": round(float(score), 2) if ok else None}}
 
 
 def seal_frame(key: bytes, frame: bytes) -> bytes:

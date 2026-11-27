@@ -39,7 +39,10 @@ export function ActivityButton() {
       className="relative flex h-11 max-w-[55%] min-w-0 shrink-0 items-center gap-2 border border-line bg-panel px-2.5 font-mono text-xs tabular-nums hover:border-edge fine:h-8"
     >
       <span aria-hidden className={`size-1.5 shrink-0 bg-current ${tone}`} />
-      <span className={`truncate ${job ? "text-ink" : tone}`}>{gpu ? label : "GPU …"}</span>
+      {/* on a phone four tabs leave room for the dot and the minutes only, unless a render is running */}
+      <span className={`truncate ${job ? "text-ink" : `${tone} max-sm:hidden`}`}>
+        {gpu ? label : "GPU …"}
+      </span>
       {live.length > 1 && <span className="text-faint">+{live.length - 1}</span>}
       {failed > 0 && <span className="text-bad">!{failed}</span>}
       {!job && idles != null && <span className="text-muted">{clock(idles)}</span>}

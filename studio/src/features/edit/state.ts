@@ -60,3 +60,7 @@ export const editAtom = atom<EditChoice>({
   takes: 1,
 });
 export const TAKES = [1, 2, 3, 4, 6, 8] as const;
+
+/** Whether the Edit tab's folded parts are open: the options (hold, who is kept, takes) and the outfits spelled out. */
+export const optionsOpenAtom = atom(false);
+export const rendersOpenAtom = atom(false);

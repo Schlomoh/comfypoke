@@ -20,7 +20,10 @@ type Props = {
   onSelect: (r: Render) => void; // show it, or toggle it while selecting
 };
 
-const label = (r: Render) => r.title ?? (r.prompt.length > 60 ? `${r.prompt.slice(0, 60)}…` : r.prompt);
+/** A batch by who is in it and when it was sent, rather than the start of a long prompt (shown on hover). */
+const label = (r: Render) =>
+  r.title ??
+  `${r.characterName ?? "Renders"} · ${new Date(r.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 
 function StackTile({
   stack,

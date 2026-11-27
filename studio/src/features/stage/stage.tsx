@@ -1,6 +1,6 @@
 // The canvas: the render in progress (live preview, step counter, cancel) or a finished one,
 // with its settings and actions on one line underneath.
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
@@ -9,6 +9,7 @@ import { describe } from "@/domain/format";
 import { progress, running, status, type Job } from "@/domain/job";
 import { size } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
+import { FIT } from "@/domain/view";
 import { EditCanvas } from "@/features/edit/edit-canvas";
 import { MaskTools } from "@/features/edit/mask-tools";
 import { masksAtom, peekAtom } from "@/features/edit/state";
@@ -18,8 +19,9 @@ import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
-import { recipeAtom, rendersAtom, stageAtom, tabAtom, viewAtom } from "@/state/studio";
+import { recipeAtom, rendersAtom, stageAtom, stripTab, tabAtom, viewAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
+import { cn } from "@/ui/cn";
 import { Progress } from "@/ui/text";
 
 /** Seconds since the job started, ticking while it runs. */
@@ -39,7 +41,8 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
   const { open, step } = useImageActions();
   const recipe = useAtomValue(recipeAtom);
   const url = useObjectUrl(useImage(render?.id));
-  const editing = useAtomValue(tabAtom) === "edit";
+  const tab = useAtomValue(tabAtom);
+  const editing = tab === "edit";
   // held "before": the image it was made from, with this one's mask over it
   const peekOn = useAtomValue(peekAtom);
   const peek = editing && !!render && peekOn === render.id;
@@ -64,7 +67,12 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
     >
       {job?.preview && <img src={job.preview} alt="" className="absolute inset-0 size-full object-cover" />}
       {!job && !render && (
-        <div className="absolute inset-0 grid place-items-center p-6 text-center font-mono text-xs text-faint">
+        <div
+          className={cn(
+            "absolute inset-0 grid place-items-center p-6 text-center font-mono text-xs text-faint",
+            stripTab(tab) && "max-lg:hidden",
+          )}
+        >
           {loading ? "Opening…" : "No renders in this workspace yet. Fill in a block and press Generate."}
         </div>
       )}
@@ -138,19 +146,41 @@ function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: bo
 export function Stage() {
   const { job, render } = useAtomValue(stageAtom);
   const loading = useAtomValue(rendersAtom) === undefined; // the workspace's renders are still being decrypted
-  const editing = useAtomValue(tabAtom) === "edit"; // the corner is paint area there
+  const tab = useAtomValue(tabAtom);
+  const editing = tab === "edit"; // the corner is paint area there
+  const strip = stripTab(tab);
+  const setView = useSetAtom(viewAtom);
+  useEffect(() => {
+    // the strip has no zoom bar: a zoom set in another tab would crop it with no way back
+    if (strip && !matchMedia("(min-width: 1024px)").matches) setView(FIT);
+  }, [strip, setView]);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6">
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 items-center justify-center bg-[repeating-conic-gradient(#111113_0_25%,#0d0d0f_0_50%)] bg-[length:16px_16px] p-3 lg:p-6",
+          strip && "max-lg:p-1.5",
+        )}
+      >
         <Canvas job={job} render={render} loading={loading} />
         {/* the framing sits on the canvas, out of the bar's way */}
         {render && !job && !editing && (
-          <div className="absolute top-1 right-1 z-10 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]">
+          <div
+            className={cn(
+              "absolute top-1 right-1 z-10 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]",
+              strip && "max-lg:hidden",
+            )}
+          >
             <ZoomBar />
           </div>
         )}
       </div>
-      <div className="flex min-h-12 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs">
+      <div
+        className={cn(
+          "flex min-h-12 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-t border-line bg-panel px-3 py-1 font-mono text-xs",
+          strip && !job && "max-lg:hidden",
+        )}
+      >
         <Bar job={job} render={render} loading={loading} />
       </div>
     </div>

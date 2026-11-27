@@ -1,6 +1,5 @@
-// One tab per person and one for the scene, each saying whether it is linked to a saved character (or
-// scene) and whether it changed since. The active tab's ⋯ opens its name and link. Scene and + stay at
-// the right while the people scroll.
+// One tab per person and one for the scene; a dot says a saved character (or scene) changed since it was saved.
+// The active tab's ⋯ opens its name and link. Scene and + stay at the right while the people scroll.
 import { useAtomValue } from "jotai";
 
 import { useSaved } from "@/data/db/saved";
@@ -12,18 +11,17 @@ import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
 import { Pressable } from "@/ui/pressable";
 
-function Badge({ state }: { state: ReturnType<typeof linkState> }) {
-  if (!state.s)
-    return (
-      <span className="border border-line px-1 font-mono text-[10px] text-faint" title="not saved">
-        new
-      </span>
-    );
-  if (!state.changed) return null;
+/** A saved character or scene changed since it was saved: a small dot, not a word. Unsaved ones carry none; the ⋯
+ * sheet says whether it is saved. */
+function Changed({ state }: { state: ReturnType<typeof linkState> }) {
+  if (!state.s || !state.changed) return null;
   return (
-    <span className="border border-edge px-1 font-mono text-[10px] text-ink" title="changed since saved">
-      edited
-    </span>
+    <span
+      role="img"
+      className="size-1.5 shrink-0 bg-muted"
+      title="changed since saved"
+      aria-label="changed"
+    />
   );
 }
 
@@ -60,7 +58,7 @@ function Tab({
       >
         {varied && <span className="size-1.5 bg-warn" title="has versions" />}
         {name}
-        <Badge state={linkState(kindOf(id), owner, saved)} />
+        <Changed state={linkState(kindOf(id), owner, saved)} />
       </Pressable>
       {active && (
         <Button
