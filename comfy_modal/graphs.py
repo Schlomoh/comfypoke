@@ -87,13 +87,19 @@ def _base(g: G, family: str, unet: str, text: str, negative: str, cfg: float, lo
     bare = _unet(g, unet)
     clip = g.add("CLIPLoader", clip_name=f["clip"][0], type=f["clip"][1], device="default", stage="loading")
     vae = g.add("VAELoader", vae_name=f["vae"], stage="loading")
-    pos = g.add("CLIPTextEncode", text=text, clip=clip, stage="encoding")
-    neg = (g.add("CLIPTextEncode", text=negative, clip=clip) if cfg > 1
+    return _rebase(g, Base(bare, bare, clip, vae, bare, bare), family, text, negative, cfg, loras)
+
+
+def _rebase(g: G, b: Base, family: str, text: str, negative: str, cfg: float, loras: list[tuple[str, float]]) -> Base:
+    """The loaders of `b` (its bare model, encoder and VAE) with a prompt and LoRA chain of their own: what `_base`
+    finishes, and one person's face pass."""
+    pos = g.add("CLIPTextEncode", text=text, clip=b.clip, stage="encoding")
+    neg = (g.add("CLIPTextEncode", text=negative, clip=b.clip) if cfg > 1
            else g.add("ConditioningZeroOut", conditioning=pos))
-    model = _loras(g, bare, loras)
-    if "shift" in f:
-        model = g.add("ModelSamplingAuraFlow", shift=f["shift"], model=model)
-    return Base(bare, model, clip, vae, pos, neg)
+    model = _loras(g, b.bare, loras)
+    if "shift" in FAMILIES[family]:
+        model = g.add("ModelSamplingAuraFlow", shift=FAMILIES[family]["shift"], model=model)
+    return Base(b.bare, model, b.clip, b.vae, pos, neg)
 
 
 def _image(g: G, b64: str) -> Ref:
@@ -111,20 +117,14 @@ def _sampler(g: G, family: str, b: Base, latent: Ref, seed: int, steps: int, cfg
                  stage=stage, role="sampler")
 
 
-def _lanpaint(g: G, r: dict, b: Base, latent: Ref, seed: int, denoise: float) -> Ref:
-    return g.add("LanPaint_KSampler", {"Inpainting_mode": "\U0001f5bc️ Image Inpainting"},
-                 seed=seed, steps=r["steps"], cfg=r["cfg"], sampler_name=FAMILIES[r["family"]]["sampler"], scheduler="simple",
-                 denoise=denoise, LanPaint_NumSteps=3, LanPaint_PromptMode="Image First", LanPaint_Info="LanPaint KSampler.",
-                 model=b.model, positive=b.positive, negative=b.negative, latent_image=latent, stage="sampling", role="sampler")
-
-
-# Workflow 09's crop: the source keeps its resolution, a box 1.5x the mask gives context, the box itself is
-# worked on at 1024, and 32 px blend it back in. Holes stay holes: the phone's mask is meant as drawn.
+# Workflow 09's crop: the source keeps its resolution, a box 3x the mask gives context, the box itself is worked on at
+# 1024, and 32 px blend it back in. Holes stay holes: the phone's mask is meant as drawn. At 1.5x a small area filled
+# most of the box, and a model given the whole picture's prompt drew the picture into it: a scene, a face, text on skin.
 CROP = {"downscale_algorithm": "bilinear", "upscale_algorithm": "lanczos", "preresize": False, "preresize_mode": "ensure minimum resolution",
         "preresize_min_width": 1024, "preresize_min_height": 1024, "preresize_max_width": 16384, "preresize_max_height": 16384,
         "mask_fill_holes": False, "mask_expand_pixels": 0, "mask_invert": False, "mask_blend_pixels": 32, "mask_hipass_filter": 0.1,
         "extend_for_outpainting": False, "extend_up_factor": 1.0, "extend_down_factor": 1.0, "extend_left_factor": 1.0,
-        "extend_right_factor": 1.0, "context_from_mask_extend_factor": 1.5, "output_resize_to_target_size": True,
+        "extend_right_factor": 1.0, "context_from_mask_extend_factor": 3.0, "output_resize_to_target_size": True,
         "output_target_width": 1024, "output_target_height": 1024, "output_padding": "32", "device_mode": "gpu (much faster)"}
 
 
@@ -150,13 +150,27 @@ HEADSWAP_PROMPT = "head_swap: replace the head with the reference head."
 HEADSWAP_FAMILIES = ("krea2",)
 
 
-def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, ref_boost: float = 4.0) -> Ref:
-    """The head swap on `image` with the Krea 2 loaders of `b`; returns the image with the head swapped and
-    everything else untouched. The render's own LoRAs are left out on purpose: the swap LoRA was trained on the
-    bare model."""
+def _head(g: G, image: Ref, which: dict) -> Ref:
+    """One person's head as a mask: the face SCRFD finds for them (StudioFaceMask, as the face pass does), and SAM 3.1
+    given a box around it and no words, which marks the head in it, hair included, keeping only what touches the face
+    (StudioHeadMask). Asked for "head" by words, SAM picked one head of two, or part of a face under a hat, and the swap
+    was pasted half in, or not at all. No face found: an empty mask, and nothing is swapped."""
+    face = _face(g, image, **which)
+    around = g.add("StudioFaceMask", image=image, grow=0.6, stage="masking", **which)
+    sam = g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
+    head = g.add("SAM3_Detect", threshold=0.4, refine_iterations=2, individual_masks=False, model=sam, image=image,
+                 bboxes=around.out(1), stage="masking")
+    return g.add("GrowMask", expand=16, tapered_corners=True, mask=g.add("StudioHeadMask", found=head, face=face, stage="masking"),
+                 stage="masking")
+
+
+def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, which: dict | None = None, ref_boost: float = 4.0) -> Ref:
+    """The head swap on `image` with the Krea 2 loaders of `b`, on the largest face's person, or with `which`
+    (StudioFaceMask's slot and people) one of several; returns the image with that head swapped and everything else
+    untouched. The render's own LoRAs are left out on purpose: the swap LoRA was trained on the bare model."""
     # the box around the head is 2.5x, so shoulders and some scene come along as the swap LoRA expects
     crop = g.add("InpaintCropImproved", {**CROP, "context_from_mask_extend_factor": 2.5}, image=image,
-                 mask=_sam(g, image, "head", 0.5, 16), stage="masking")
+                 mask=_head(g, image, which or {}), stage="masking")
     face = g.add("ImageScaleToTotalPixels", upscale_method="lanczos", megapixels=1.0, resolution_steps=16,
                  image=_image(g, face_b64))
     both = {"image": crop.out(1), "image_b": face}
@@ -181,9 +195,14 @@ def _headswap(g: G, b: Base, image: Ref, face_b64: str, seed: int, ref_boost: fl
 FACE_PASS = (0.15, 0.6)
 
 
-def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float) -> Ref:
-    # SCRFD's box around the largest face (comfy_nodes/studio_face), not SAM's "face", which can take the sky for one
-    face = g.add("StudioFaceMask", image=image, grow=0.15, stage="masking")
+def _face(g: G, image: Ref, **which) -> Ref:
+    """A face's box as a mask (comfy_nodes/studio_face StudioFaceMask): the largest, one person's of several (slot,
+    people, refs) or a box the phone picked. SCRFD's, not SAM's "face", which can take the sky for one."""
+    return g.add("StudioFaceMask", image=image, grow=0.15, stage="masking", **which)
+
+
+def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg: float, denoise: float, face: Ref) -> Ref:
+    """The face under the mask `face` redrawn in `image`, and only it."""
     crop = g.add("InpaintCropImproved", {**CROP, "context_from_mask_extend_factor": 2.0}, image=image, mask=face)
     latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=crop.out(1), vae=b.vae), mask=crop.out(2))
     redrawn = g.add("VAEDecode", samples=_sampler(g, family, b, latent, seed, steps, cfg, denoise, "refining"), vae=b.vae,
@@ -194,12 +213,30 @@ def _facepass(g: G, b: Base, family: str, image: Ref, seed: int, steps: int, cfg
     return g.add("ImageCompositeMasked", x=0, y=0, resize_source=False, destination=image, source=stitched, mask=keep)
 
 
+FACE_PEOPLE = 4  # comfy_nodes/studio_face REFS: people a face pass tells apart
+
+
+def _facepasses(g: G, b: Base, last: dict, image: Ref, seed: int, denoise: float, people: list[dict]) -> Ref:
+    """One face pass per person of `people` (text, loras, side, face: a photo or None), each with only their own LoRAs
+    and description, so two characters' faces do not drift towards each other. Which face is whose: assign.py."""
+    refs = {f"ref_{n}": _image(g, p["face"]) for n, p in enumerate(people) if p.get("face")}
+    sides = json.dumps([p["side"] for p in people])
+    rendered = image
+    for slot, p in enumerate(people):
+        own = _rebase(g, b, last["family"], p["text"], last["negative"], last["cfg"], p["loras"])
+        # every face is found in the render before any face pass, so each is decided on the same picture
+        image = _facepass(g, own, last["family"], image, seed, last["steps"], last["cfg"], denoise,
+                          _face(g, rendered, slot=slot, people=sides, **refs))
+    return image
+
+
 def graph(family: str, unet: str, text: str, negative: str, width: int, height: int, seed: int, steps: int, cfg: float,
           loras: list[tuple[str, float]], face: str | None = None, finish: dict | None = None,
-          face_pass: float | None = None) -> dict:
+          face_pass: float | None = None, face_people: list[dict] | None = None, face_at: dict | None = None) -> dict:
     """A render. With `finish` (family, unet, text, negative, steps, cfg, loras, denoise) another model goes over the
-    whole image lightly afterwards; with `face` (a base64 photo) the head swap runs last, on the last pass's model, and
-    without one `face_pass` (a strength) redraws the face with it."""
+    whole image lightly afterwards; with `face` (a base64 photo) the head swap runs last, on the last pass's model, on the
+    largest face or with `face_at` (slot and people, as StudioFaceMask takes them) one person's of several; without one
+    `face_pass` (a strength) redraws the face with it: each person's of `face_people` with their own, or the largest."""
     g = G()
     b = _base(g, family, unet, text, negative, cfg, loras)
     latent = g.add(FAMILIES[family]["latent"], width=width, height=height, batch_size=1)
@@ -211,10 +248,11 @@ def graph(family: str, unet: str, text: str, negative: str, width: int, height: 
         out = g.add("VAEDecode", samples=_sampler(g, f["family"], b, latent, seed, f["steps"], f["cfg"], f["denoise"]), vae=b.vae,
                     stage="decoding")
     if face:
-        out = _headswap(g, b, out, face, seed)
+        out = _headswap(g, b, out, face, seed, face_at)
     elif face_pass:
-        last = finish or {"family": family, "steps": steps, "cfg": cfg}
-        out = _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass)
+        last = finish or {"family": family, "steps": steps, "cfg": cfg, "negative": negative}
+        out = (_facepasses(g, b, last, out, seed, face_pass, face_people) if face_people
+               else _facepass(g, b, last["family"], out, seed, last["steps"], last["cfg"], face_pass, _face(g, out)))
     _save(g, out)
     return g.prompt()
 
@@ -244,14 +282,6 @@ def upscale(image_b64: str, megapixels: float, seed: int, retouch: dict | None =
     return g.prompt()
 
 
-def _masked(g: G, image_b64: str, mask_b64: str) -> tuple[Ref, Ref, Ref]:
-    """The image, the phone's mask (white on black, the image's size: found with graphs.mask and refined there),
-    and the box cut around it; the box's outputs are the stitcher, the cropped image and the cropped mask."""
-    image = _image(g, image_b64)
-    mask = g.add("ImageToMask", channel="red", image=_image(g, mask_b64))
-    return image, mask, g.add("InpaintCropImproved", CROP, image=image, mask=mask, stage="masking")
-
-
 def mask(image_b64: str, text: str = "", points: dict | None = None) -> dict:
     """What SAM 3.1 finds in the image by `text` or tapped `points`, as white on black: the phone adds it to the mask
     it paints."""
@@ -268,33 +298,38 @@ def face(image_b64: str, reference_b64: str) -> dict:
     return g.prompt()
 
 
-def inpaint(image_b64: str, mask_b64: str, r: dict, seed: int, face: str | None = None) -> dict:
-    """Repaint part of an image, workflow 09's chain. Only a box around the mask is cut out and re-rendered, by
-    `r` (family, unet, text, negative, steps, cfg, loras), with LanPaint standing in for an inpainting checkpoint
-    Krea 2 does not have; with `face`, the head swap runs on the result."""
+def inpaint(image_b64: str, mask_b64: str, text: str, seed: int, dresser: dict, finish: dict | None,
+            face: str | None = None) -> dict:
+    """Repaint what the mask covers with `text`: dressing's chain with no body, Z-Image's inpainting controlnet drawing
+    it and `finish` (family, unet, negative, steps, cfg, loras, denoise) going over it lightly; with `face`, the head
+    swap runs on the result with the finish's Krea 2. Krea 2 has no inpainting model: through LanPaint at full strength
+    it drew objects into plain skin."""
     g = G()
-    _, _, box = _masked(g, image_b64, mask_b64)
-    b = _base(g, r["family"], r["unet"], r["text"], r["negative"], r["cfg"], r["loras"])
-    latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=box.out(1), vae=b.vae, stage="encoding"), mask=box.out(2))
-    painted = g.add("VAEDecode", samples=_lanpaint(g, r, b, latent, seed, 1.0), vae=b.vae, stage="decoding")
-    out = g.add("InpaintStitchImproved", stitcher=box, inpainted_image=painted, stage="decoding")
-    _save(g, _headswap(g, b, out, face, seed) if face else out)
+    image = _image(g, image_b64)
+    mask = g.add("ImageToMask", channel="red", image=_image(g, mask_b64))  # white on black, the image's size, as drawn
+    out, b = _dressed(g, image, mask, text, seed, "off", dresser, finish and {**finish, "text": text})
+    _save(g, _headswap(g, b, out, face, seed) if face and b else out)
     return g.prompt()
 
 
 # Dressing: workflow 08's chain. SAM 3D Body fits a body to the person, its depth render is cropped with the
 # same box as the picture, and Z-Image's Fun Controlnet takes both the depth (the body stays put) and the
 # picture around the mask (the new clothes agree with it), which is what lets it denoise fully in 8 steps.
-# Optionally another model then repaints the same mask lightly with LanPaint, so the fabric, skin and light are
-# its own while the shape stays where Z-Image put it.
+# Optionally another model then goes over the same mask lightly, a plain masked img2img, so the fabric, skin and light
+# are its own while the shape stays where Z-Image put it. The body is fitted on the phone's word only (graphs.body) and
+# sent back as its depth: dressing never fits one by itself, and without one the controlnet gets the picture alone.
 DRESS_HOLD = {"tight": 0.9, "loose": 0.65, "off": 0.9}  # controlnet strength; "off" gives it the picture but no body
 FINISH = (0.1, 0.8)  # how much a finish may repaint, of a render or of dressed clothes; 0.35 keeps the shape and takes its look
 
 
-def _body(g: G, image: Ref) -> Ref:
-    """RT-DETR picks the person, SAM 3D Body fits a mesh to them; returns the fitted pose data."""
+def _people(g: G, image: Ref, most: int = 1) -> Ref:
+    """The people RT-DETR finds, up to `most`, most likely first, as a BOUNDING_BOX."""
     detector = g.add("UNETLoader", unet_name="rt_detr_v4-x-hgnet_fp16.safetensors", weight_dtype="default", stage="fitting")
-    person = g.add("RTDETR_detect", threshold=0.5, class_name="person", max_detections=1, model=detector, image=image, stage="fitting")
+    return g.add("RTDETR_detect", threshold=0.5, class_name="person", max_detections=most, model=detector, image=image, stage="fitting")
+
+
+def _body(g: G, image: Ref, person: Ref) -> Ref:
+    """SAM 3D Body's mesh fitted to `person` (a BOUNDING_BOX of one); returns the fitted pose data."""
     model = g.add("SAM3DBody_Loader", model_file="sam_3d_body_dinov3_bf16.safetensors", stage="fitting")
     return g.add("SAM3DBody_Predict", run_hand_refinement=True, fov=0.0, batch_size=64, sam3d_body_model=model, image=image,
                  bboxes=person, stage="fitting")
@@ -305,30 +340,28 @@ def _mesh(shader: str, opacity: float = 1.0) -> dict:
             "render_style.person_palette_falloff": 0.6, "render_style.region": "full_body"}
 
 
-def body(image_b64: str) -> dict:
-    """The fitted body drawn over the picture, for the phone to show before anything is dressed."""
+def body(image_b64: str, box: str | None = None) -> dict:
+    """One person's fitted body as depth, the image's size: the person whose face is at `box` (or without one whoever
+    RT-DETR likes best). The phone shows it, and sends it back with a dressing to hold to."""
     g = G()
     image = _image(g, image_b64)
-    _save(g, g.add("SAM3DBody_Render", _mesh("normals", 0.75), pose_data=_body(g, image), background=image, stage="fitting"))
+    person = g.add("StudioPersonBox", image=image, people=_people(g, image, most=8), box=box or "", stage="fitting")
+    _save(g, g.add("SAM3DBody_Render", _mesh("depth"), pose_data=_body(g, image, person), stage="fitting"))
     return g.prompt()
 
 
-def dress(image_b64: str, mask_b64: str, outfit: str, seed: int, hold: str, dresser: dict,
-          finish: dict | None, face: str | None = None) -> dict:
-    """Replace what someone wears with `outfit`, the body held by its mesh (`hold`: tight, loose, off). `dresser` is the
-    Z-Image model that dresses it (unet, steps, cfg, loras). With `finish` (family, unet, text, negative, steps, cfg,
-    loras, denoise) a second model repaints the clothes lightly afterwards; `face` needs a Krea 2 finish, whose
-    loaders the head swap uses."""
-    g = G()
-    image, mask, box = _masked(g, image_b64, mask_b64)
+def _dressed(g: G, image: Ref, mask: Ref, outfit: str, seed: int, hold: str, dresser: dict, finish: dict | None,
+             depth: Ref | None = None) -> tuple[Ref, Base | None]:
+    """`image` with what `mask` covers dressed in `outfit`, held to `depth` (the person's fitted body, the image's size)
+    at `hold` when given. Returns the image and the finish's loaders, if any."""
+    box = g.add("InpaintCropImproved", CROP, image=image, mask=mask, stage="masking")
     control = {}
-    if hold != "off":
-        depth = g.add("SAM3DBody_Render", _mesh("depth"), pose_data=_body(g, image), stage="fitting")
+    if depth is not None and hold != "off":
         control = {"image": g.add("InpaintCropImproved", CROP, image=depth, mask=mask, stage="fitting").out(1)}
     z = FAMILIES["zimage"]
     vae = g.add("VAELoader", vae_name=z["vae"], stage="dressing")
     clip = g.add("CLIPLoader", clip_name=z["clip"][0], type=z["clip"][1], device="default", stage="dressing")
-    held = g.add("ZImageFunControlnet", strength=DRESS_HOLD[hold], model=_loras(g, _unet(g, dresser["unet"], "dressing"), dresser["loras"]),
+    held = g.add("ZImageFunControlnet", strength=DRESS_HOLD[hold if control else "off"], model=_loras(g, _unet(g, dresser["unet"], "dressing"), dresser["loras"]),
                  model_patch=g.add("ModelPatchLoader", name="Z-Image-Turbo-Fun-Controlnet-Union-2.1-2602-8steps.safetensors", stage="dressing"),
                  vae=vae, inpaint_image=box.out(1), mask=box.out(2), **control, stage="dressing")
     pos = g.add("CLIPTextEncode", text=outfit, clip=clip, stage="encoding")
@@ -341,8 +374,80 @@ def dress(image_b64: str, mask_b64: str, outfit: str, seed: int, hold: str, dres
     if finish:
         b = _base(g, finish["family"], finish["unet"], finish["text"], finish["negative"], finish["cfg"], finish["loras"])
         latent = g.add("SetLatentNoiseMask", samples=g.add("VAEEncode", pixels=dressed, vae=b.vae, stage="encoding"), mask=box.out(2))
-        dressed = g.add("VAEDecode", samples=_lanpaint(g, finish, b, latent, seed, finish["denoise"]), vae=b.vae, stage="decoding")
-    out = g.add("InpaintStitchImproved", stitcher=box, inpainted_image=dressed, stage="decoding")
-    swap = face and finish and b and finish["family"] in HEADSWAP_FAMILIES
-    _save(g, _headswap(g, b, out, face, seed) if swap else out)
+        sampled = _sampler(g, finish["family"], b, latent, seed, finish["steps"], finish["cfg"], finish["denoise"], "refining")
+        dressed = g.add("VAEDecode", samples=sampled, vae=b.vae, stage="decoding")
+    return g.add("InpaintStitchImproved", stitcher=box, inpainted_image=dressed, stage="decoding"), b
+
+
+# People: everyone on a picture at once (the Edit tab's People). First the faces and whose each is, as one label image
+# the phone reads (assign.levels); then, each when asked for, a person's area to see and edit (areas) and their fitted
+# body (body); then, with the people the phone settled on, each one's outfit over their area as shown and their face.
+# Faces are found in the picture as it came, so a person dressed first does not move anyone else's box.
+
+def faces(image_b64: str, people: list[dict]) -> dict:
+    """Every face on the picture and whose it is: `people` (side, face: a photo or None) as StudioFaceMask takes them."""
+    g = G()
+    image = _image(g, image_b64)
+    refs = {f"ref_{n}": _image(g, p["face"]) for n, p in enumerate(people) if p.get("face")}
+    labels = g.add("StudioFaceLabels", image=image, grow=0.15, people=json.dumps([p["side"] for p in people]), stage="finding",
+                   **refs)
+    _save(g, labels)
+    return g.prompt()
+
+
+class _Finder:
+    """What finding people's areas in one picture shares: RT-DETR's people, the SAM model, and one find per part."""
+
+    def __init__(self, g: G, source: Ref):
+        self.g, self.source = g, source
+        self.found = _people(g, source, most=8)
+        self.sam: Ref | None = None  # loaded with the first area found here: one drawn on the phone needs none
+        self.clothes: dict[str, Ref] = {}
+
+    def person(self, box: str | None) -> Ref:
+        """The person whose face is at `box`, or without one the likeliest, as a BOUNDING_BOX of one."""
+        return self.g.add("StudioPersonBox", image=self.source, people=self.found, box=box or "", stage="masking")
+
+    def area(self, person: Ref, part: str) -> Ref:
+        """What `part` names on `person`. SAM with a box and no words is the person in it; with words it would take the
+        box for an example of what to find and mark everyone's clothes, so the clothes found by words are cut to them."""
+        g = self.g
+        self.sam = self.sam or g.add("CheckpointLoaderSimple", ckpt_name="sam3.1_multiplex_fp16.safetensors", stage="masking")
+        alone = g.add("SAM3_Detect", threshold=0.4, refine_iterations=2, individual_masks=False, model=self.sam, image=self.source,
+                      bboxes=person, stage="masking")
+        if part not in self.clothes:
+            self.clothes[part] = _sam(g, self.source, part, 0.4, 12)
+        return g.add("MaskComposite", x=0, y=0, operation="multiply", destination=self.clothes[part],
+                     source=g.add("GrowMask", expand=12, tapered_corners=True, mask=alone), stage="masking")
+
+
+def areas(image_b64: str, who: list[dict]) -> dict:
+    """Each of `who`'s (box, part) area as People would find it, side by side in one image (StudioMaskStrip)."""
+    g = G()
+    find = _Finder(g, _image(g, image_b64))
+    masks = {f"mask_{n}": find.area(find.person(p["box"]), p["part"]) for n, p in enumerate(who)}
+    _save(g, g.add("StudioMaskStrip", stage="masking", **masks))
+    return g.prompt()
+
+
+def people(image_b64: str, who: list[dict], seed: int, dress_with: dict | None, face_with: dict | None) -> dict:
+    """Each of `who` (box: their face's "x0,y0,x1,y1", or None when no face was found; text, loras; `outfit` over their
+    own `mask` as the phone shows it, held to their fitted `body` when one is sent; `redraw` for their face) dressed and
+    redrawn. `dress_with` is hold, dresser and finish as in `_dressed` (the finish's text is each person's outfit);
+    `face_with` is the face pass's setup (family, unet, negative, steps, cfg) and strength (denoise), each face with its
+    person's own text and LoRAs on loaders they share."""
+    g = G()
+    source = image = _image(g, image_b64)
+    for p in (x for x in who if x.get("outfit")):
+        area = g.add("ImageToMask", channel="red", image=_image(g, p["mask"]))
+        depth = _image(g, p["body"]) if p.get("body") else None
+        d = dress_with
+        finish = d["finish"] and {**d["finish"], "text": p["outfit"]}
+        image, _ = _dressed(g, image, area, p["outfit"], seed, d["hold"], d["dresser"], finish, depth)
+    f, b = face_with, None
+    for p in (x for x in who if x.get("redraw") and x["box"]):
+        b = (_rebase(g, b, f["family"], p["text"], f["negative"], f["cfg"], p["loras"]) if b
+             else _base(g, f["family"], f["unet"], p["text"], f["negative"], f["cfg"], p["loras"]))
+        image = _facepass(g, b, f["family"], image, seed, f["steps"], f["cfg"], f["denoise"], _face(g, source, box=p["box"]))
+    _save(g, image)
     return g.prompt()

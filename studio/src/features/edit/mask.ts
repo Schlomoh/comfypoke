@@ -49,25 +49,50 @@ export function hasArea(ops: Op[]) {
   return on;
 }
 
-/** What /api/mask sends back (white on black) as an area: white where found, transparent elsewhere; null when
- * nothing was found. */
-export async function areaOf(b64: string): Promise<ImageBitmap | null> {
-  const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
-  const c = new OffscreenCanvas(img.width, img.height);
-  const ctx = c.getContext("2d");
-  if (!ctx) throw new Error("This browser cannot draw the mask.");
+/** A PNG that came back (base64) as a Blob, to show or send on. */
+export const pngBlob = async (b64: string) => (await fetch(`data:image/png;base64,${b64}`)).blob();
+
+/** A PNG (base64) as RGBA pixels, with its size. */
+export async function pixelsOf(b64: string) {
+  const img = await createImageBitmap(await pngBlob(b64));
+  const ctx = new OffscreenCanvas(img.width, img.height).getContext("2d");
+  if (!ctx) throw new Error("This browser cannot read what came back.");
   ctx.drawImage(img, 0, 0);
-  const px = ctx.getImageData(0, 0, img.width, img.height);
-  let any = false;
-  for (let i = 0; i < px.data.length; i += 4) {
-    any ||= px.data[i] > 0;
-    px.data[i + 3] = px.data[i];
-    px.data[i] = px.data[i + 1] = px.data[i + 2] = 255;
-  }
-  if (!any) return null;
-  ctx.putImageData(px, 0, 0);
-  return c.transferToImageBitmap();
+  return { px: ctx.getImageData(0, 0, img.width, img.height).data, width: img.width, height: img.height };
 }
+
+/** `n` white-on-black masks side by side (StudioMaskStrip, or one from /api/mask) cut apart, each as an area: white
+ * where found, its coverage as alpha; null for one where nothing was found. */
+export function splitStrip(px: Uint8ClampedArray, width: number, height: number, n: number) {
+  const w = Math.floor(width / n);
+  return Array.from({ length: n }, (_, k) => {
+    const out = new Uint8ClampedArray(w * height * 4);
+    let any = false;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < w; x++) {
+        const v = px[(y * width + k * w + x) * 4];
+        const i = (y * w + x) * 4;
+        any ||= v > 0;
+        out[i] = out[i + 1] = out[i + 2] = 255;
+        out[i + 3] = v;
+      }
+    return any ? out : null;
+  });
+}
+
+/** What came back as `n` areas, ready to draw; null for one where nothing was found. */
+export async function areasOf(b64: string, n: number): Promise<(ImageBitmap | null)[]> {
+  const { px, width, height } = await pixelsOf(b64);
+  const w = Math.floor(width / n);
+  return Promise.all(
+    splitStrip(px, width, height, n).map((a) =>
+      a ? createImageBitmap(new ImageData(a, w, height)) : Promise.resolve(null),
+    ),
+  );
+}
+
+/** What /api/mask sends back (white on black) as an area; null when nothing was found. */
+export const areaOf = async (b64: string) => (await areasOf(b64, 1))[0];
 
 /** The mask as the server wants it: white where to replace, on black, at the image's size. */
 export async function maskPng(ops: Op[], width: number, height: number) {

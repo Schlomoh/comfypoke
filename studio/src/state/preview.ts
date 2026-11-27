@@ -1,11 +1,13 @@
-// A look at a render before an edit is sent: the fitted body (/api/body) or what SAM finds by text (/api/mask), and the
-// face match (/api/face). Each is one GPU job with one image (or a score), outside the library and never stored. The body is kept for the session by
-// its render, so it keeps running when the tab that asked for it closes, and reopening it finds the same one.
+// A look at a render before an edit is sent: the fitted bodies (/api/body), what SAM finds by words or taps (/api/mask),
+// the faces and people's areas (/api/faces, /api/areas), and the face match (/api/face). Each is one GPU job with one
+// image (or a score), outside the library and never stored. What runs is kept here by a key, with its stage, so a look
+// keeps running when the tab that asked for it closes and the same one is not started twice; the body keeps its image.
 import { useEffect, useReducer } from "react";
 
-import { api, Locked, quietly, type Started } from "@/data/api";
-import { useSpace, type Space } from "@/data/db/space";
-import { openBase64 } from "@/data/images";
+import { api, Locked, quietly, type ImageRef, type Started } from "@/data/api";
+import { loadImage } from "@/data/db/renders";
+import type { Space } from "@/data/db/space";
+import { imageRef, openBase64, withImages, type Transport } from "@/data/images";
 import { lockApp } from "@/data/queries";
 import { errorText } from "@/domain/format";
 
@@ -65,6 +67,45 @@ export const preview = async (
   });
 };
 
+/** A look at a render's image: `send` starts the job with the image as sent; the image that comes back, opened. */
+export const lookAt = (
+  space: Space,
+  renderId: string,
+  send: (t: Transport, image: ImageRef) => Promise<Started>,
+  onStage?: (stage: string) => void,
+) =>
+  preview(
+    space,
+    async () => withImages(space, async (t) => send(t, await imageRef(t, await loadImage(space, renderId)))),
+    onStage,
+  );
+
+/** The stage of what runs for `key`, as it goes; null when it is done. */
+export const setStage = (key: string, stage: string | null) => put(key, { stage: stage ?? undefined });
+export const stageOf = (key: string) => entries.get(key)?.stage ?? null;
+
+/** A re-render whenever any look changes. */
+function useLooks() {
+  const [, rerender] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    listeners.add(rerender);
+    return () => void listeners.delete(rerender);
+  }, []);
+}
+
+export function useStage(key: string) {
+  useLooks();
+  return stageOf(key);
+}
+
+/** Every look running under `prefix`, with the rest of its key. */
+export function useStages(prefix: string) {
+  useLooks();
+  return [...entries].flatMap(([key, e]) =>
+    key.startsWith(prefix) && e.stage ? [{ rest: key.slice(prefix.length), stage: e.stage }] : [],
+  );
+}
+
 /** A face match from start to its score: null when either picture had no face. */
 export const faceScore = async (
   start: () => Promise<Started>,
@@ -75,22 +116,18 @@ export const faceScore = async (
   return score;
 };
 
-/** The preview for `key` as it stands, and `run` to start it unless it is there or on its way. */
+/** The preview for `key` as it stands, and `run` to start it (a lookAt, with its stage) unless it is there or on its
+ * way; its image is kept. */
 export function usePreview(key: string) {
-  const space = useSpace();
-  const [, rerender] = useReducer((x: number) => x + 1, 0);
-  useEffect(() => {
-    listeners.add(rerender);
-    return () => void listeners.delete(rerender);
-  }, []);
+  useLooks();
   const entry = entries.get(key) ?? {};
-  const run = (start: () => Promise<Started>) => {
+  const run = (look: (onStage: (stage: string) => void) => Promise<string>) => {
     const now = entries.get(key); // not the render's copy: two taps before a re-render would start two jobs
     if (now?.url || now?.stage) return;
     put(key, { stage: "queued", error: undefined });
     void (async () => {
       try {
-        const b64 = await preview(space, start, (stage) => put(key, { stage }));
+        const b64 = await look((stage) => put(key, { stage }));
         put(key, { url: `data:image/png;base64,${b64}`, stage: undefined });
       } catch (e) {
         if (e instanceof Locked) lockApp();

@@ -60,7 +60,8 @@ def test_graph_sends_one_image_back(name):
 
 
 def test_stages_and_counted_samplers_are_marked():
-    assert set(graph.roles(GRAPHS["dress finish face"])) >= {"dresser", "sampler", "swapper", "output"}
+    assert set(graph.roles(GRAPHS["people dress and faces"])) >= {"dresser", "sampler", "output"}
+    assert set(graph.roles(GRAPHS["inpaint finish face"])) >= {"dresser", "sampler", "swapper", "output"}
     assert graph.roles(GRAPHS["upscale"])["upscaler"]
     assert set(graph.stages(GRAPHS["body"]).values()) >= {"fitting"}
 
@@ -75,3 +76,47 @@ def test_face_pass_runs_only_without_a_face_photo():
     assert "refining" in graph.stages(GRAPHS["render finish face pass"]).values()
     swapped = graphs.graph("krea2", "krea2_turbo_bf16.safetensors", "a cat", "", 512, 768, 1, 8, 1.0, [], IMG, face_pass=0.35)
     assert "refining" not in graph.stages(swapped).values() and "swapping" in graph.stages(swapped).values()
+
+
+def _count(name: str, cls: str) -> int:
+    return sum(n["class_type"] == cls for n in GRAPHS[name].values())
+
+
+def test_people_are_dressed_over_their_mask_held_to_the_body_sent():
+    # each dressed person over the mask the phone sent; only the one sent with a body gets it as control, and nothing is
+    # found or fitted on the way
+    assert _count("people dress and faces", "ZImageFunControlnet") == 2
+    assert _count("people dress and faces", "ImageToMask") == 2
+    assert _count("people dress and faces", "InpaintCropImproved") >= 3  # two pictures and one body's depth, then faces
+    for gone in ("SAM3_Detect", "SAM3DBody_Predict", "RTDETR_detect", "StudioPersonBox"):
+        assert _count("people dress and faces", gone) == 0
+    assert _count("people dress and faces", "StudioFaceMask") == 2
+    controls = [n for n in samples()["people dress and faces"].values() if n["class_type"] == "ZImageFunControlnet"]
+    assert ["image" in n["inputs"] for n in controls] == [True, False]
+
+
+def test_people_dressed_over_their_own_mask_find_nothing_and_redraw_nothing():
+    assert _count("people no face over their mask", "StudioFaceMask") == 0
+    assert _count("people no face over their mask", "SAM3_Detect") == 0
+    assert _count("people no face over their mask", "CheckpointLoaderSimple") == 0  # nor a SAM loaded for nothing
+    assert _count("people no face over their mask", "ImageToMask") == 1
+
+
+def test_no_lanpaint_and_a_repaint_is_drawn_by_z_image_then_finished():
+    for name, g in samples().items():
+        assert not any(n["class_type"] == "LanPaint_KSampler" for n in g.values()), name
+    assert _count("inpaint", "ZImageFunControlnet") == 1
+    assert _count("inpaint", "SAM3DBody_Predict") == 0
+    assert _count("inpaint finish face", "KSampler") == 3  # drawn, finished, head swapped
+
+
+def test_areas_come_back_as_one_strip_one_area_each():
+    assert _count("areas", "StudioMaskStrip") == 1
+    assert _count("areas", "MaskComposite") == 2
+
+
+def test_head_swap_takes_the_head_around_a_face_not_any_head():
+    g = GRAPHS["render face of two"]
+    sam = [n for n in g.values() if n["class_type"] == "SAM3_Detect"]
+    assert sam and all("bboxes" in n["inputs"] and "conditioning" not in n["inputs"] for n in sam)  # a box, no words
+    assert any(n["class_type"] == "StudioFaceMask" and n["inputs"].get("slot") == 1 for n in g.values())

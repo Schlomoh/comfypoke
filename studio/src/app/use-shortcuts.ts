@@ -10,7 +10,9 @@ import { wide } from "@/app/platform";
 import { toggleBest } from "@/data/db/renders";
 import { useSpace } from "@/data/db/space";
 import { FIT } from "@/domain/view";
-import { BRUSH, brushAtom, masksAtom, peekAtom, toolAtom } from "@/features/edit/state";
+import { selectedAtom } from "@/features/edit/people/state";
+import { BRUSH, brushAtom, editAtom, masksAtom, peekAtom, toolAtom } from "@/features/edit/state";
+import { keyOf } from "@/features/edit/use-mask-key";
 import { saveImage } from "@/features/library/files";
 import { useImageActions } from "@/state/actions";
 import {
@@ -64,7 +66,9 @@ export function useShortcuts(submit: () => void) {
         !typingIn(e.target)
       ) {
         e.preventDefault();
-        return store.set(masksAtom, (m) => ({ ...m, [shown.id]: (m[shown.id] ?? []).slice(0, -1) }));
+        const key = keyOf(store.get(editAtom).mode, store.get(selectedAtom), shown.id);
+        if (!key) return;
+        return store.set(masksAtom, (m) => ({ ...m, [key]: (m[key] ?? []).slice(0, -1) }));
       }
       if (typingIn(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "?") return store.set(layerAtom, "keys");

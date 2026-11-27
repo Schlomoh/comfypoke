@@ -151,10 +151,13 @@ export function Sheet({
       )}
     >
       <div className="flex shrink-0 items-center gap-3 px-4 py-3">
-        <h2 className="min-w-0 flex-1 truncate label">{title}</h2>
+        {/* a toast covers the title, never the list under it or Done */}
+        <div className="relative min-w-0 flex-1">
+          <h2 className="truncate label">{title}</h2>
+          <div data-toast-slot className="absolute inset-0 z-10" />
+        </div>
         <Button onClick={onClose}>Done</Button>
       </div>
-      <div data-toast-slot className="relative z-10 h-0 shrink-0" />
       <div
         data-sheet-body
         data-sheet-scroll

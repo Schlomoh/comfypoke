@@ -5,21 +5,23 @@
 import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
-import { api, quietly, type DressRequest, type Request, type Started } from "@/data/api";
+import { api, quietly, type ImageRef, type Request, type Started } from "@/data/api";
 import { addPending, dropPending, pendingIds, pendingMeta } from "@/data/db/pending";
 import { loadImage, saveRender } from "@/data/db/renders";
 import { useSpace, type Space } from "@/data/db/space";
-import { imageRef, openImage, openPreview, pngSize, withImages } from "@/data/images";
+import { imageRef, openImage, openPreview, pngSize, withImages, type Transport } from "@/data/images";
+import type { FacePerson } from "@/domain/face";
 import { errorText } from "@/domain/format";
 import { isUpscale, type Job } from "@/domain/job";
-import { legacyUnet } from "@/domain/recipe";
 import { recordOf } from "@/domain/record";
 import type { Edit, JobMeta, Params, Render, Upscale } from "@/domain/render";
-import { passOf, retouchOf, type Pass } from "@/domain/setup";
+import { retouchOf } from "@/domain/setup";
 import { jobsAtom, viewerAtom } from "@/state/studio";
 import { notify } from "@/ui/notify";
 
 type Store = ReturnType<typeof useStore>;
+/** A person of the face pass and their face photo, when they have one. */
+export type FaceOf = { person: FacePerson; photo?: Blob };
 /** Stages that count steps of their own: a step keeps them on screen instead of reading as the render's sampling. */
 const STEPPED = new Set(["swapping", "refining"]);
 
@@ -140,10 +142,26 @@ function createRunner(store: Store, space: Space) {
     }
   };
 
-  /** A render; `face`, the photo its head swap puts on the person, goes as an image reference. */
-  const generate = async (p: Request, meta: JobMeta, face?: Blob) => {
+  /** A render; `face`, the photo its head swap puts on the person, goes as an image reference, as do the face photos
+   * the face pass tells `people` apart by. */
+  const generate = async (p: Request, meta: JobMeta, face?: Blob, people?: FaceOf[]) => {
     const r = await withImages(space, async (t) =>
-      api.generate(t.wire, { ...p, ...(face ? { reference: await imageRef(t, face) } : {}) }),
+      api.generate(t.wire, {
+        ...p,
+        ...(face ? { reference: await imageRef(t, face) } : {}),
+        ...(people
+          ? {
+              face_people: await Promise.all(
+                people.map(async ({ person: { text, loras, side }, photo }) => ({
+                  text,
+                  loras,
+                  side,
+                  ...(photo ? { face: await imageRef(t, photo) } : {}),
+                })),
+              ),
+            }
+          : {}),
+      }),
     );
     await addPending(space, r.id, meta);
     attach(r.id);
@@ -168,40 +186,11 @@ function createRunner(store: Store, space: Space) {
     return res;
   };
 
-  /** Repaints the masked part of a render with `o.pass` (its own model unless another is picked), or with `o.dress`
-   * puts new clothes on its body; the result links back to it. */
-  const inpaint = async (
-    r: Render,
-    e: Edit,
-    o: {
-      mask: Blob;
-      face?: Blob;
-      stopAfter?: boolean;
-      pass?: Pass;
-      dress?: DressRequest;
-    },
-  ): Promise<Started> => {
-    const { mask, face, stopAfter } = o;
-    const pass = o.pass ?? passOf(r);
+  /** An edit of a render (a repaint, People): `send` starts it with the render's image as sent; the result links back
+   * to it in its lineage. */
+  const edit = async (r: Render, e: Edit, send: (t: Transport, image: ImageRef) => Promise<Started>) => {
     const png = await loadImage(space, r.id);
-    const res = await withImages(space, async (t) =>
-      api.inpaint(t.wire, {
-        image: await imageRef(t, png),
-        mask: await imageRef(t, mask),
-        target: e.target,
-        prompt: e.prompt,
-        unet: pass.unet,
-        family: pass.family,
-        negative: pass.unet === (r.unet ?? legacyUnet(r.model)) ? (r.negative ?? "") : "", // another model, not its negative
-        loras: pass.loras,
-        steps: pass.steps,
-        cfg: pass.cfg,
-        seed: null, // a new one each time: Repaint again is how to get another take
-        reference: face && (await imageRef(t, face)),
-        stop_after: stopAfter,
-        ...(o.dress ? { dress: o.dress } : {}),
-      }),
-    );
+    const res = await withImages(space, async (t) => send(t, await imageRef(t, png)));
     await addPending(space, res.id, { editOf: r, edit: e });
     attach(res.id, true, r.id);
     return res;
@@ -210,7 +199,7 @@ function createRunner(store: Store, space: Space) {
   return {
     generate,
     upscale,
-    inpaint,
+    edit,
     cancel: (id: string) => api.cancel(id).catch(() => finish(id)),
     dismiss: (id: string) => setJobs((js) => js.filter((j) => j.id !== id)),
     resume,
@@ -261,7 +250,7 @@ export function useJobs() {
   return {
     generate: runner?.generate ?? notRunning,
     upscale: runner?.upscale ?? notRunning,
-    inpaint: runner?.inpaint ?? notRunning,
+    edit: runner?.edit ?? notRunning,
     cancel: (id: string) => void runner?.cancel(id),
     dismiss: (id: string) => runner?.dismiss(id),
   };

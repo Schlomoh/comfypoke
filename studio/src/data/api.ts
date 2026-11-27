@@ -11,6 +11,9 @@ export type Request = Omit<Params, "family" | "seed" | "steps" | "cfg" | "refere
   cfg: number | null;
   stop_after?: boolean; // stop the GPU once the queue is empty; the latest request decides, absent leaves it as it is
   reference?: ImageRef; // face photo the head swap puts on the person
+  reference_at?: { slot: number; sides: string[] } | null; // whose head it is, in a picture of several
+  // the face pass with several people: each one's description, own LoRAs, side and face photo (graphs._facepasses)
+  face_people?: { text: string; loras: Lora[]; side: string; face?: ImageRef }[];
 };
 /** An upscale: SeedVR2 to `megapixels`, with an optional prompt retouch at the image's own size first. */
 export type UpscaleRequest = {
@@ -29,21 +32,42 @@ export type UpscaleRequest = {
 };
 export const UPSCALE_MEGAPIXELS = [2, 4, 8] as const; // as graphs.UPSCALE_MEGAPIXELS on the server
 export const FACE_FAMILIES: readonly string[] = ["krea2"]; // as graphs.HEADSWAP_FAMILIES: the head swap is a Krea 2 LoRA
-/** Repaint the masked part of an image with the settings it was made with (graphs.inpaint). */
-export type InpaintRequest = Pick<Params, "unet" | "prompt" | "negative" | "loras"> & {
-  family: string | null;
-  steps: number | null; // null: the model's default
-  cfg: number | null;
+/** A pass that goes lightly over what another drew, at `denoise`; `negative` only for its own model's. */
+export type FinishPass = Pass & { negative?: string; denoise: number };
+/** Repaint the masked part of an image (graphs.inpaint): Z-Image's inpainting draws `prompt` there, then optionally
+ * another setup finishes it; a face photo's head swap runs on the finish's Krea 2. */
+export type InpaintRequest = {
+  prompt: string;
+  dresser: Pass; // a Z-Image setup
+  finish: FinishPass | null;
   seed: number | null;
   image: ImageRef; // PNG
   mask: ImageRef; // PNG of the image's size, white where to repaint
   target: string; // what the mask was found as, recorded only; the mask is what is replaced
   reference?: ImageRef; // face photo
   stop_after?: boolean;
-  dress?: DressRequest; // replace the clothes against the body's mesh (graphs.dress); prompt is the outfit
 };
-/** The passes of a dressing: Z-Image dresses the body held by its mesh, then optionally another model finishes it. */
-export type DressRequest = { hold: Hold; dresser: Pass; finish: (Pass & { denoise: number }) | null };
+/** The passes of a dressing: Z-Image dresses, held to each person's fitted body when one is sent, then optionally
+ * another model finishes it. */
+export type DressRequest = { hold: Hold; dresser: Pass; finish: FinishPass | null };
+/** Everyone on an image at once (graphs.people): each person by their face's box as /api/faces found it, with an
+ * outfit over their area as the stage shows it, their face redrawn, or both. */
+export type PeopleRequest = {
+  image: ImageRef;
+  seed: number | null;
+  people: {
+    box: [number, number, number, number] | null; // their face as /api/faces found it; null when no face was found
+    text: string; // who they are, for their face
+    loras: Lora[]; // their face's
+    outfit: string | null;
+    mask?: ImageRef; // their area as the stage shows it, the image's size: what an outfit goes over, required with one
+    body?: ImageRef; // their fitted body's depth from api.body, the image's size; none: dressed without a body
+    redraw: boolean;
+  }[];
+  dress: DressRequest | null; // when anyone is dressed
+  face: (Pass & { negative: string; denoise: number }) | null; // when any face is redrawn
+  stop_after?: boolean;
+};
 
 export type GpuState = "cold" | "starting" | "warm" | "busy";
 export type Gpu = {
@@ -117,12 +141,24 @@ export const api = {
   generate: (key: WrappedKey, p: Request) => post<Started>("/api/generate", { ...p, key }),
   upscale: (key: WrappedKey, u: UpscaleRequest) => post<Started>("/api/upscale", { ...u, key }),
   inpaint: (key: WrappedKey, i: InpaintRequest) => post<Started>("/api/inpaint", { ...i, key }),
-  body: (key: WrappedKey, image: ImageRef) => post<Started>("/api/body", { image, key }), // the fitted body drawn over the picture
+  /** One person's fitted body as depth, by their face's box (none: whoever is likeliest): what dressing holds to. */
+  body: (key: WrappedKey, image: ImageRef, box: [number, number, number, number] | null) =>
+    post<Started>("/api/body", { image, box, key }),
   /** What SAM finds by text, by tapped points (pixels) or both, white on black. */
   face: (key: WrappedKey, image: ImageRef, reference: ImageRef) =>
     post<Started>("/api/face", { image, reference, key }), // a score
   mask: (key: WrappedKey, image: ImageRef, text: string, points?: { positive: Pt[]; negative: Pt[] }) =>
     post<Started>("/api/mask", { image, text, points, key }),
+  /** Every face on the picture and whose of `people` (by side, or face photo) it is, as a label image. */
+  faces: (key: WrappedKey, image: ImageRef, people: { side: string; face?: ImageRef }[]) =>
+    post<Started>("/api/faces", { image, people, key }),
+  /** Each person's area (their face's box, or none, and the part's words), side by side in one image. */
+  areas: (
+    key: WrappedKey,
+    image: ImageRef,
+    people: { box: [number, number, number, number] | null; part: string }[],
+  ) => post<Started>("/api/areas", { image, people, key }),
+  people: (key: WrappedKey, p: PeopleRequest) => post<Started>("/api/people", { ...p, key }),
   transport: () => call<{ kid: string; spki: string }>("/api/transport"),
   /** A sealed image, once per image (data/images.ts); a PNG's size goes along, since the studio cannot read it. */
   putImage: (sealed: Blob, size?: { width: number; height: number }) =>

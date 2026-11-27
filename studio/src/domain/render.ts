@@ -35,7 +35,17 @@ export type Dress = {
 };
 /** A repaint of part of an image: what was masked by name (besides what was painted), what it became, and with whose
  * face; with `dress`, the clothes were replaced by graphs.dress rather than repainted. */
-export type Edit = { target: string; prompt: string; face?: string; dress?: Dress; setup?: string }; // setup: a repaint's, when not the image's own
+export type Edit = {
+  target: string;
+  prompt: string;
+  face?: string;
+  dress?: Dress;
+  setup?: string;
+  people?: EditedPerson[];
+}; // setup: a repaint's, when not the image's own
+/** One person of a People edit, as recorded: their name then, their saved character, the outfit they got, and whether
+ * their face was redrawn. */
+export type EditedPerson = { name: string; who?: string; outfit?: string[]; face: boolean };
 
 export type Render = Params & {
   id: string;
