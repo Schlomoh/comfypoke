@@ -69,6 +69,22 @@ export async function unlock(l: Lock, password: string) {
   }
 }
 
+/** What a workspace stores to keep its key (db/schema.ts): the raw key, or with a password a lock of it. */
+export type Guarded = { lock?: Lock; key?: ArrayBuffer };
+
+export const guard = async (raw: ArrayBuffer, password: string): Promise<Guarded> =>
+  password ? { lock: await lock(raw, password), key: undefined } : { key: raw, lock: undefined };
+
+/** The raw key a workspace keeps. Throws WrongPassword for a protected one and the wrong password. */
+export async function rawOf(g: Guarded, password: string) {
+  if (g.lock) return unlock(g.lock, password);
+  if (!g.key) throw new Error("This workspace has no key.");
+  return g.key;
+}
+
+/** Zeroes a raw key that no record holds, once its CryptoKeys are made, so it does not linger in memory. */
+export const wipe = (raw: ArrayBuffer) => void new Uint8Array(raw).fill(0);
+
 // ---- images in transit (comfy_modal/seal.py) ----------------------------------------------------------------
 // Images cross to the GPU worker sealed with a transport key: derived with HKDF from the workspace's key and the
 // deploy's key id, so it needs no storage of its own, opens nothing in IndexedDB and changes with every deploy, and

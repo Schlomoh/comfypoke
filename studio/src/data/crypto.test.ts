@@ -5,13 +5,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   fromBase64,
+  guard,
   keysOf,
   lock,
+  rawOf,
   newRaw,
   sealWire,
   toBase64,
   transportKey,
   unlock,
+  unsealJson,
   unsealWire,
   WrongPassword,
   wrapFor,
@@ -91,5 +94,50 @@ describe("transport crypto", () => {
       ["decrypt"],
     );
     expect(toBase64(await exportKey(back))).toBe(toBase64(await exportKey(key)));
+  });
+});
+
+// Written by the code before keys became non-extractable (generateKey, exportKey, then PBKDF2 and AES-GCM over the
+// raw key; a row sealed with the data key), at 1000 iterations to keep the test fast. Phones hold records like these.
+const OLD = {
+  password: "old phone pw",
+  lock: {
+    salt: "5mKGJSzS279zeHe/VWrWjA==",
+    iterations: 1000,
+    key: { iv: "Dj8LtDXL7R6BXu38", data: "ODc/8H9/dnv33p1nfwjQaevtit2Ccqsu+ZU1t6vOH0wk3nSEGAar+Cerccw6Xd69" },
+  },
+  raw: "JnZiQqZc4iAu1DXeK2V0jsI8e75lcdrC/NjVaKd8kxg=",
+  row: {
+    iv: "nbc7DLRfFwoU5xPA",
+    data: "8jALABGnhNSOZhJv5FKaFzN+oZMNnEp3UPoWoPV8fKCQqiHR9uw+sCo/nYmJ0WveB+dnObrX",
+  },
+};
+const oldLock = {
+  salt: fromBase64(OLD.lock.salt),
+  iterations: OLD.lock.iterations,
+  key: { iv: fromBase64(OLD.lock.key.iv), data: fromBase64(OLD.lock.key.data).buffer },
+};
+const oldRow = { iv: fromBase64(OLD.row.iv), data: fromBase64(OLD.row.data).buffer };
+const readRow = async (raw: ArrayBuffer) => unsealJson<{ made: string }>((await keysOf(raw)).key, oldRow);
+
+describe("workspace keys", () => {
+  it("opens what phones stored before: a raw key, and a password's lock", async () => {
+    expect((await readRow(fromBase64(OLD.raw).buffer)).made).toBe("before non-extractable keys");
+    expect((await readRow(await rawOf({ key: fromBase64(OLD.raw).buffer }, ""))).made).toBeTruthy();
+    expect((await readRow(await rawOf({ lock: oldLock }, OLD.password))).made).toBeTruthy();
+  });
+
+  it("changes and removes a password without changing the key, and refuses a wrong current one", async () => {
+    await expect(rawOf({ lock: oldLock }, "wrong")).rejects.toBeInstanceOf(WrongPassword);
+    const changed = await guard(await rawOf({ lock: oldLock }, OLD.password), "new pw");
+    expect(changed.key).toBeUndefined();
+    await expect(rawOf(changed, OLD.password)).rejects.toBeInstanceOf(WrongPassword);
+    expect((await readRow(await rawOf(changed, "new pw"))).made).toBeTruthy();
+    const removed = await guard(await rawOf(changed, "new pw"), "");
+    expect(removed.lock).toBeUndefined();
+    expect((await readRow(await rawOf(removed, ""))).made).toBeTruthy();
+    expect(
+      (await readRow(await rawOf(await guard(await rawOf(removed, ""), "again"), "again"))).made,
+    ).toBeTruthy();
   });
 });

@@ -258,14 +258,15 @@ async def gate(request: Request, call_next):
         resp = await call_next(request)
     if OLD_COOKIE in request.cookies:  # it held the raw key: cleared on whatever answers a phone that still sends it
         resp.delete_cookie(OLD_COOKIE)
-    return resp
-
-
-@api.middleware("http")
-async def headers(request: Request, call_next):  # added after gate, so it wraps gate's own refusals too
-    resp = await call_next(request)
     resp.headers.update(HEADERS)
     return resp
+
+
+@api.exception_handler(Exception)
+async def crashed(request: Request, e: Exception):
+    """A route that raised: Starlette answers it outside the middleware, so it gets the headers here."""
+    logging.exception("studio: %s %s failed", request.method, request.url.path, exc_info=e)
+    return JSONResponse({"error": "the studio failed; see its log"}, status_code=500, headers=HEADERS)
 
 
 @api.post("/api/login")

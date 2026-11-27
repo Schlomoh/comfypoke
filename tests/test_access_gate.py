@@ -112,8 +112,8 @@ def test_this_origin_and_tools_get_through():
 def test_every_response_refuses_framing():
     async def check(c, origin):
         for r in (await c.get("/api/prompt", cookies=cookie()), await c.get("/api/prompt"), await c.post("/api/prompt", headers=EVIL)):
-            assert r.headers["X-Frame-Options"] == "DENY" and r.headers["X-Content-Type-Options"] == "nosniff"
-            assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+            assert r.headers["X-Frame-Options"] == "SAMEORIGIN" and r.headers["X-Content-Type-Options"] == "nosniff"
+            assert "frame-ancestors 'self'" in r.headers["Content-Security-Policy"]
     run(check)
 
 
@@ -122,5 +122,5 @@ def test_a_policy_of_comfyuis_own_keeps_its_rules():
         r = web.Response()
         r.headers["Content-Security-Policy"] = "default-src 'none'"
         await gate._headers(None, r)
-        assert r.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'none'"
+        assert r.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'self'"
     run(check)

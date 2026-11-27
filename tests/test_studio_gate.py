@@ -80,3 +80,16 @@ def test_security_headers_on_every_response():
         csp = r.headers["content-security-policy"]
         assert "frame-ancestors 'none'" in csp and "script-src 'self'" in csp
         assert r.headers["x-content-type-options"] == "nosniff" and "max-age" in r.headers["strict-transport-security"]
+
+
+def test_a_route_that_raises_still_gets_the_headers():
+    @studio_api.api.get("/api/test-raises")
+    async def raises():
+        raise RuntimeError("boom")
+    try:
+        r = TestClient(studio_api.api, base_url=SELF, raise_server_exceptions=False)
+        r.cookies.set(studio_api.COOKIE, studio_api.TOKEN)
+        r = r.get("/api/test-raises")
+        assert r.status_code == 500 and "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    finally:
+        studio_api.api.router.routes[:] = [x for x in studio_api.api.router.routes if getattr(x, "path", "") != "/api/test-raises"]

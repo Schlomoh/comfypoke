@@ -185,17 +185,18 @@ async def _check(request, handler):
 
 
 # ComfyUI's frontend needs inline script, so a full Content-Security-Policy is its own project. These stop the GUI
-# from being framed by another page (clickjacking) and the browser from guessing content types.
+# from being framed by a page on another origin (clickjacking), every other *.modal.run app included, and the browser
+# from guessing content types. Its own origin may frame it: a node pack showing a GUI page in an iframe keeps working.
 # A policy ComfyUI sets itself (on /view, say) is kept, with frame-ancestors added to it.
 async def _headers(request, response):
     h = response.headers
-    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("X-Frame-Options", "SAMEORIGIN")
     h.setdefault("X-Content-Type-Options", "nosniff")
     csp = h.get("Content-Security-Policy")
     if csp is None:
-        h["Content-Security-Policy"] = "frame-ancestors 'none'"
+        h["Content-Security-Policy"] = "frame-ancestors 'self'"
     elif "frame-ancestors" not in csp:
-        h["Content-Security-Policy"] = csp.rstrip("; ") + "; frame-ancestors 'none'"
+        h["Content-Security-Policy"] = csp.rstrip("; ") + "; frame-ancestors 'self'"
 
 
 PromptServer.instance.app.on_response_prepare.append(_headers)  # every response, the websocket's and errors included
