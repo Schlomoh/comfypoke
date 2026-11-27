@@ -235,6 +235,18 @@ async def _json_body(request: Request):
         raise HTTPException(400, "the body is not JSON")
 
 
+# Script from this origin only, nothing sent anywhere else, never framed. fetch() of a data: URL turns a mask's base64
+# into a Blob (features/edit/mask.ts); style-src keeps 'unsafe-inline' for the style attributes React writes.
+HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                               "connect-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; "
+                               "form-action 'self'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Strict-Transport-Security": "max-age=31536000",
+}
+
+
 @api.middleware("http")
 async def gate(request: Request, call_next):
     if _cross_origin(request):
@@ -246,7 +258,15 @@ async def gate(request: Request, call_next):
         resp = await call_next(request)
     if OLD_COOKIE in request.cookies:  # it held the raw key: cleared on whatever answers a phone that still sends it
         resp.delete_cookie(OLD_COOKIE)
+    resp.headers.update(HEADERS)
     return resp
+
+
+@api.exception_handler(Exception)
+async def crashed(request: Request, e: Exception):
+    """A route that raised: Starlette answers it outside the middleware, so it gets the headers here."""
+    logging.exception("studio: %s %s failed", request.method, request.url.path, exc_info=e)
+    return JSONResponse({"error": "the studio failed; see its log"}, status_code=500, headers=HEADERS)
 
 
 @api.post("/api/login")

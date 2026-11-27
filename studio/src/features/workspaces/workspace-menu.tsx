@@ -2,6 +2,7 @@
 import { useAtom } from "jotai";
 import { useState } from "react";
 
+import { WrongPassword } from "@/data/crypto";
 import type { Workspace } from "@/data/db/schema";
 import { useSpace } from "@/data/db/space";
 import {
@@ -38,19 +39,29 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
   const space = useSpace();
   const count = useImageCount(space.id);
   const [name, setName] = useState(w.name);
+  const [current, setCurrent] = useState(""); // a protected workspace's key is unsealed again with it to change it
   const [password, setPw] = useState("");
   const [repeat, setRepeat] = useState("");
   const [note, setNote] = useState("");
   const [sure, setSure] = useState(""); // the name, typed again to delete
   const [veil, setVeil] = useAtom(veilAtom);
+  const [busy, setBusy] = useState(false); // PBKDF2 takes a moment: one change at a time
 
   const guard = async (pw: string) => {
-    await setPassword(space, pw);
+    await setPassword(w, current, pw);
+    setCurrent("");
     setPw("");
     setRepeat("");
     setNote(pw ? "Password set." : "Password removed.");
   };
-  const protect = (pw: string) => guard(pw).catch((err: unknown) => setNote(errorText(err)));
+  const protect = (pw: string) => {
+    setBusy(true);
+    guard(pw)
+      .catch((err: unknown) =>
+        setNote(err instanceof WrongPassword ? "The current password is not right." : errorText(err)),
+      )
+      .finally(() => setBusy(false));
+  };
 
   return (
     // the sections are ruled edge to edge, past the sheet's own margin
@@ -93,19 +104,33 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
           className="flex flex-col gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            void protect(password);
+            protect(password);
           }}
         >
+          {w.lock && (
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              placeholder="current password"
+            />
+          )}
           <NewPassword name={w.name} value={password} set={setPw} repeat={repeat} setRepeat={setRepeat} />
           <div className="flex gap-2">
-            <Button type="submit" disabled={!password || password !== repeat} className="flex-1">
+            <Button
+              type="submit"
+              disabled={busy || !password || password !== repeat || (!!w.lock && !current)}
+              className="flex-1"
+            >
               {w.lock ? "Change password" : "Set password"}
             </Button>
             {w.lock && (
               <Button
+                disabled={busy || !current}
                 onClick={() => {
                   if (confirm("Remove the password? Anyone using this browser can then open this workspace."))
-                    void protect("");
+                    protect("");
                 }}
               >
                 Remove

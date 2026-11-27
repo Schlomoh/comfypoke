@@ -2,44 +2,41 @@
 import { Dexie } from "dexie";
 import { useLiveQuery } from "dexie-react-hooks";
 
-import { exportKey, importKey, lock, newKey, unlock } from "@/data/crypto";
+import { guard, keysOf, newRaw, rawOf, wipe } from "@/data/crypto";
 import { db, type Workspace } from "@/data/db/schema";
 import { closeSpace, type Space } from "@/data/db/space";
 
-const guard = async (key: CryptoKey, password: string) =>
-  password
-    ? { lock: await lock(key, password), key: undefined }
-    : { key: await exportKey(key), lock: undefined };
-
 export async function createWorkspace(name: string, password: string): Promise<Space> {
-  const key = await newKey();
+  const raw = newRaw();
   const id = crypto.randomUUID();
   await db.workspaces.add({
     id,
     name,
     createdAt: Date.now(),
     opened: Date.now(),
-    ...(await guard(key, password)),
+    ...(await guard(raw, password)),
   });
-  return { id, key };
+  const keys = await keysOf(raw);
+  if (password) wipe(raw);
+  return { id, ...keys };
 }
-
-const keyOf = async (w: Workspace, password: string) => {
-  if (w.lock) return unlock(w.lock, password);
-  if (!w.key) throw new Error("This workspace has no key.");
-  return importKey(w.key);
-};
 
 /** Throws WrongPassword for a protected workspace and the wrong password. */
 export async function openWorkspace(w: Workspace, password = ""): Promise<Space> {
-  const key = await keyOf(w, password);
+  const raw = await rawOf(w, password);
+  const keys = await keysOf(raw);
+  if (w.lock) wipe(raw);
   await db.workspaces.update(w.id, { opened: Date.now() });
-  return { id: w.id, key };
+  return { id: w.id, ...keys };
 }
 
-/** Sets, changes or (with "") removes the password. The data key stays, so nothing is re-encrypted. */
-export const setPassword = async (space: Space, password: string) =>
-  db.workspaces.update(space.id, await guard(space.key, password));
+/** Sets, changes or (with "") removes the password; `current` is the one it has now. The open workspace's key cannot
+ *  be read back, so a protected one's is unsealed again with it. The data key stays, so nothing is re-encrypted. */
+export async function setPassword(w: Workspace, current: string, password: string) {
+  const raw = await rawOf(w, current);
+  await db.workspaces.update(w.id, await guard(raw, password));
+  if (w.lock && password) wipe(raw); // removing the password stores this very buffer
+}
 export const renameWorkspace = (id: string, name: string) => db.workspaces.update(id, { name });
 
 export async function deleteWorkspace(id: string) {
