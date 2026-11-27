@@ -1,28 +1,16 @@
 // The bar under the stage in the Edit tab, everything that makes the mask being edited (the image's, or in People the
-// selected person's): brush, eraser or tap; find… by words; everyone's fitted body as a layer under the masks, to see
-// what dressing holds to; ⋯ for invert and clear. Under them, what the tool needs at hand: the brush's size, or how
+// selected person's): brush, eraser or tap; find… by words; ⋯ for invert and clear. Under them, what the tool needs at hand: the brush's size, or how
 // tapping works and Done. Undo takes back the last step, or in tap mode the last point. In People with nobody
 // selected there is no mask to edit: the bar says to tap a face.
 import { useAtom, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
 
-import { api } from "@/data/api";
-import { useSpace } from "@/data/db/space";
 import type { Render } from "@/domain/render";
 import type { Op } from "@/features/edit/mask";
-import {
-  BRUSH,
-  brushAtom,
-  masksAtom,
-  peekAtom,
-  showBodyAtom,
-  tapsAtom,
-  toolAtom,
-  type Tool,
-} from "@/features/edit/state";
+import { BRUSH, brushAtom, masksAtom, peekAtom, tapsAtom, toolAtom, type Tool } from "@/features/edit/state";
 import { PARTS, useFind, worn } from "@/features/edit/use-find";
 import { tapping } from "@/features/edit/use-taps";
-import { lookAt, usePreview, useStage } from "@/state/preview";
+import { useStage } from "@/state/preview";
 import { Button } from "@/ui/button";
 import { Chip, ChipRow } from "@/ui/chip";
 import { Input } from "@/ui/field";
@@ -87,29 +75,6 @@ function FindMenu({ render, maskKey }: { render: Render; maskKey: string }) {
 }
 
 /** Everyone's fitted body under the masks, toggled. */
-function BodyButton({ render }: { render: Render }) {
-  const space = useSpace();
-  const [bodyOf, setBodyOf] = useAtom(showBodyAtom);
-  const body = usePreview(`body:${render.id}`);
-  const showBody = bodyOf === render.id;
-  return (
-    <Button
-      variant="toggle"
-      aria-pressed={showBody}
-      onClick={() => {
-        if (!showBody)
-          body.run(async (onStage) =>
-            lookAt(space, render.id, (t, image) => api.body(t.wire, image), onStage),
-          );
-        setBodyOf(showBody ? null : render.id);
-      }}
-      title="Everyone's fitted body, which dressing holds to, under the masks"
-    >
-      body
-    </Button>
-  );
-}
-
 export function MaskTools({
   render,
   maskKey,
@@ -123,7 +88,6 @@ export function MaskTools({
     return (
       <div className="flex w-full min-w-0 items-center gap-2 py-1">
         <span className="min-w-0 flex-1 truncate text-faint">tap a face to edit their area</span>
-        <BodyButton render={render} />
       </div>
     );
   return <Tools render={render} maskKey={maskKey} steps={steps} />;
@@ -161,7 +125,6 @@ function Tools({ render, maskKey: key, steps }: { render: Render; maskKey: strin
           }}
         />
         <FindMenu render={render} maskKey={key} />
-        <BodyButton render={render} />
         <Popover trigger="⋯" aria-label="More: invert, clear" className="w-11 shrink-0">
           <MenuItem disabled={!steps} onClick={() => add({ kind: "invert" })}>
             Invert the mask

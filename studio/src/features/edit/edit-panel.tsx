@@ -24,15 +24,14 @@ import { Heading, Note } from "@/ui/text";
 import { Tip } from "@/ui/tip";
 
 const MODES = [
-  { value: "people", label: "People" },
   { value: "repaint", label: "Repaint" },
+  { value: "people", label: "People" },
 ] as const;
 
 const HOLDS = [
   { value: "tight", label: "tight" },
   { value: "loose", label: "loose" },
-  { value: "off", label: "free" },
-] as const;
+] as const; // "off" is a person with no fitted body: dressed from the picture alone
 
 /** Whether the prompt keeps the person as the Prompt tab writes them: in a repaint the one picked, in People everyone
  * dressed, each with their outfit in place of their Wearing row. */
@@ -97,9 +96,10 @@ function Hold() {
           onChange={(hold) => setC((x) => ({ ...x, hold }))}
         />
         <Tip label="About the hold">
-          Tight: the body&apos;s mesh pins the silhouette, the arms and the hands, for fitted clothes. Loose:
-          the body stays, the outline may change, so a dress can flare and a hoodie hang. Free: no mesh, only
-          the picture around the mask; the body may change with it.
+          How a fitted body holds, for each person who has one (fit it on their card). Tight: the mesh pins
+          the silhouette, the arms and the hands, for fitted clothes. Loose: the body stays, the outline may
+          change, so a dress can flare and a hoodie hang. Without a fitted body only the picture around the
+          mask guides it, and the body may change with it.
         </Tip>
       </div>
     </div>
@@ -139,7 +139,7 @@ export function EditPanel() {
       )}
       <Section
         title="What goes in"
-        tip="People works on everyone in the picture at once: each face found is guessed as one of the cast, by their face photo or where they stand; tap a name to change it. Each gets a new outfit from their Wearing row in the Prompt tab, over the clothes found on them or the mask, and their face redrawn, in one render. Outfits with versions go side by side: the second render takes everyone's second. Repaint paints what you write into the mask, with any look."
+        tip="Repaint paints what you write into the mask, with any look. People works on everyone in the picture at once: each face found is guessed as one of the cast, by their face photo or where they stand; tap a name to change it. Each gets a new outfit from their Wearing row in the Prompt tab, over the clothes found on them or the mask, and their face redrawn, in one render. Outfits with versions go side by side: the second render takes everyone's second."
       >
         <Segmented value={c.mode} options={MODES} onChange={(mode) => setC((x) => ({ ...x, mode }))} />
         {people && render && <PeopleList render={render} />}

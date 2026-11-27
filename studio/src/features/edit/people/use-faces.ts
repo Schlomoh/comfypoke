@@ -1,6 +1,6 @@
 // Finding the faces on an image (/api/faces, a second or two on a warm GPU), each guessed as one of the cast by their
 // face photo or where they stand (comfy_nodes/studio_face/assign.py). Runs by itself the first time People opens on an
-// image; "find again" after the cast changed.
+// image while the GPU is up; "find again" after the cast changed, which starts the image's people afresh.
 import { useStore } from "jotai";
 
 import { api, Locked } from "@/data/api";
@@ -13,7 +13,13 @@ import { errorText } from "@/domain/format";
 import { facesOf } from "@/domain/people";
 import type { Render } from "@/domain/render";
 import { pixelsOf } from "@/features/edit/mask";
-import { askedAtom, peopleAtom, selectedAtom, startPick, type PersonRow } from "@/features/edit/people/state";
+import {
+  bodiesAtom,
+  peopleAtom,
+  selectedAtom,
+  startPick,
+  type PersonRow,
+} from "@/features/edit/people/state";
 import { isPersonKey, masksAtom, tapsAtom } from "@/features/edit/state";
 import { lookAt, setStage, stageOf, useStage } from "@/state/preview";
 import { recipeAtom } from "@/state/studio";
@@ -56,13 +62,13 @@ export function useFaces(render: Render) {
       const { px, width } = await pixelsOf(b64);
       const found = facesOf(px, width);
       const rows: PersonRow[] = found.length
-        ? found.map((f) => ({ found: f, pick: startPick(f.guess === null ? undefined : cast[f.guess], f) }))
-        : [{ found: null, pick: startPick(cast[0], null) }]; // no face: whoever is in the picture, to dress
+        ? found.map((f) => ({ found: f, pick: startPick(f.guess === null ? undefined : cast[f.guess]) }))
+        : [{ found: null, pick: startPick(cast[0]) }]; // no face: whoever is in the picture, to dress
       store.set(peopleAtom, (all) => ({ ...all, [render.id]: rows }));
       store.set(masksAtom, (all) => without(all, render.id));
       store.set(tapsAtom, (all) => without(all, render.id));
       store.set(selectedAtom, null);
-      store.set(askedAtom, (all) => new Set([...all].filter((k) => !isPersonKey(k, render.id))));
+      store.set(bodiesAtom, (all) => without(all, render.id));
     } catch (e) {
       if (e instanceof Locked) lockApp();
       else notify(`Could not find the faces: ${errorText(e)}`, { bad: true });

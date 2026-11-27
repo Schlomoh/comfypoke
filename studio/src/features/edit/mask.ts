@@ -49,9 +49,12 @@ export function hasArea(ops: Op[]) {
   return on;
 }
 
+/** A PNG that came back (base64) as a Blob, to show or send on. */
+export const pngBlob = async (b64: string) => (await fetch(`data:image/png;base64,${b64}`)).blob();
+
 /** A PNG (base64) as RGBA pixels, with its size. */
 export async function pixelsOf(b64: string) {
-  const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+  const img = await createImageBitmap(await pngBlob(b64));
   const ctx = new OffscreenCanvas(img.width, img.height).getContext("2d");
   if (!ctx) throw new Error("This browser cannot read what came back.");
   ctx.drawImage(img, 0, 0);

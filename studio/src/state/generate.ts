@@ -12,7 +12,7 @@ import { plan, runCount, summary } from "@/domain/batch";
 import { faceFor, inPicture } from "@/domain/cast";
 import { resolve } from "@/domain/catalog";
 import { compose } from "@/domain/compose";
-import { facePeople } from "@/domain/face";
+import { facePeople, referenceAt } from "@/domain/face";
 import { errorText, median, shortName } from "@/domain/format";
 import { ownedBy, runnable, triggersOf } from "@/domain/loras";
 import { DRAFT_MP, legacyUnet, size, type Recipe } from "@/domain/recipe";
@@ -140,6 +140,7 @@ export function useGenerate() {
             finish,
             // more people than the pass tells apart: none, rather than every face redrawn with everyone's LoRAs
             face_pass: inPicture(run.recipe).length > 1 && !people ? null : r.facePass, // skipped under a face photo
+            reference_at: face ? referenceAt(run.recipe) : null, // whose head the photo goes on
           },
           {
             recipe: run.recipe,

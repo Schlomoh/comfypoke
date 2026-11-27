@@ -86,33 +86,36 @@ explains where things are and how to change them without breaking the deployment
   Upscales are `graphs.upscale` (workflow 03's SeedVR2 chain, optional img2img retouch first); the
   image arrives in the prompt as base64 through `comfy_nodes/studio_image`. Edits happen in the Edit tab
   (`studio/src/features/edit`) on the image the stage shows. The mask is made from the bar under the stage
-  (`mask-tools.tsx`: brush, eraser, tap, find…, body, invert and clear) and built on the phone as steps
+  (`mask-tools.tsx`: brush, eraser, tap, find…, invert and clear) and built on the phone as steps
   (`edit/mask.ts`, listed and removable in `mask-summary.tsx`): areas SAM 3.1 found through `/api/mask`
   (`graphs.mask`, white on black) by words (`use-find.ts`) or by tapped points (`use-taps.ts`), brush and eraser
-  strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own for a repaint. The
-  fitted body (`/api/body`) shows as a half-strength layer under the mask, with every tool still working. A
-  People/Repaint choice (`editAtom.mode`) picks the chain. Repaint is `graphs.inpaint` (workflow 09's chain: crop and
-  stitch, LanPaint) with a picked look, the person's Who, Look and Wearing after the words. People
+  strokes, invert, clear; it is sent exactly as shown, so the server runs no SAM of its own for an edit. A
+  People/Repaint choice (`editAtom.mode`) picks the chain. Repaint is `graphs.inpaint`: dressing's chain with no body,
+  Z-Image's inpainting controlnet drawing the words (the person's Who, Look and Wearing after them) and a picked look
+  finishing it lightly. No edit uses LanPaint: Krea 2 through it at full strength drew objects into plain skin, and a
+  crop of 1.5x the mask let the whole picture's prompt be drawn into a small area, so the crop is 3x. People
   (`edit/people/`) works on everyone at once: `/api/faces` (`graphs.faces`, StudioFaceLabels) finds every face and
   guesses whose it is by face photo, then side (`comfy_nodes/studio_face/assign.py`), as one sealed label image the
   phone reads (`facesOf` in `domain/people.ts`); the faces are outlined on the stage in each person's color and each
-  gets a card: who, a new outfit over a part ("all clothes" and the like), its face redrawn. Every mask is kept by a
+  gets a card: who, a new outfit over a part ("all clothes" and the like), its face redrawn (off to start). Every mask is kept by a
   key (`maskKey` in `edit/state.ts`): the image's own for Repaint, `<render id>:<face>` for a person, and the bar's
   tools, taps, finds and the mask list edit whichever key is current (`use-mask-key.ts`: the selected person in
-  People). Selecting a dressed person finds every dressed person's area at once (`/api/areas`, `graphs.areas`, one
-  strip of masks the phone cuts apart, `use-areas.ts`) as the first step of their mask, to edit. `/api/people`
-  (`graphs.people`) sends it as one render: a person's area is their mask as shown when it has anything, otherwise
-  SAM's find by words cut to their silhouette (SAM with their RT-DETR box and no words, `StudioPersonBox`; with words
-  a box is only an example), dressed by workflow 08's chain
-  (`_dressed`: SAM 3D Body's mesh for that person as depth into Z-Image's Fun Controlnet, optionally a light LanPaint
-  finish), then each face picked gets the face pass with its own words and LoRAs (`facePerson` in `domain/face.ts`).
+  People). A dressed person's card has two steps, each run only when asked for and seen before it is used. Their area
+  (required: Dress stays off without one) is found by "find area" (`/api/areas`, `graphs.areas`: SAM's find by words
+  cut to their silhouette, SAM with their RT-DETR box and no words, `StudioPersonBox`; `use-areas.ts`) as the first
+  step of their mask, to edit, or painted. Their body (optional) is fitted by "fit body" (`/api/body`, `graphs.body`:
+  SAM 3D Body for their box, as depth, `use-body.ts`), kept in `bodiesAtom` and drawn under the masks. `/api/people`
+  (`graphs.people`) sends it as one render: each dressed person over their mask as shown, held to their depth when
+  sent, by workflow 08's chain (`_dressed`: the depth into Z-Image's Fun Controlnet at the hold, then optionally a
+  plain light finish); the server finds and fits nothing for it. Then each face picked gets the face pass with its own
+  words and LoRAs (`facePerson` in `domain/face.ts`).
   Outfits are a person's Wearing row of the Prompt tab (`domain/outfits.ts`); versions go side by side
   (`sideBySide`), one render per version, each `editAtom.takes` times with its own seed. Who and Look go into the
   prompt, never Doing (`portrait` in `compose.ts`, switch `editAtom.portrait`). The stage stays on the source:
-  results land in its lineage (`edit/edit-lineage.tsx`, from `Job.source`), a finished job never takes the stage,
+  results land in its lineage (`edit/edit-lineage.tsx`, from `Job.source`; a tap on one edits it), a finished job never takes the stage,
   and an image without a mask can take its source's. "before"
   (or C held) shows the source under the mask (`peekAtom`). The passes are chips (`edit/passes.tsx`). `/api/mask`,
-  `/api/faces`, `/api/areas` and `/api/body` (everyone's fitted body) run outside stop-after; every look of that kind
+  `/api/faces`, `/api/areas` and `/api/body` (one person's fitted body) run outside stop-after; every look of that kind
   goes through `lookAt` and keeps its stage by a key in `state/preview.ts`, and every edit through `edit` in
   `state/jobs.ts`. Looks (`domain/setup.ts`, Dexie table `setups`; "setup" in code) are the
   Look tab (model, family, steps, CFG and the stack's own LoRAs) saved under a name, shared by all workspaces,

@@ -1,9 +1,9 @@
 """The studio app against a fake GPU worker: the real comfy_modal/studio_api.py, with the Worker, the
 worker's heartbeat, the models volume and the billing API replaced by stand-ins. No Modal calls and
 nothing billed. Renders are flat colors with a few seconds of fake progress; upscales are the image
-scaled up; an inpaint is the image with the mask tinted blue, a dressing the same in violet; SAM's find is a white
-ellipse in one of five bands, picked by the text; the body preview draws a stick figure; the face finder answers two
-faces, and People tints each dressed person's column and each redrawn face. Starts the API and Vite (hot reload) together; Ctrl+C stops both.
+scaled up; a repaint or a dressing is the image with each mask sent tinted violet, each redrawn face pink; SAM's find
+is a white ellipse in one of five bands, picked by the text; a person's fitted body is a stick figure below their face;
+the face finder answers two faces, and an area is the column below a face. Starts the API and Vite (hot reload) together; Ctrl+C stops both.
 
     npm --prefix studio run dev:mock       the usual way in
     uv run --with fastapi --with uvicorn --with pillow tools/studio_mock.py [--port 8788] [--api-only]
@@ -98,13 +98,12 @@ async def fake(g, pid):
             box = n["inputs"]["box"] or f"{w // 3},0,{2 * w // 3},0"
             x0, y0, x1, y1 = (int(v) for v in box.split(","))
             ImageDraw.Draw(out).rectangle((k * w + x0 - (x1 - x0), y1, k * w + x1 + (x1 - x0), h), fill=(255, 255, 255))
-    elif _nodes(g, "StudioPersonBox") or boxes:  # People: each dressed person's column tinted violet, each redrawn face pink
+    elif "dresser" in roles or (boxes and not rendered):  # a repaint or People: each mask sent violet, each redrawn face pink
         out = images[0].convert("RGB")
+        for n in _nodes(g, "ImageToMask"):
+            mask = Image.open(io.BytesIO(base64.b64decode(g[n["inputs"]["image"][0]]["inputs"]["data"]))).convert("L")
+            out = Image.composite(Image.new("RGB", out.size, (150, 80, 220)), out, mask.point(lambda v: v * 6 // 10))
         d = ImageDraw.Draw(out, "RGBA")
-        for n in _nodes(g, "StudioPersonBox"):  # no face found: the middle third
-            box = n["inputs"]["box"] or f"{out.width // 3},0,{2 * out.width // 3},0"
-            x0, y0, x1, y1 = (int(v) for v in box.split(","))
-            d.rectangle((x0 - (x1 - x0), y1, x1 + (x1 - x0), out.height), fill=(150, 80, 220, 110))
         for box in boxes:
             d.rectangle(tuple(int(v) for v in box.split(",")), fill=(255, 62, 165, 110))
     elif _nodes(g, "SAM3_Detect") and not cropped and not _nodes(g, "KSampler"):  # SAM's find by text: a white blob on black, placed by the text
@@ -116,20 +115,17 @@ async def fake(g, pid):
         if texts:  # by text: one of five bands, top to bottom
             k = sum(map(ord, texts[0])) % 5
             ImageDraw.Draw(out).ellipse((w // 4, h * k // 5, 3 * w // 4, h * (k + 1) // 5), fill=(255, 255, 255))
-    elif _nodes(g, "SAM3DBody_Render") and not cropped:  # the body preview: stick figures over the picture
-        out = images[0].convert("RGB")
-        w, h = out.size
+    elif _nodes(g, "SAM3DBody_Render"):  # a person's fitted body as depth: a stick figure below their face, on black
+        w, h = images[0].size
+        out = Image.new("RGB", (w, h))
         d = ImageDraw.Draw(out)
-        line = dict(fill=(140, 194, 224), width=max(3, w // 120))
-        for x in (w // 3, 2 * w // 3):  # everyone, where the face finder puts its two faces
+        line = dict(fill=(200, 200, 200), width=max(3, w // 120))
+        box = _nodes(g, "StudioPersonBox")[0]["inputs"]["box"]
+        for x in ((int(box.split(",")[0]) + int(box.split(",")[2])) // 2 if box else w // 2,):
             d.ellipse((x - w // 16, h // 8, x + w // 16, h // 8 + w // 8), outline=line["fill"], width=line["width"])
             for a, b in [((x, h // 4), (x, h * 3 // 5)), ((x - w // 8, h // 3), (x + w // 8, h // 3)),
                          ((x, h * 3 // 5), (x - w // 12, h * 9 // 10)), ((x, h * 3 // 5), (x + w // 12, h * 9 // 10))]:
                 d.line((a, b), **line)
-    elif cropped:  # an inpaint or a dressing: the source back, with what would be repainted tinted
-        src, mask = images[0].convert("RGB"), images[1].convert("L")
-        tint = (150, 80, 220) if "dresser" in roles else (60, 140, 230)
-        out = Image.composite(Image.new("RGB", src.size, tint), src, mask.point(lambda v: v * 6 // 10))
     elif "upscaler" in roles:  # an upscale: the image comes with the prompt
         src = images[0]
         s = (_nodes(g, "ImageScaleToTotalPixels")[-1]["inputs"]["megapixels"] * 1024 * 1024 / (src.width * src.height)) ** 0.5

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { facePeople, keptMatch, matchLabel } from "@/domain/face";
+import { facePeople, keptMatch, matchLabel, referenceAt } from "@/domain/face";
 import { EMPTY, newPerson, phrase, type Recipe } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 
@@ -56,6 +56,11 @@ describe("facePeople", () => {
     ]);
     expect(people?.[1].text).not.toContain("m1a");
     expect(people?.every((p) => p.text.startsWith("style, "))).toBe(true); // the stack's words lead, as in the prompt
+  });
+  it("says whose head the face photo goes on, among everyone's sides", () => {
+    expect(referenceAt(r([jen, mia]))).toEqual({ slot: 1, sides: ["", "left"] });
+    expect(referenceAt(r([mia]))).toBeNull(); // one person: the largest face
+    expect(referenceAt(r([jen, { ...mia, face: null }]))).toBeNull(); // nobody has a photo
   });
   it("leaves out someone with nothing written", () => {
     expect(facePeople(r([mia, { ...newPerson("Empty"), id: "c" }]), { lead: [], of: {} }, loras)).toBeNull();
