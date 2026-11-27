@@ -51,3 +51,13 @@ def test_keep_warm_takes_finite_minutes_up_to_the_cap():
             r = await c.post("/gpu/keep_warm", data=body, headers={"Content-Type": "application/json"})
             assert r.status == 400, body
     run(check)
+
+
+def test_keep_warm_refuses_bad_json_and_booleans():
+    relay.KEEP_WARM_MAX = 120.0
+
+    async def check(c, interrupted):
+        for body in ("{nope", '{"minutes": true}'):
+            r = await c.post("/gpu/keep_warm", data=body, headers={"Content-Type": "application/json"})
+            assert r.status == 400, body
+    run(check)

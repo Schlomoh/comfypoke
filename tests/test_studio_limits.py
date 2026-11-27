@@ -20,6 +20,21 @@ def test_login_refuses_a_large_body_and_anything_but_an_object():
         assert c.post("/api/login", content=body, headers={"Content-Type": "application/json"}).status_code == 400, body
 
 
+def test_a_body_without_a_length_is_cut_off_at_the_cap():
+    def chunks(n):
+        for _ in range(n):
+            yield b"x" * 1024
+    c = client(False)
+    assert c.post("/api/login", content=chunks(8), headers={"Content-Type": "application/json"}).status_code == 413
+    r = client().post("/api/images", content=chunks(studio_api.MAX_IMAGE * 3 // 4 // 1024 + 2))
+    assert r.status_code == 413
+
+
+def test_a_deeply_nested_body_is_a_400():
+    r = client(False).post("/api/login", content=b"[" * 2000 + b"]" * 2000, headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+
+
 def test_any_api_body_over_the_cap_is_refused_before_it_is_read():
     r = client().post("/api/generate", content=b"{}", headers={"Content-Type": "application/json", "Content-Length": str(2**31)})
     assert r.status_code == 413
@@ -38,7 +53,7 @@ def test_no_key_means_no_api():
 
 @pytest.mark.parametrize("bad", [
     {"seed": "x"}, {"seed": "9" * 5000}, {"seed": -1}, {"seed": 2**53}, {"seed": 1.5}, {"seed": True}, {"seed": [1]},
-    {"seed": float("inf")}, {"steps": float("inf")}, {"prompt": "a" * 4001}, {"negative": "a" * 4001, "cfg": 4},
+    {"seed": float("inf")}, {"steps": float("inf")}, {"prompt": "a" * 16001}, {"negative": "a" * 16001, "cfg": 4},
     {"loras": [{"name": "../x.safetensors", "strength": 1}]}, {"loras": [{"name": "a\\b.safetensors", "strength": 1}]},
     {"loras": [{"name": ".hidden", "strength": 1}]},
 ])
@@ -65,17 +80,38 @@ def test_only_the_latest_preview_is_kept():
     asyncio.run(main())
 
 
-def test_ended_jobs_go_oldest_first_past_the_memory_budget():
+def test_collected_jobs_go_oldest_first_past_the_memory_budget_and_uncollected_ones_stay():
     async def main():
-        old, new, running = (studio_api.Job({}) for _ in range(3))
-        for j, at in ((old, 1.0), (new, 2.0)):
+        old, new, waiting, running = (studio_api.Job({}) for _ in range(4))
+        for j, at in ((old, 1.0), (new, 2.0), (waiting, 0.5)):
             j.end("done", "x" * 2**20)
             j.ended = at + 1e12  # not past the TTL
+        old.delivered = new.delivered = True  # waiting: no phone has fetched it yet
         running.emit("image", "x" * 2**20)
-        with mock.patch.dict(studio_api.jobs, {j.id: j for j in (old, new, running)}, clear=True), \
-                mock.patch.object(studio_api.config, "STUDIO_JOB_MEMORY_MB", 2):
+        with mock.patch.dict(studio_api.jobs, {j.id: j for j in (old, new, waiting, running)}, clear=True), \
+                mock.patch.object(studio_api.config, "STUDIO_JOB_MEMORY_MB", 3):
             studio_api._purge()
-            assert set(studio_api.jobs) == {new.id, running.id}
+            assert set(studio_api.jobs) == {new.id, waiting.id, running.id}
+        with mock.patch.dict(studio_api.jobs, {j.id: j for j in (waiting, running)}, clear=True), \
+                mock.patch.object(studio_api.config, "STUDIO_JOB_MEMORY_MB", 1), pytest.raises(HTTPException) as e:
+            studio_api._start({"key": {"key": ""}}, {}, {})
+        assert e.value.status_code == 503
+    asyncio.run(main())
+
+
+def test_the_stream_skips_replaced_previews_and_keeps_its_ids():
+    async def main():
+        job = studio_api.Job({})
+        for name, data in (("queued", {}), ("preview", "p1"), ("preview", "p2"), ("preview", "p3"), ("image", "png")):
+            job.emit(name, data)
+        job.end("done", {"seconds": 1})
+        with mock.patch.dict(studio_api.jobs, {job.id: job}, clear=True):
+            for last, expect in ((None, [0, 3, 4, 5]), ("1", [3, 4, 5])):  # 1: a preview since replaced
+                request = mock.Mock(headers={"last-event-id": last} if last else {})
+                body = "".join([c async for c in (await studio_api.events(job.id, request)).body_iterator])
+                ids = [int(line[4:]) for line in body.splitlines() if line.startswith("id: ")]
+                assert ids == expect and "p3" in body and "p1" not in body and "event: done" in body
+        assert job.delivered
     asyncio.run(main())
 
 

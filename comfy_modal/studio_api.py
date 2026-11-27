@@ -107,6 +107,7 @@ class Job:
         self.counted: set[str] = set()  # the samplers whose steps are the step counter (graph.COUNTED)
         self.bytes = 0  # the base64 its events hold, for STUDIO_JOB_MEMORY_MB
         self.preview = -1  # the index of its latest preview: an older one is dropped, a stream replays only the last
+        self.delivered = False  # a stream has sent its last event: the phone has it, so the job may go to free memory
 
     def emit(self, name: str, data):
         if name == "preview":
@@ -211,11 +212,13 @@ def _purge():
     for jid in [j.id for j in jobs.values() if j.ended and now - j.ended > config.STUDIO_JOB_TTL]:
         del jobs[jid]
     held = sum(j.bytes for j in jobs.values())
-    for j in sorted((j for j in jobs.values() if j.ended), key=lambda j: j.ended):  # oldest ended first
+    for j in sorted((j for j in jobs.values() if j.delivered), key=lambda j: j.ended):  # collected, oldest first
         if held <= config.STUDIO_JOB_MEMORY_MB * 2**20:
             break
         held -= j.bytes
         del jobs[j.id]
+        logging.info("studio: job %s dropped from memory after it was delivered (%d MB held)", j.id, held >> 20)
+    return held
 
 
 def _job(job_id: str) -> Job:
@@ -269,7 +272,7 @@ async def _json_body(request: Request, cap: int = MAX_BODY) -> dict:
         raise HTTPException(415, "send the body as application/json")
     try:
         body = json.loads(await _read(request, cap))
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: nested past Python's limit
         raise HTTPException(400, "the body is not JSON")
     if not isinstance(body, dict):
         raise HTTPException(400, "the body must be a JSON object")
@@ -387,7 +390,7 @@ def _params(body: dict) -> dict:
             "loras": [{"name": n, "strength": w} for n, w in loras]}
 
 
-MAX_PROMPT = 4000
+MAX_PROMPT = 16000  # characters; it guards memory, and a prompt made from several people's descriptions is long
 
 
 def _lora_name(name: str) -> bool:
@@ -663,7 +666,8 @@ def _retouch(p: dict) -> dict:
 
 
 def _start(body: dict, params: dict, prompt: dict, queued: bool = True) -> dict:
-    _purge()
+    if _purge() > config.STUDIO_JOB_MEMORY_MB * 2**20:  # what is left no phone has collected yet: it is not dropped
+        raise HTTPException(503, "the studio is holding finished images no phone has collected; open the app to fetch them, then try again")
     if sum(not j.ended for j in jobs.values()) >= config.STUDIO_MAX_JOBS:
         raise HTTPException(429, f"{config.STUDIO_MAX_JOBS} jobs are running or queued already; wait for some to finish")
     job = Job(params)
@@ -795,7 +799,7 @@ async def edit_people(request: Request):
             raise HTTPException(400, "the face pass needs a strength")
         last = f
     # the job's model is what drew the last pixels: the face pass's when it runs, else the dressing's
-    p = _params({**last, "prompt": "; ".join(x["outfit"] or x["text"] for x in who)[:4000] or "people", "seed": seed, "width": 1024, "height": 1024})
+    p = _params({**last, "prompt": "; ".join(x["outfit"] or x["text"] for x in who)[:MAX_PROMPT] or "people", "seed": seed, "width": 1024, "height": 1024})
     params = {**p, "kind": "people", "width": w, "height": h, "people": len(who)}
     return _start(body, params, graphs.people(b64, who, seed, dress, face))
 
@@ -896,6 +900,7 @@ async def events(job_id: str, request: Request):
                     yield f"id: {i}\nevent: {name}\ndata: {json.dumps(data)}\n\n"
                 i += 1
             if job.ended:
+                job.delivered = True
                 return
             try:
                 await asyncio.wait_for(changed.wait(), 15)

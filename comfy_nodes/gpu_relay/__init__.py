@@ -306,10 +306,10 @@ async def gpu_wake(request):
 async def gpu_keep_warm(request):
     if _not_json(request):
         return web.json_response({"error": "send the body as application/json"}, status=415)
-    body = await request.json()
     try:
-        minutes = float(body.get("minutes", 0))
-    except (AttributeError, TypeError, ValueError):
+        raw = (await request.json()).get("minutes", 0)
+        minutes = math.nan if isinstance(raw, bool) else float(raw)
+    except (AttributeError, TypeError, ValueError):  # JSONDecodeError is a ValueError
         minutes = math.nan
     if not (math.isfinite(minutes) and 0 <= minutes <= KEEP_WARM_MAX):  # json reads Infinity as a number
         return web.json_response({"error": f"minutes must be a number from 0 to {KEEP_WARM_MAX}"}, status=400)

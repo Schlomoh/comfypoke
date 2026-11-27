@@ -64,8 +64,8 @@ STUDIO_STOP_GRACE_SECONDS = 20
 # The studio runs in one container of 2 GB (studio.py), and an OOM there loses every job and cached image at once.
 # Its memory is the image cache, the jobs' events (a 4 MP PNG is 10 to 20 MB of base64) and what a request holds.
 STUDIO_IMAGE_CACHE_MB = 400  # sealed images sent once and referred to by hash (studio_api.put_image)
-STUDIO_JOB_MEMORY_MB = 600  # finished jobs' images and previews; the oldest ended jobs go first past it
-STUDIO_MAX_JOBS = 32  # running and queued at once; more get a 429
+STUDIO_JOB_MEMORY_MB = 600  # jobs' images and previews; past it the oldest a phone has collected go, then new jobs wait
+STUDIO_MAX_JOBS = 128  # running and queued at once, more get a 429; one batch from the phone can be 36
 STUDIO_MAX_BODY_MB = 64  # any request to /api/*; an image upload has its own, lower cap
 
 VOLUME_MODELS = f"{APP_NAME}-models"
