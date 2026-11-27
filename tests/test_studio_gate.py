@@ -2,12 +2,14 @@
 import hashlib
 import hmac
 import os
+import sys
+from unittest import mock
 
-os.environ.setdefault("COMFY_ACCESS_KEY", "test-key-0123456789abcdef")
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from comfy_modal import studio_api  # noqa: E402
+with mock.patch.dict(os.environ, {"COMFY_ACCESS_KEY": "test-key-0123456789abcdef"}):
+    sys.modules.pop("comfy_modal.studio_api", None)
+    from comfy_modal import studio_api
 
 KEY = studio_api.KEY
 SELF = "http://testserver"  # TestClient's Host
@@ -53,11 +55,21 @@ def test_another_origin_cannot_post_even_with_the_cookie():
     assert c.post("/api/generate", content="{}", headers={**EVIL, "Content-Type": "text/plain"}).status_code == 403
     assert c.post("/api/gpu/wake", headers={"Sec-Fetch-Site": "same-site"}).status_code == 403
     assert c.delete("/api/jobs/x", headers=EVIL).status_code == 403
+    assert c.post("/api/gpu/wake", headers={"Origin": "null"}).status_code == 403
+    assert c.post("/api/gpu/wake", headers={**EVIL, "X-Forwarded-Host": "evil--x.modal.run"}).status_code == 403
 
 
 def test_this_origin_may_post_but_json_must_be_json():
     c = client()
     assert c.post("/api/gpu/stop-after", headers={"Origin": SELF}).status_code == 200
     assert c.post("/api/gpu/stop-after", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+    assert c.get("/api/transport", headers=EVIL).status_code == 200  # reading is not refused; CORS keeps the answer from them
     r = c.post("/api/generate", content="{}", headers={"Origin": SELF, "Content-Type": "text/plain"})
     assert r.status_code == 415
+
+
+def test_the_old_raw_key_cookie_is_cleared():
+    c = client(False)
+    c.cookies.set("studio_key", KEY)
+    r = c.get("/api/transport")
+    assert r.status_code == 401 and 'studio_key=""' in r.headers["set-cookie"]

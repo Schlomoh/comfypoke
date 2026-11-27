@@ -217,14 +217,13 @@ def _job(job_id: str) -> Job:
 def _cross_origin(request: Request) -> bool:
     """Not a GET from anywhere, nor a request from a page on this origin. Browsers send Origin on every POST and
     DELETE; without one, Sec-Fetch-Site must say same-origin. A client sending neither is not a browser, so it cannot
-    be riding the owner's cookie. X-Forwarded-Host counts as well as Host in case Modal's proxy ever rewrites Host."""
+    be riding the owner's cookie."""
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return False
     origin = request.headers.get("origin")
     if origin is None:
         return request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none")
-    hosts = {request.headers.get("host"), request.headers.get("x-forwarded-host")} - {None}
-    return urlsplit(origin).netloc not in hosts
+    return urlsplit(origin).netloc != request.headers.get("host")
 
 
 async def _json_body(request: Request):
@@ -239,11 +238,15 @@ async def _json_body(request: Request):
 @api.middleware("http")
 async def gate(request: Request, call_next):
     if _cross_origin(request):
-        return JSONResponse({"error": "cross-origin request refused"}, status_code=403)
-    if KEY and request.url.path.startswith("/api/") and request.url.path != "/api/login":
-        if not hmac.compare_digest(request.cookies.get(COOKIE, "").encode(), TOKEN.encode()):
-            return JSONResponse({"error": "locked"}, status_code=401)
-    return await call_next(request)
+        resp = JSONResponse({"error": "cross-origin request refused"}, status_code=403)
+    elif (KEY and request.url.path.startswith("/api/") and request.url.path != "/api/login"
+          and not hmac.compare_digest(request.cookies.get(COOKIE, "").encode(), TOKEN.encode())):
+        resp = JSONResponse({"error": "locked"}, status_code=401)
+    else:
+        resp = await call_next(request)
+    if OLD_COOKIE in request.cookies:  # it held the raw key: cleared on whatever answers a phone that still sends it
+        resp.delete_cookie(OLD_COOKIE)
+    return resp
 
 
 @api.post("/api/login")
@@ -253,7 +256,6 @@ async def login(request: Request):
         return JSONResponse({"error": "That key is not right."}, status_code=401)
     resp = JSONResponse({"ok": True})
     resp.set_cookie(COOKIE, TOKEN, max_age=COOKIE_DAYS * 86400, path="/", httponly=True, secure=True, samesite="strict")
-    resp.delete_cookie(OLD_COOKIE)
     return resp
 
 

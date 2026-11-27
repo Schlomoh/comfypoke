@@ -98,8 +98,8 @@ def _is_key(value: str) -> bool:
 def _set_cookie(resp):
     # __Host- requires Secure, Path=/ and no Domain. Lax, not Strict, so a link from Modal's
     # dashboard arrives signed in; the origin check below is what stops forged requests.
-    resp.set_cookie(COOKIE, TOKEN, path="/", httponly=True, secure=True, samesite="Lax", max_age=30 * 86400)
-    resp.del_cookie(OLD_COOKIE)
+    if not resp.prepared:  # a websocket's handshake has gone out by the time its handler returns
+        resp.set_cookie(COOKIE, TOKEN, path="/", httponly=True, secure=True, samesite="Lax", max_age=30 * 86400)
     return resp
 
 
@@ -107,17 +107,14 @@ def _cross_origin(request) -> bool:
     """A state-changing request or a websocket that did not come from a page on this origin.
     Browsers send Origin on every POST and every websocket handshake. Without one, Sec-Fetch-Site
     must say same-origin or none (typed in the address bar). A client sending neither is not a
-    browser, so it cannot be riding the owner's cookie, and tools still get through.
-    X-Forwarded-Host counts as well as Host in case Modal's proxy ever rewrites Host; a page
-    cannot set either header on a request it forges."""
+    browser, so it cannot be riding the owner's cookie, and tools still get through."""
     upgrade = request.headers.get("Upgrade", "").lower() == "websocket"
     if request.method in SAFE_METHODS and not upgrade:
         return False
     origin = request.headers.get("Origin")
     if origin is None:
         return request.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none")
-    hosts = {request.headers.get("Host"), request.headers.get("X-Forwarded-Host")} - {None}
-    return urlsplit(origin).netloc not in hosts
+    return urlsplit(origin).netloc != request.headers.get("Host")
 
 
 def _wants_html(request) -> bool:
@@ -141,6 +138,21 @@ def _is_plain_navigation(request) -> bool:
 
 @web.middleware
 async def _gate(request, handler):
+    """_check, and the cookie that held the raw key before the rename is cleared on whatever answers a browser that
+    still sends it, signed in or not."""
+    old = OLD_COOKIE in request.cookies
+    try:
+        resp = await _check(request, handler)
+    except web.HTTPException as e:
+        if old:
+            e.del_cookie(OLD_COOKIE)
+        raise
+    if old and not resp.prepared:
+        resp.del_cookie(OLD_COOKIE)
+    return resp
+
+
+async def _check(request, handler):
     # ComfyUI's own origin_only_middleware (server.py) answers anything carrying
     # Sec-Fetch-Site: cross-site with an empty 403. That includes every click on the deployment
     # link from Modal's dashboard, which is how people actually open this, and the empty body
