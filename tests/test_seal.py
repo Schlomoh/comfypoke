@@ -1,6 +1,7 @@
 """comfy_modal/seal.py: what the worker opens and seals, and that it reads what WebCrypto writes (seal_vectors.json)."""
 import base64
 import json
+import re
 import struct
 from pathlib import Path
 
@@ -73,13 +74,14 @@ def test_open_prompt_refuses_data_that_is_not_a_sealed_image():
             seal.open_prompt(KEY, {"1": {"class_type": seal.IMAGE_NODE, "inputs": {"data": data}}})
 
 
-def test_stray_outputs_allow_only_the_websocket_save_and_the_score():
-    outputs = {"SaveImageWebsocket", "StudioFaceScore", "SaveImage", "PreviewImage", "PreviewAny"}
+def test_keyed_graphs_may_hold_only_the_studios_node_classes():
     for name, g in samples().items():  # every studio graph passes
-        assert seal.stray_outputs(g, outputs) == [], name
-    g = {"1": {"class_type": "SaveImageWebsocket"}, "2": {"class_type": "SaveImage"}, "3": {"class_type": "PreviewImage"}}
-    assert seal.stray_outputs(g, outputs) == ["PreviewImage", "SaveImage"]
-    assert seal.stray_outputs({"1": {"class_type": "StudioFaceScore"}}, outputs) == []
+        assert seal.unlisted(g) == [], name
+    added = set(re.findall(r'\.add\("(\w+)"', (Path(__file__).parents[1] / "comfy_modal" / "graphs.py").read_text()))
+    assert added <= seal.SEALED_CLASSES, added - seal.SEALED_CLASSES  # graphs a sample may not reach yet
+    g = {**samples()["render krea2"], "99": {"class_type": "ImageScale", "inputs": {}}}
+    assert seal.unlisted(g) == ["ImageScale"]
+    assert seal.unlisted({"1": {"class_type": "SaveImage"}, "2": {"class_type": "PreviewImage"}}) == ["PreviewImage", "SaveImage"]
 
 
 def test_score_message_keeps_only_the_rounded_number():

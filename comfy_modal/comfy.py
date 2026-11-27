@@ -1,4 +1,5 @@
 """Start a ComfyUI process in a container and wait until it answers."""
+import os
 import socket
 import subprocess
 import time
@@ -31,6 +32,7 @@ def launch(port: int, extra_args: tuple = ()):
             *extra_args,
         ],
         check=True,
+        env={k: v for k, v in os.environ.items() if k != config.TRANSPORT_PRIVATE_ENV},  # Worker.start holds it; ComfyUI never does
     )
     wait_for_port(port, timeout=300)
 
