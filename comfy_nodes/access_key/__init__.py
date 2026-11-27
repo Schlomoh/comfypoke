@@ -3,8 +3,15 @@
 Modal web endpoints are public URLs, so the container needs its own gate. A browser that asks
 for a page gets a small login form; anything else (the API, the websocket, curl) gets a 401
 with a Basic-auth challenge, so tools can send the key in an Authorization header. Either way
-a correct key sets a cookie and every later request is checked against it. ?key=<key> in the
-URL still works. No key configured means no gate, so the container always starts.
+a correct key sets a cookie and every later request is checked against it. The cookie holds a
+token derived from the key, never the key itself, so it opens this GUI and nothing else (the
+studio derives its own). No key configured means no gate, so the container always starts.
+
+Every *.modal.run host is the same site as this one (modal.run is not on the Public Suffix
+List), so SameSite cookies and ComfyUI's Sec-Fetch-Site check do not stop another Modal app's
+page from posting here or opening the websocket with the owner's cookie. _cross_origin closes
+that: anything that can change state, and every websocket, must come from this origin. The
+__Host- prefix keeps those other hosts from planting or shadowing the cookie.
 
 The form exists because browsers do not reliably show the Basic-auth dialog for this response:
 Chrome and Safari both render the 401 body instead, which left a new user staring at the words
@@ -13,13 +20,19 @@ because filtering software reads a 401 page asking for a secret on a random clou
 phishing; NordVPN's Threat Protection answered it with a 403 of its own.
 """
 import base64
+import hashlib
+import hmac
 import os
+from urllib.parse import urlsplit
 
 from aiohttp import web
 from server import PromptServer
 
 KEY = os.environ.get("COMFY_ACCESS_KEY", "")
-COOKIE = "comfy_key"
+TOKEN = hmac.new(KEY.encode(), b"gui-v1", hashlib.sha256).hexdigest()
+COOKIE = "__Host-comfy_key"
+OLD_COOKIE = "comfy_key"  # held the raw key before the rename; cleared at the next sign-in
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 LOGIN_PATH = "/comfypoke-login"
 
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -78,9 +91,33 @@ def _basic_password(request) -> str:
         return ""
 
 
+def _is_key(value: str) -> bool:
+    return hmac.compare_digest(value.encode(), KEY.encode())
+
+
 def _set_cookie(resp):
-    resp.set_cookie(COOKIE, KEY, httponly=True, secure=True, samesite="Lax", max_age=30 * 86400)
+    # __Host- requires Secure, Path=/ and no Domain. Lax, not Strict, so a link from Modal's
+    # dashboard arrives signed in; the origin check below is what stops forged requests.
+    resp.set_cookie(COOKIE, TOKEN, path="/", httponly=True, secure=True, samesite="Lax", max_age=30 * 86400)
+    resp.del_cookie(OLD_COOKIE)
     return resp
+
+
+def _cross_origin(request) -> bool:
+    """A state-changing request or a websocket that did not come from a page on this origin.
+    Browsers send Origin on every POST and every websocket handshake. Without one, Sec-Fetch-Site
+    must say same-origin or none (typed in the address bar). A client sending neither is not a
+    browser, so it cannot be riding the owner's cookie, and tools still get through.
+    X-Forwarded-Host counts as well as Host in case Modal's proxy ever rewrites Host; a page
+    cannot set either header on a request it forges."""
+    upgrade = request.headers.get("Upgrade", "").lower() == "websocket"
+    if request.method in SAFE_METHODS and not upgrade:
+        return False
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return request.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none")
+    hosts = {request.headers.get("Host"), request.headers.get("X-Forwarded-Host")} - {None}
+    return urlsplit(origin).netloc not in hosts
 
 
 def _wants_html(request) -> bool:
@@ -115,19 +152,20 @@ async def _gate(request, handler):
         headers["Sec-Fetch-Site"] = "same-origin"
         request = request.clone(headers=headers)
 
+    if _cross_origin(request):
+        raise web.HTTPForbidden(text="cross-origin request refused")
+
     if request.path == LOGIN_PATH:  # the form posts here, so it cannot itself be gated
         if request.method != "POST":
             return web.HTTPFound("/")
         data = await request.post()
-        if data.get("key", "") == KEY:
+        if _is_key(str(data.get("key", ""))):
             return _set_cookie(web.HTTPSeeOther("/"))  # 303, so the browser follows it with GET
         return _login_page("That key is not right.")
 
-    if request.cookies.get(COOKIE) == KEY:
+    if hmac.compare_digest(request.cookies.get(COOKIE, "").encode(), TOKEN.encode()):
         return await handler(request)
-    if request.query.get("key") == KEY:
-        return _set_cookie(web.HTTPFound(request.path))
-    if _basic_password(request) == KEY:
+    if _is_key(_basic_password(request)):
         return _set_cookie(await handler(request))
     if _wants_html(request):
         return _login_page()

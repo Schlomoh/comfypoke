@@ -30,6 +30,12 @@ def default_url() -> str:
     return f"https://{workspace}--{config.APP_NAME}-ui-ui.modal.run"
 
 
+def session(url: str, key: str) -> aiohttp.ClientSession:
+    """Signed in with the key as the Basic-auth password, and sending this origin: the gate refuses a POST or a
+    websocket whose Origin is another host (comfy_nodes/access_key)."""
+    return aiohttp.ClientSession(auth=aiohttp.BasicAuth("comfypoke", key), headers={"Origin": url})
+
+
 def volume_names() -> list[str]:
     """Every volume in the current workspace, not just this deployment's."""
     r = subprocess.run([MODAL, "volume", "list", "--json"], capture_output=True, text=True)
@@ -57,7 +63,7 @@ def turbo_prompt(text: str, seed: int, prefix: str) -> dict:
 async def render(url: str, key: str, prompt: dict):
     cid = str(uuid.uuid4())
     t0 = time.time()
-    async with aiohttp.ClientSession(cookies={"comfy_key": key}) as s:
+    async with session(url, key) as s:
         async with s.ws_connect(f"{url}/ws?clientId={cid}") as ws:
             async with s.post(f"{url}/prompt", json={"prompt": prompt, "client_id": cid}) as r:
                 res = await r.json()

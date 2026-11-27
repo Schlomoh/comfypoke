@@ -56,8 +56,10 @@ The `.access_key` step is not optional: without the file the deploy fails, and a
 starts the container with no login gate, so the GUI is public.
 
 Open the URL the deploy prints. A login page asks for the key: paste the contents of
-`.access_key`. A cookie keeps you signed in for 30 days. Tools and scripts can use `?key=<key>`
-in the URL instead, or send the key as the password in an Authorization header.
+`.access_key`. A cookie keeps you signed in for 30 days; it holds a token derived from the key,
+not the key itself. Tools and scripts send the key as the password in a Basic Authorization
+header. A POST or a websocket from any other origin is refused, even with the key, because every
+`*.modal.run` app counts as the same site as yours.
 
 Run `uv run tools/check.py --stop-stale` after a deploy. It stops leftover containers from the
 previous version and runs the acceptance test: authentication, the websocket, model listing, a
@@ -136,7 +138,7 @@ it, so it doubles as a way to learn them.
 A second front end at `https://<workspace>--comfypoke-studio.modal.run` (the console's Status
 prints it), built for designing characters with Krea 2 from a phone or a desktop. It talks to the
 GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once with the same
-`.access_key`; the cookie lasts a year.
+`.access_key`; the cookie lasts 90 days and opens the studio only, not the GUI.
 
 - Everything happens in a workspace, and opening the app shows only the list of them. Each
   workspace keeps its own renders, characters, draft and jobs in flight; nothing of one shows

@@ -4,6 +4,7 @@ deployed GUI's ComfyUI (the same node packs as the worker; no GPU needed). Run a
     uv run tools/object_info_snapshot.py [--url https://...]
 """
 import argparse
+import base64
 import json
 import sys
 import urllib.request
@@ -17,7 +18,7 @@ ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDe
 ap.add_argument("--url", default=None)
 url = (ap.parse_args().url or default_url()).rstrip("/")
 key = (REPO / config.ACCESS_KEY_FILE).read_text().strip()
-req = urllib.request.Request(f"{url}/api/object_info", headers={"Cookie": f"comfy_key={key}"})
+req = urllib.request.Request(f"{url}/api/object_info", headers={"Authorization": "Basic " + base64.b64encode(f"comfypoke:{key}".encode()).decode()})
 with urllib.request.urlopen(req, timeout=300) as r:
     info = json.load(r)
 used = sorted({n["class_type"] for g in samples().values() for n in g.values()})

@@ -16,5 +16,7 @@ package = false
 
 [dependency-groups]
 dev = [
+    "fastapi>=0.165.0",
+    "httpx>=0.29.0",
     "pytest>=9.2.0",
 ]

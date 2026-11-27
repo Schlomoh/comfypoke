@@ -241,20 +241,9 @@ def status():
 
 def open_gui():
     url = default_url()
-    with_key = ask(questionary.select("Open", choices=[
-        "plain URL (the key cookie is already set in this browser)",
-        "URL with ?key= (first visit, sets the cookie)",
-    ])).startswith("URL with")
-    if with_key:
-        key_file = REPO / config.ACCESS_KEY_FILE
-        if not key_file.exists():
-            out.print(f"[red]no {config.ACCESS_KEY_FILE} in {REPO}; see README > Setup[/]")
-            return
-        out.print(f"[bold cyan]$ open {url}/?key=<contents of {config.ACCESS_KEY_FILE}>[/]")
-        webbrowser.open(f"{url}/?key={key_file.read_text().strip()}")
-    else:
-        out.print(f"[bold cyan]$ open {url}[/]")
-        webbrowser.open(url)
+    out.print(f"[bold cyan]$ open {url}[/]")
+    out.print(f"A browser that is not signed in yet shows the login page: paste the contents of {config.ACCESS_KEY_FILE}.")
+    webbrowser.open(url)
 
 
 def wake():
