@@ -7,6 +7,7 @@ import modal
 
 from . import config, seal
 from .app import app
+from .pins import pinned
 from .ui import read_access_key
 
 DIST = Path(__file__).resolve().parents[1] / "studio" / "dist"
@@ -16,7 +17,7 @@ if modal.is_local() and not (DIST / "index.html").exists():
 image = (
     modal.Image.debian_slim(python_version="3.12")
     # Pinned so a bump rebuilds the layer: unpinned, it kept whatever resolved at its first build, security fixes or not
-    .uv_pip_install("fastapi[standard]==0.165.0")
+    .uv_pip_install(*pinned("fastapi"))
     .add_local_dir(DIST, "/root/studio", copy=False)
     .add_local_python_source("comfy_modal", copy=False)
 )

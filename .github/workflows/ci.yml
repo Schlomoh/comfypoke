@@ -4,15 +4,18 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: uv sync --frozen
@@ -26,6 +29,12 @@ jobs:
         run: uv run pytest -q tests
       - name: Studio app type-checks, lints, is formatted, passes its tests and builds
         run: npm --prefix studio ci && npm --prefix studio run check && npm --prefix studio test && npm --prefix studio run build
+      - name: No known vulnerabilities in the dependencies
+        run: |
+          npm --prefix studio audit --omit=dev --audit-level=high
+          uv export --frozen --no-dev -q > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit -r "$RUNNER_TEMP/requirements.txt" --disable-pip
+          uvx pip-audit -r comfy_modal/requirements-image.txt --no-deps --disable-pip
       - name: Workflows match the builder
         run: |
           uv run tools/build_workflows.py

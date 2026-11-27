@@ -47,7 +47,11 @@ explains where things are and how to change them without breaking the deployment
 
 ## Changing things
 
-- Models and node packs: `comfy_modal/catalog.py`, then deploy. Files from Civitai or Hugging Face go straight
+- Models and node packs: `comfy_modal/catalog.py`, then deploy. Everything the image installs is pinned
+  (`tests/test_pins.py` checks): a pack by registry version in `NODE_PACKS`, a model repo by commit in `REVISIONS`
+  (never rename a repo there, its cache folder would download again), Python packages in
+  `comfy_modal/requirements-image.txt`, which Dependabot watches. A bump is deliberate: read the pack's changes first.
+  The image installs ComfyUI without ComfyUI-Manager. Files from Civitai or Hugging Face go straight
   into the models volume from Modal's side: `tools/sync.sh civitai|hf` (and the console) call `tools/fetch.py`,
   which runs `comfy_modal/fetch.py`; the token rides as a header on that one call. `--local` is the old way, through
   the laptop. Keep the model layer before the

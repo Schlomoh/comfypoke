@@ -1,0 +1,14 @@
+# Python packages the container images install on top of ComfyUI's own requirements (comfy_modal/pins.py reads this
+# file; image.py and studio.py install them in separate layers, so a bump rebuilds only its own and those below).
+# A file of its own so Dependabot's pip ecosystem watches it: uv.lock covers only the laptop's tools.
+comfy-cli==1.29.0
+huggingface_hub[hf-xet]==2.5.0
+insightface==2.1
+onnxruntime==1.31.1
+cryptography==50.0.2
+# Security fixes over what ComfyUI's requirements resolved to: aiohttp is its web server, which faces the internet.
+aiohttp==3.14.5
+multidict==6.9.1
+certifi==2026.10.19
+# The studio's own slim image (studio.py)
+fastapi[standard]==0.165.0
