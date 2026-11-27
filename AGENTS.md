@@ -53,7 +53,9 @@ explains where things are and how to change them without breaking the deployment
   `comfy_modal/requirements-image.txt`, which Dependabot watches. A bump is deliberate: read the pack's changes first.
   The image installs ComfyUI without ComfyUI-Manager. Files from Civitai or Hugging Face go straight
   into the models volume from Modal's side: `tools/sync.sh civitai|hf` (and the console) call `tools/fetch.py`,
-  which runs `comfy_modal/fetch.py`; the token rides as a header on that one call. `--local` is the old way, through
+  which runs `comfy_modal/fetch.py`. The token never reaches Modal: `tools/fetch.py` sends it only to its own host
+  (`config.TOKEN_HOSTS`, https) and passes on the signed CDN link that host redirects to. Only `.safetensors` and
+  `.gguf` are fetched or uploaded unless `--allow-pickle` (`ALLOW_PICKLE=1` for sync.sh). `--local` is the old way, through
   the laptop. Keep the model layer before the
   node-pack layer in `image.py`, so a pack change never re-downloads models.
 - Tunables: `comfy_modal/config.py` only. Never hard-code a volume name, port or app name in a

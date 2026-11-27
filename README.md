@@ -268,7 +268,10 @@ GPU worker directly, so the ComfyUI GUI container stays asleep. Unlock it once w
   file of the version you get. Interrupted downloads retry and resume. The token is only ever
   sent to `civitai.com`; a link on any other host is refused until you name it in
   `CIVITAI_HOSTS` (in `.env`), because `/api/download/models/` in a URL is not proof of who is
-  serving it.
+  serving it. The download runs on Modal, but the token stays on this Mac: it only asks Civitai or
+  Hugging Face for the file's signed CDN link, and that link is what Modal gets. Only
+  `.safetensors` and `.gguf` files are accepted, since a pickle (`.ckpt`, `.pt`, `.pth`) can run
+  code when a node pack loads it; put `ALLOW_PICKLE=1` in front of the command for one you trust.
   `tools/sync.sh hf <owner/repo> <file>` and `tools/sync.sh lora <file>` cover Hugging Face and a
   file on disk. Each shows up in the dropdown on the next page load; put a LoraLoaderModelOnly
   node between the model and the sampler to use it. Add a folder as the last argument for other

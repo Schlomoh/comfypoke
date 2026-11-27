@@ -73,6 +73,12 @@ VOLUME_DATA = f"{APP_NAME}-data"
 VOLUME_IO = f"{APP_NAME}-io"
 
 HF_SECRET_NAME = "huggingface-secret"  # optional, only for gated repos
+# The hosts each download token may be sent to (tools/fetch.py, tools/sync.sh), their subdomains included; CIVITAI_HOSTS
+# in the environment or .env adds Civitai mirrors you trust.
+TOKEN_HOSTS = {"CIVITAI_TOKEN": ("civitai.com",), "HF_TOKEN": ("huggingface.co",)}
+# Model files a download or upload may be: weights that load without running code. A pickle (.ckpt, .pt, .pth, .bin) can
+# run code when a node pack loads it with torch.load; --allow-pickle (ALLOW_PICKLE=1 for tools/sync.sh) lets one through.
+SAFE_MODEL_TYPES = (".safetensors", ".gguf")
 ACCESS_KEY_FILE = ".access_key"  # repo root, git-ignored, read at deploy time only
 ACCESS_KEY_MIN_LENGTH = 16  # a deploy with a shorter key stops: an empty or truncated file would publish both apps
 

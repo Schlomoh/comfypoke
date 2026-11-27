@@ -47,8 +47,27 @@ sys.exit(0 if u.scheme == "https" and any(host == a or host.endswith("." + a) fo
 PY
 }
 
+# Weights that load without running code (config.SAFE_MODEL_TYPES); a pickle needs ALLOW_PICKLE=1 in front of the command.
+PICKLE=(); [[ "${ALLOW_PICKLE:-}" == "1" ]] && PICKLE=(--allow-pickle)
+safe_model() {  # <file name>
+  [[ "${ALLOW_PICKLE:-}" == "1" ]] && return 0
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in *.safetensors|*.gguf) return 0;; esac
+  echo "refusing $1: not .safetensors or .gguf, and a pickle can run code when it is loaded."
+  echo "if you trust it: ALLOW_PICKLE=1 tools/sync.sh ..."
+  exit 1
+}
+# A token as a header from a file curl reads, so it never shows in the process list (ps) or in a URL a CDN logs.
+# curl drops it on a redirect to another host.
+# The <(...) has to be on curl's own line: assigned to a variable first, its file is closed before curl reads it.
+bearer() { printf 'Authorization: Bearer %s\n' "$1"; }
+curl_with() {  # <token or ""> <curl arguments...>
+  local token=$1; shift
+  if [[ -n "$token" ]]; then curl "$@" -H @<(bearer "$token"); else curl "$@"; fi
+}
+
 upload_model() {  # <local file> <models subfolder>
   [[ -f "$1" ]] || { echo "not a file: $1"; exit 1; }
+  safe_model "$(basename "$1")"
   echo "uploading $(basename "$1") ($(du -h "$1" | cut -f1)) to $2 on $V_MODELS..."
   $MODAL volume put --force "$V_MODELS" "$1" "extra/$2/$(basename "$1")"
   echo "uploaded $(basename "$1") to $2; reload the GUI and it is in the dropdown"
@@ -97,18 +116,18 @@ case "$1" in
       exit 1
     fi
     if [[ "$4" != "--local" && "$3" != "--local" ]]; then
-      (cd "$REPO" && uv run tools/fetch.py "$URL" "${3:-loras}" --auth CIVITAI_TOKEN)
+      (cd "$REPO" && uv run tools/fetch.py "$URL" "${3:-loras}" --auth CIVITAI_TOKEN "${PICKLE[@]}")
       exit
     fi
-    [[ "$URL" == *"token="* ]] || URL+="$([[ "$URL" == *"?"* ]] && echo "&" || echo "?")token=$CIVITAI_TOKEN"
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     # Download to a fixed name so --retry can resume with -C - after a reset mid-transfer;
     # the real filename comes from the Content-Disposition header curl saves alongside it.
-    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
+    curl_with "$CIVITAI_TOKEN" -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
       -D "$STAGE/.headers" -o "$STAGE/.download" "$URL" ||
       { echo "download failed; re-running is safe"; exit 1; }
     NAME=$(sed -nE 's/.*[Ff]ilename="?([^";]+)"?.*/\1/p' "$STAGE/.headers" | tail -1 | tr -d '\r')
     [[ -n "$NAME" ]] || NAME="civitai-${URL##*/models/}"; NAME="${NAME%%\?*}"
+    safe_model "$NAME"
     mv "$STAGE/.download" "$STAGE/$NAME"
     upload_model "$STAGE/$NAME" "$([[ "$3" == "--local" ]] && echo loras || echo "${3:-loras}")"
     ;;
@@ -116,13 +135,13 @@ case "$1" in
     [[ -n "$3" ]] || { echo "usage: tools/sync.sh hf <owner/repo> <path/in/repo.safetensors> [folder] [--local]"; exit 1; }
     if [[ "$5" != "--local" && "$4" != "--local" ]]; then
       AUTH=(); [[ -n "$HF_TOKEN" ]] && AUTH=(--auth HF_TOKEN)
-      (cd "$REPO" && uv run tools/fetch.py "https://huggingface.co/$2/resolve/main/$3" "${4:-loras}" "${AUTH[@]}")
+      (cd "$REPO" && uv run tools/fetch.py "https://huggingface.co/$2/resolve/main/$3" "${4:-loras}" "${AUTH[@]}" "${PICKLE[@]}")
       exit
     fi
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
-    AUTH=(); [[ -n "$HF_TOKEN" ]] && AUTH=(-H "Authorization: Bearer $HF_TOKEN")
-    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
-      "${AUTH[@]}" -o "$STAGE/$(basename "$3")" "https://huggingface.co/$2/resolve/main/$3" ||
+    safe_model "$(basename "$3")"
+    curl_with "${HF_TOKEN:-}" -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
+      -o "$STAGE/$(basename "$3")" "https://huggingface.co/$2/resolve/main/$3" ||
       { echo "download failed; re-running is safe"; exit 1; }
     upload_model "$STAGE/$(basename "$3")" "$([[ "$4" == "--local" ]] && echo loras || echo "${4:-loras}")"
     ;;
