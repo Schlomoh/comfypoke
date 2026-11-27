@@ -29,7 +29,8 @@ def allowed_hosts(token_name: str, env: dict) -> set[str]:
 def trusted(url: str, hosts: set[str]) -> bool:
     u = urlparse(url)
     host = (u.hostname or "").lower()
-    return u.scheme == "https" and any(host == h or host.endswith("." + h) for h in hosts)
+    return (u.scheme == "https" and u.username is None and u.password is None
+            and any(host == h or host.endswith("." + h) for h in hosts))
 
 
 class _Stop(urllib.request.HTTPRedirectHandler):
@@ -43,16 +44,25 @@ def signed_url(url: str, token: str, hosts: set[str]) -> str:
     opener = urllib.request.build_opener(_Stop)
     for _ in range(10):
         if not trusted(url, hosts):
+            if urlparse(url).scheme != "https":
+                sys.exit(f"refusing a download link that is not https: {url.split('?')[0]}")
             return url
         request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "User-Agent": "comfypoke-fetch"})
         try:
             with opener.open(request, timeout=60) as r:
+                if r.headers.get_content_type() == "text/html":
+                    sys.exit(f"{urlparse(url).hostname} answered with a web page: the token was refused, or the file "
+                             "needs a login or a licence accepted on the site")
                 sys.exit(f"{urlparse(url).hostname} served the file itself (HTTP {r.status}) instead of a CDN link, "
                          "so it cannot be fetched on Modal without the token: add --local to the sync.sh command")
         except urllib.error.HTTPError as e:
-            if e.code not in (301, 302, 303, 307, 308) or not e.headers.get("Location"):
+            location = e.headers.get("Location")
+            e.close()
+            if e.code not in (301, 302, 303, 307, 308) or not location:
                 sys.exit(f"{urlparse(url).hostname} answered HTTP {e.code}: check the link and the token")
-            url = urljoin(url, e.headers["Location"])
+            url = urljoin(url, location)
+        except urllib.error.URLError as e:
+            sys.exit(f"could not reach {urlparse(url).hostname}: {e.reason}")
     sys.exit("too many redirects")
 
 

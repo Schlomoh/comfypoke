@@ -58,7 +58,12 @@ safe_model() {  # <file name>
 }
 # A token as a header from a file curl reads, so it never shows in the process list (ps) or in a URL a CDN logs.
 # curl drops it on a redirect to another host.
+# The <(...) has to be on curl's own line: assigned to a variable first, its file is closed before curl reads it.
 bearer() { printf 'Authorization: Bearer %s\n' "$1"; }
+curl_with() {  # <token or ""> <curl arguments...>
+  local token=$1; shift
+  if [[ -n "$token" ]]; then curl "$@" -H @<(bearer "$token"); else curl "$@"; fi
+}
 
 upload_model() {  # <local file> <models subfolder>
   [[ -f "$1" ]] || { echo "not a file: $1"; exit 1; }
@@ -117,11 +122,12 @@ case "$1" in
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     # Download to a fixed name so --retry can resume with -C - after a reset mid-transfer;
     # the real filename comes from the Content-Disposition header curl saves alongside it.
-    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - -H @<(bearer "$CIVITAI_TOKEN") \
+    curl_with "$CIVITAI_TOKEN" -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
       -D "$STAGE/.headers" -o "$STAGE/.download" "$URL" ||
       { echo "download failed; re-running is safe"; exit 1; }
     NAME=$(sed -nE 's/.*[Ff]ilename="?([^";]+)"?.*/\1/p' "$STAGE/.headers" | tail -1 | tr -d '\r')
     [[ -n "$NAME" ]] || NAME="civitai-${URL##*/models/}"; NAME="${NAME%%\?*}"
+    safe_model "$NAME"
     mv "$STAGE/.download" "$STAGE/$NAME"
     upload_model "$STAGE/$NAME" "$([[ "$3" == "--local" ]] && echo loras || echo "${3:-loras}")"
     ;;
@@ -134,9 +140,8 @@ case "$1" in
     fi
     STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
     safe_model "$(basename "$3")"
-    AUTH=(); [[ -n "$HF_TOKEN" ]] && AUTH=(-H @<(bearer "$HF_TOKEN"))
-    curl -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
-      "${AUTH[@]}" -o "$STAGE/$(basename "$3")" "https://huggingface.co/$2/resolve/main/$3" ||
+    curl_with "${HF_TOKEN:-}" -L --fail "${PROGRESS[@]}" --retry 5 --retry-delay 2 -C - \
+      -o "$STAGE/$(basename "$3")" "https://huggingface.co/$2/resolve/main/$3" ||
       { echo "download failed; re-running is safe"; exit 1; }
     upload_model "$STAGE/$(basename "$3")" "$([[ "$4" == "--local" ]] && echo loras || echo "${4:-loras}")"
     ;;
