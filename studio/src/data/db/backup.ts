@@ -8,6 +8,7 @@ import { db, STARTERS, type LoraNote } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
 import { fromLegacy, type LegacyPreset } from "@/domain/built-ins";
 import { isRecord, isText, LEGACY_ROW } from "@/domain/parse";
+import { MIN_PASSWORD } from "@/domain/password";
 import { GENDERS, type Gender } from "@/domain/presets/gender";
 import { NO_PRESETS, merge, type Presets, type Chunk, type Sub } from "@/domain/prompt-catalog";
 import { PRESET_ROWS, type PresetRow } from "@/domain/rows";
@@ -22,7 +23,12 @@ const savedOf = async (space: Space) => {
 
 const faceless = (s: Saved): Saved => ({ ...s, face: undefined });
 
+/** Throws for a protected workspace without a password of MIN_PASSWORD characters: its characters stay sealed. */
 export async function exportLibrary(space: Space, password = "") {
+  if ((await db.workspaces.get(space.id))?.lock && password.length < MIN_PASSWORD)
+    throw new Error(
+      `This workspace is protected: give the file a password of at least ${MIN_PASSWORD} characters.`,
+    );
   const data = {
     version: 3,
     saved: (await savedOf(space)).map(faceless), // face photos stay on the device they were added on
@@ -35,7 +41,7 @@ export async function exportLibrary(space: Space, password = "") {
 }
 
 /** A version 4 file's sealed part; its iterations are bounded, as a file from elsewhere could ask for any number. */
-function sealedIn(v: Record<string, unknown>): PasswordSealed | null {
+export function sealedIn(v: Record<string, unknown>): PasswordSealed | null {
   const { salt, iterations, iv, data } = v;
   if (!isText(salt) || !isText(iv) || !isText(data) || typeof iterations !== "number") return null;
   return iterations >= 100_000 && iterations <= 10_000_000 ? { salt, iterations, iv, data } : null;

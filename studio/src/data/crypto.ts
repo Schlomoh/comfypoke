@@ -84,9 +84,15 @@ export async function sealWithPassword(value: unknown, password: string): Promis
 
 /** Throws WrongPassword for the wrong password. */
 export async function openWithPassword(p: PasswordSealed, password: string): Promise<unknown> {
-  const key = await passwordKey(password, fromBase64(p.salt), p.iterations);
+  let salt, iv, data;
   try {
-    return await unsealJson(key, { iv: fromBase64(p.iv), data: fromBase64(p.data).buffer });
+    [salt, iv, data] = [fromBase64(p.salt), fromBase64(p.iv), fromBase64(p.data)];
+  } catch {
+    throw new Error("not a studio library file");
+  }
+  const key = await passwordKey(password, salt, p.iterations);
+  try {
+    return await unsealJson(key, { iv, data: data.buffer });
   } catch {
     throw new WrongPassword("Wrong password for this file.");
   }

@@ -142,5 +142,6 @@ def score_message(pid: str, data: dict) -> dict:
 def seal_frame(key: bytes, frame: bytes) -> bytes:
     """ComfyUI's binary websocket frame with its image sealed; the 8-byte header (event, format) stays readable for
     the studio, which tells previews from the PNG by it, and is the sealed image's associated data: the phone opens it
-    as what the studio said it was (data/images.ts), so a preview cannot be passed off as the final image."""
+    as what the studio said it was (data/images.ts), so a preview cannot be passed off as the final image. It binds no
+    job: the studio could still hand one job's image to another job of the same workspace and deploy."""
     return frame[:8] + seal(key, frame[8:], aad=frame[:8])

@@ -61,7 +61,14 @@ function createRunner(store: Store, space: Space) {
 
   const keep = async (id: string, params: Params, image: string, seconds: number) => {
     const blob = await openImage(space, image).catch(() => null);
-    if (!blob) return finish(id, "The image came back but did not open with this workspace's key.");
+    if (!blob) {
+      // Not finish(): that would delete the server's copy. A page from before a deploy cannot open what the new worker
+      // seals; after a reload the job is attached again and opened by the new code.
+      sources.delete(id);
+      return update(id, {
+        error: "The image came back but did not open. Reload the page: the studio may have been updated.",
+      });
+    }
     let then: (() => Promise<unknown>) | undefined;
     try {
       const meta = await pendingMeta(space, id);

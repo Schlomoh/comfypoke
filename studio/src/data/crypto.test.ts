@@ -31,6 +31,7 @@ const vectors = JSON.parse(
   spki: string;
   python_sealed: string;
   python_frame_png: string;
+  webcrypto_frame_preview: string;
 };
 const KID = "f0437f6ba51fad97"; // comfy_modal/seal.kid(vectors.spki)
 const fixedRaw = () => new Uint8Array(Array(32).keys()).buffer;
@@ -57,6 +58,14 @@ describe("transport crypto", () => {
     expect(text(await unsealWire(await fixedKey(), wire, frameHeader("png")))).toBe("png framed by python");
     await expect(unsealWire(await fixedKey(), wire, frameHeader("preview"))).rejects.toThrow();
     await expect(unsealWire(await fixedKey(), wire)).rejects.toThrow();
+  });
+
+  it("opens a preview frame as a preview only", async () => {
+    const wire = fromBase64(vectors.webcrypto_frame_preview);
+    expect(text(await unsealWire(await fixedKey(), wire, frameHeader("preview")))).toBe(
+      "preview framed by webcrypto",
+    );
+    await expect(unsealWire(await fixedKey(), wire, frameHeader("png"))).rejects.toThrow();
   });
 
   it("computes a key's id as the studio does", async () => {
@@ -170,5 +179,21 @@ describe("password-sealed files", () => {
     expect(await openWithPassword(sealed, "long enough pw")).toEqual(library);
     await expect(openWithPassword(sealed, "wrong")).rejects.toBeInstanceOf(WrongPassword);
     expect((await sealWithPassword(library, "long enough pw")).salt).not.toBe(sealed.salt);
+  });
+});
+
+describe("backup files", () => {
+  it("take a version 4 file's sealed part only with sane iterations", async () => {
+    const { sealedIn } = await import("@/data/db/backup");
+    const ok = { salt: "AA==", iterations: 600_000, iv: "AA==", data: "AA==" };
+    expect(sealedIn(ok)).toEqual(ok);
+    for (const iterations of [99_999, 10_000_001, "600000", Number.NaN])
+      expect(sealedIn({ ...ok, iterations })).toBeNull();
+    expect(sealedIn({ ...ok, salt: 5 })).toBeNull();
+  });
+
+  it("call a damaged file damaged, not a wrong password", async () => {
+    const bad = { salt: "not base64!", iterations: 600_000, iv: "AA==", data: "AA==" };
+    await expect(openWithPassword(bad, "whatever pw")).rejects.toThrow("not a studio library file");
   });
 });

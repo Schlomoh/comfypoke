@@ -6,7 +6,7 @@ import { exportLibrary, importLibrary, needsPassword } from "@/data/db/backup";
 import { useSpace } from "@/data/db/space";
 import { useWorkspace } from "@/data/db/workspaces";
 import { errorText } from "@/domain/format";
-import { MIN_PASSWORD } from "@/domain/password";
+import { MIN_PASSWORD, passwordOk } from "@/domain/password";
 import { download } from "@/features/library/files";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/field";
@@ -15,11 +15,13 @@ import { Note } from "@/ui/text";
 
 export function BackupSection({ className }: { className?: string }) {
   const space = useSpace();
-  const locked = !!useWorkspace(space.id)?.lock;
+  const w = useWorkspace(space.id); // undefined while it loads: Export waits, as a protected one needs a password
+  const locked = !!w?.lock;
   const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState(""); // a typo in an export password would lock the file for good
   const [note, setNote] = useState("");
   const file = useRef<HTMLInputElement>(null);
-  const short = password.length < MIN_PASSWORD;
+  const exportable = !!w && (locked ? !!password : true) && passwordOk(password, repeat);
 
   const load = async (f: File) => {
     try {
@@ -41,12 +43,24 @@ export function BackupSection({ className }: { className?: string }) {
           onChange={(e) => setPassword(e.target.value)}
           placeholder={locked ? "file password (required)" : "file password (optional)"}
         />
+        {password && (
+          <Input
+            type="password"
+            autoComplete="off"
+            value={repeat}
+            onChange={(e) => setRepeat(e.target.value)}
+            placeholder="repeat it to export"
+          />
+        )}
         <div className="flex gap-2">
           <Button
             className="flex-1"
-            disabled={(locked || !!password) && short}
+            disabled={!exportable}
             onClick={() =>
-              void exportLibrary(space, password).then((b) => download(b, "studio-library.json"))
+              void exportLibrary(space, password).then(
+                (b) => download(b, "studio-library.json"),
+                (err: unknown) => setNote(errorText(err)),
+              )
             }
           >
             Export library
