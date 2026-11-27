@@ -64,13 +64,16 @@ class Worker:
         # no model to download. Not TAESD: for Krea 2 that path wants lighttaew2_1 in vae_approx,
         # and with that file present it writes into the latent it is only supposed to read, so the
         # picture itself comes out wrong (Comfy-Org/ComfyUI#13366, fix open in #13383, not in 0.37).
+        # The private key the studio's image keys arrive wrapped for. Taken out of the environment before ComfyUI starts,
+        # so ComfyUI and the node packs do not inherit it; comfy.launch leaves it out as well.
+        private = os.environ.pop(config.TRANSPORT_PRIVATE_ENV, "")
+        self.transport = seal.load_private(private) if private else None
         comfy.launch(config.WORKER_PORT, extra_args=("--preview-method", "auto"))
         self.log = open(comfy.log_file(config.WORKER_PORT))
         self.log.seek(0, 2)
         self.log_owner = None  # prompt_id of the one run that tails the log (overlapping runs would duplicate lines)
         self.dequeued = set()  # prompt_ids that interrupt() removed from ComfyUI's pending queue
-        self.transport = None  # the private key the studio's image keys arrive wrapped for, loaded by the first that does
-        self.output_nodes = None  # ComfyUI's output node classes, read by the first keyed run
+        self.sealed_active = 0  # keyed runs in progress: while any is, ComfyUI's log goes to no run (log_lines)
         self._beat("warm")
 
     # --- heartbeat for the GUI's GPU badge (gpu_relay reads the Dict) ---------------------------------------
@@ -133,6 +136,9 @@ class Worker:
             threading.Timer(1, os._exit, (0,)).start()
 
     def log_lines(self, pid):
+        if self.sealed_active:  # the log does not say whose line it is: one about a keyed run must not reach a GUI run
+            self.log.read()
+            return []
         if self.log_owner is None:
             self.log_owner = pid
         if self.log_owner != pid:
@@ -158,13 +164,15 @@ class Worker:
         key = payload.pop("key", None)
         if key is not None:
             try:
-                self.transport = self.transport or seal.load_private(os.environ[config.TRANSPORT_PRIVATE_ENV])
+                if self.transport is None:
+                    raise seal.SealError("this worker has no transport key")
                 key = seal.unwrap(self.transport, key)
                 payload["prompt"] = seal.open_prompt(key, payload["prompt"])
             except seal.SealError as e:
                 yield _error(pid, str(e), "SealError")
                 return
         self.busy += 1
+        self.sealed_active += key is not None
         self._wake.set()
         terminal_seen = False
         closed = "no message"
@@ -182,8 +190,8 @@ class Worker:
             except TimeoutError as e:
                 raise WorkerUnavailable(str(e)) from e
             async with aiohttp.ClientSession() as s:
-                if key and (stray := seal.stray_outputs(payload["prompt"], await self._output_nodes(s))):
-                    yield _error(pid, f"a sealed run may only output through {' or '.join(seal.OUTPUT_NODES)}, not {', '.join(stray)}", "SealError")
+                if key and (stray := seal.unlisted(payload["prompt"])):
+                    yield _error(pid, f"a sealed run may only use the studio's node classes, not {', '.join(stray)}", "SealError")
                     return
                 if key and (why := seal.score_shape(payload["prompt"])):
                     yield _error(pid, why, "SealError")
@@ -195,10 +203,11 @@ class Worker:
                     async with s.post(f"{BASE}/prompt", json=payload) as r:
                         res = await r.json()
                         if r.status != 200:
-                            errors = res.get("node_errors", {})
-                            if key:  # their received values can be the opened image: the messages only
-                                errors = {n: [f"{x.get('message')}: {x.get('details')}" for x in e.get("errors", [])] for n, e in errors.items()}
-                            yield _error(pid, json.dumps(res.get("error", res)) + "\n" + json.dumps(errors), "ValidationError")
+                            errors, error = res.get("node_errors", {}), res.get("error", res)
+                            if key:  # messages and details can quote received values, which can be the opened image
+                                errors = {n: [x.get("type") for x in e.get("errors", [])] for n, e in errors.items()}
+                                error = error.get("type") if isinstance(error, dict) else "invalid prompt"
+                            yield _error(pid, json.dumps(error) + "\n" + json.dumps(errors), "ValidationError")
                             return
                     async for m in ws:
                         if m.type == aiohttp.WSMsgType.BINARY:
@@ -225,8 +234,9 @@ class Worker:
                             continue
                         if msg["type"] == "status":
                             d.pop("sid", None)  # the browser would adopt the worker's socket id as its own
-                        if key and msg["type"] == "execution_error":
-                            d.update(current_inputs={}, current_outputs={})  # a failing image node's input is the opened image
+                        if key and msg["type"] == "execution_error":  # a failing node's inputs, or its error text, can be the opened image
+                            d.update(current_inputs={}, current_outputs={}, traceback=[],
+                                     exception_message=f"{d.get('node_type') or 'a node'} failed: {d.get('exception_type') or 'error'}")
                         if msg["type"] == "executed" and io:
                             await volumes.io.commit.aio()  # make the new files visible to the UI container
                         yield ("json", msg)
@@ -236,29 +246,26 @@ class Worker:
                 if io:
                     await volumes.io.commit.aio()
                 hist = {}
-                if terminal_seen:
+                if terminal_seen and not key:
                     async with s.get(f"{BASE}/history/{pid}") as r:
                         hist = await r.json()
+                if key:  # ComfyUI's history keeps the prompt it ran: for a keyed run, the opened images
+                    async with s.post(f"{BASE}/history", json={"delete": [pid]}):
+                        pass
             lines = self.log_lines(pid)
             if lines and not key:
                 yield ("log", lines)
             if not terminal_seen:
                 yield _error(pid, f"worker websocket closed before the prompt finished ({closed})", "GPUWorkerError")
-            elif pid in hist and not key:
+            elif pid in hist:
                 yield ("history", hist[pid])
         finally:
             if self.log_owner == pid:
                 self.log_owner = None
             self.busy -= 1
+            self.sealed_active -= key is not None
             self.last_input = time.time()
             self._wake.set()
-
-    async def _output_nodes(self, s) -> set[str]:
-        """ComfyUI's output node classes, as its /object_info declares them (read once per container)."""
-        if self.output_nodes is None:
-            async with s.get(f"{BASE}/object_info") as r:
-                self.output_nodes = {c for c, d in (await r.json()).items() if d.get("output_node")}
-        return self.output_nodes
 
     @modal.method()
     async def interrupt(self, prompt_id: str | None = None):

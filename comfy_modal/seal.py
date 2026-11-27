@@ -27,7 +27,19 @@ IMAGE_NODE = "StudioImageBase64"  # comfy_nodes/studio_image: the only node that
 OUTPUT_NODE = "SaveImageWebsocket"  # the only image output a sealed run may have: its frames are sealed on the way out
 SCORE_NODE = "StudioFaceScore"  # comfy_nodes/studio_face: outputs one number, as a message rebuilt by score_message
 SCORE_MESSAGE = "studio_face"
-OUTPUT_NODES = (OUTPUT_NODE, SCORE_NODE)
+# Every node class comfy_modal/graphs.py can emit, and no other: whoever sends a keyed prompt chooses the graph, and any
+# node it runs sees the opened images. A new node in a studio graph is added here on purpose (tests/test_seal.py).
+SEALED_CLASSES = frozenset({
+    "CLIPLoader", "CLIPTextEncode", "CheckpointLoaderSimple", "ConditioningZeroOut", "EmptyLatentImage",
+    "EmptySD3LatentImage", "GrowMask", "ImageCompositeMasked", "ImageScaleToTotalPixels", "ImageToMask",
+    "InpaintCropImproved", "InpaintStitchImproved", "KSampler", "Krea2EditGroundedEncode", "Krea2EditModelPatch",
+    "LoraLoaderModelOnly", "MaskComposite", "MaskToImage", "ModelPatchLoader", "ModelSamplingAuraFlow", "RTDETR_detect",
+    "SAM3DBody_Loader", "SAM3DBody_Predict", "SAM3DBody_Render", "SAM3_Detect", "SeedVR2Conditioning",
+    "SeedVR2PostProcessing", "SeedVR2Preprocess", "SetLatentNoiseMask", "StudioFaceLabels", "StudioFaceMask",
+    "StudioHeadMask", "StudioMaskStrip", "StudioPersonBox", "UNETLoader", "UnetLoaderGGUF", "VAEDecode",
+    "VAEDecodeTiled", "VAEEncode", "VAEEncodeTiled", "VAELoader", "ZImageFunControlnet",
+    IMAGE_NODE, OUTPUT_NODE, SCORE_NODE,
+})
 
 
 class SealError(ValueError):
@@ -112,11 +124,10 @@ def open_prompt(key: bytes, prompt: dict) -> dict:
             if n.get("class_type") == IMAGE_NODE else n for nid, n in prompt.items()}
 
 
-def stray_outputs(prompt: dict, output_nodes: set[str]) -> list[str]:
-    """The prompt's output node classes, by ComfyUI's definitions (`output_nodes`), other than OUTPUT_NODES. Whoever
-    sends the prompt chooses the graph: a SaveImage or a preview node would put the opened image on the io volume or
-    in a message, so a sealed run with any of these is refused (Worker.run)."""
-    return sorted({n.get("class_type") for n in prompt.values()} & (output_nodes - set(OUTPUT_NODES)))
+def unlisted(prompt: dict) -> list[str]:
+    """The prompt's node classes that no studio graph uses (SEALED_CLASSES). A keyed run with any is refused
+    (Worker.run): a node outside the studio's graphs could write an opened image to a file, a cache or the network."""
+    return sorted({str(n.get("class_type")) for n in prompt.values()} - SEALED_CLASSES)
 
 
 def score_shape(prompt: dict) -> str | None:
