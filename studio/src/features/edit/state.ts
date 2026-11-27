@@ -29,8 +29,6 @@ export const toolAtom = atom<Tool>("brush");
 export type Tap = { at: At; not: boolean }; // not: a "not this" point, from a hold or Alt
 export type Taps = { op: string; points: Tap[] };
 export const tapsAtom = atom<Readonly<Record<string, Taps>>>({}); // by mask key
-/** The image whose fitted body the stage shows instead of it, to check what dressing will hold; null for none. */
-export const showBodyAtom = atom<string | null>(null);
 /** While held (the "before" button, or C), the image held on: the stage shows the image it was made from, under its
  * mask. Only that image: one left behind while held never opens on its source. */
 export const peekAtom = atom<string | null>(null);
@@ -43,10 +41,9 @@ export type EditChoice = {
   portrait: boolean; // the person's Who, Look and Wearing go into the prompt (compose.ts portrait)
   hold: Hold;
   dresser: PassChoice;
-  finish: PassChoice; // or "off": no finish
+  finish: PassChoice; // or "off": no finish; over new clothes, or over a repaint
   strength: number;
   repaint: string; // what goes inside the mask
-  repaintWith: PassChoice;
   face: string; // a face photo's id, "" for none
   faceWith: PassChoice; // People: what faces are redrawn with, each with their own words and LoRAs
   faceStrength: number;
@@ -54,7 +51,7 @@ export type EditChoice = {
 };
 
 export const editAtom = atom<EditChoice>({
-  mode: "people",
+  mode: "repaint", // works with only a mask and words; People finds faces first
   person: null,
   portrait: true,
   hold: "tight",
@@ -62,7 +59,6 @@ export const editAtom = atom<EditChoice>({
   finish: "own",
   strength: 0.35,
   repaint: "",
-  repaintWith: "own",
   face: "",
   faceWith: "own",
   faceStrength: 0.35,

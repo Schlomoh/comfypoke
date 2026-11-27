@@ -1,6 +1,7 @@
 // The Edit tab's action, for the bar at the bottom in place of Generate: People (features/edit/people) or a repaint of
 // what the mask covers, with the person's Who, Look and Wearing from the Prompt tab unless that is switched off. Every
-// pass runs with its picked setup; the mask is sent exactly as it is shown.
+// pass runs with its picked setup; the mask is sent exactly as it is shown. A repaint is drawn by a Z-Image look and
+// finished by another, as a dressing is.
 import { useAtomValue, useSetAtom } from "jotai";
 import { useState } from "react";
 
@@ -13,6 +14,7 @@ import { portrait } from "@/domain/compose";
 import { errorText, median } from "@/domain/format";
 import { legacyUnet } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
+import { toPass } from "@/domain/setup";
 import { useFaceChoices } from "@/features/edit/face-choices";
 import { hasArea, maskPng } from "@/features/edit/mask";
 import { usePeopleEdit } from "@/features/edit/people/use-people-edit";
@@ -47,29 +49,30 @@ function useRepaint() {
   const kept = c.portrait && person ? portrait(person) : "";
   const words = c.repaint.trim().replace(/[\s.,;]+$/, "");
   const text = [words && `${words}.`, kept].filter(Boolean).join(" ");
-  const repaintWith = choose(c.repaintWith).picked;
+  const dresser = choose(c.dresser, "zimage").picked;
+  const finish = c.finish === "off" ? null : choose(c.finish).picked;
   const face =
-    repaintWith && FACE_FAMILIES.includes(repaintWith.pass.family)
-      ? faces.find((f) => f.id === c.face)
-      : undefined;
+    finish && FACE_FAMILIES.includes(finish.pass.family) ? faces.find((f) => f.id === c.face) : undefined;
 
   const blocked = (() => {
     if (job) return "wait for this one to finish, or pick an image";
     if (!render) return "no image to edit yet";
     if (!hasArea(ops)) return "find or paint what to replace";
     if (!text) return "say what goes there";
-    if (!repaintWith) return "pick a model to repaint with";
+    if (!dresser) return "save a Z-Image look to draw with";
     return null;
   })();
 
   const send = async () => {
-    if (blocked || !render || !repaintWith) return;
+    if (blocked || !render || !dresser) return;
     const found = ops.flatMap((o) => (o.kind === "found" ? [o.text] : []));
     const target = [...found, ...(ops.some((o) => o.kind === "stroke") ? ["painted"] : [])].join(", ");
     const mask = await maskPng(ops, render.width, render.height);
     const photo = face ? await loadFace(space, face.face) : undefined;
-    const { pass } = repaintWith;
-    const record = { target, prompt: text, setup: repaintWith.name, ...(face ? { face: face.name } : {}) };
+    const last = finish ?? dresser; // the look that drew the last pixels, as the image records it
+    const record = { target, prompt: text, setup: last.name, ...(face ? { face: face.name } : {}) };
+    const own = (unet: string) =>
+      unet === (render.unet ?? legacyUnet(render.model)) ? (render.negative ?? "") : ""; // another model's: not its negative
     for (let take = 0; take < c.takes; take++)
       await edit(render, record, async (t, image) =>
         api.inpaint(t.wire, {
@@ -77,8 +80,10 @@ function useRepaint() {
           mask: await imageRef(t, mask),
           target,
           prompt: text,
-          ...pass,
-          negative: pass.unet === (render.unet ?? legacyUnet(render.model)) ? (render.negative ?? "") : "", // another model's: not its negative
+          dresser: toPass(dresser.pass),
+          finish: finish
+            ? { ...toPass(finish.pass), negative: own(finish.pass.unet), denoise: c.strength }
+            : null,
           seed: null, // a new one each take
           reference: photo && (await imageRef(t, photo)),
           stop_after: recipe.stopAfter,
@@ -91,7 +96,7 @@ function useRepaint() {
     blocked,
     count: c.takes,
     dressing: false,
-    label: `repaint${c.takes > 1 ? ` × ${c.takes}` : ""} · ${repaintWith?.name ?? "?"}`,
+    label: `repaint${c.takes > 1 ? ` × ${c.takes}` : ""} · ${(finish ?? dresser)?.name ?? "?"}`,
     button: `Repaint${c.takes > 1 ? ` ${c.takes}` : ""}`,
   };
 }

@@ -115,7 +115,8 @@ def _optional_people() -> dict:
 
 
 class StudioFaceMask:
-    """A face's box, grown by `grow` of its size on each side, as a mask; empty when there is none. With `box`
+    """A face's box, grown by `grow` of its size on each side, as a mask and as a BOUNDING_BOX (for SAM 3.1 to find the
+    head in it); empty when there is none. With `box`
     ("x0,y0,x1,y1" in pixels) that box as it is: a face the phone picked. With `slot` -1 the largest face. Otherwise
     the face of person `slot` of `people` (a JSON list of where each stands: "left", "center", "right" or ""), each
     person's face photo as `ref_<n>` when they have one (assign.py)."""
@@ -128,20 +129,24 @@ class StudioFaceMask:
                          **_optional_people()},
         }
 
-    RETURN_TYPES = ("MASK",)
+    RETURN_TYPES = ("MASK", "BOUNDING_BOX")
     FUNCTION = "find"
     CATEGORY = "mask"
 
     def find(self, image, grow, slot=-1, box="", people="", **refs):
         h, w = image.shape[1], image.shape[2]
         if box:
-            return (_box(h, w, *(float(v) for v in box.split(","))),)
-        if slot < 0:
+            at = tuple(float(v) for v in box.split(","))
+        elif slot < 0:
             face = _largest(image)
+            at = None if face is None else _grown(face, grow)
         else:
             faces, pick = _pick(image, json.loads(people or "[]"), refs)
-            face = None if slot >= len(pick) or pick[slot] is None else faces[pick[slot]]
-        return (_box(h, w, *_grown(face, grow)) if face is not None else torch.zeros((1, h, w), dtype=torch.float32),)
+            at = None if slot >= len(pick) or pick[slot] is None else _grown(faces[pick[slot]], grow)
+        if at is None:
+            return torch.zeros((1, h, w), dtype=torch.float32), [[]]
+        x0, y0, x1, y1 = max(0.0, at[0]), max(0.0, at[1]), min(float(w), at[2]), min(float(h), at[3])
+        return _box(h, w, x0, y0, x1, y1), [[{"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0, "score": 1.0}]]
 
 
 class StudioFaceLabels:
@@ -204,6 +209,28 @@ class StudioPersonBox:
         return ([[{"x": left, "y": max(0.0, y0), "width": right - left, "height": h - max(0.0, y0), "score": 0.0}]],)
 
 
+class StudioHeadMask:
+    """`face` (a face's box) and the parts of `found` (SAM's mask around it) that touch it: SAM given a box marks what
+    is in it, and now and then a speck on someone else beside it, which the head swap would paint over."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"found": ("MASK",), "face": ("MASK",)}}
+
+    RETURN_TYPES = ("MASK",)
+    FUNCTION = "keep"
+    CATEGORY = "mask"
+
+    def keep(self, found, face):
+        import cv2
+
+        seed = face[0].cpu().numpy() > 0.5
+        n, parts = cv2.connectedComponents((found[0].cpu().numpy() > 0.5).astype(np.uint8))
+        touching = set(np.unique(parts[seed])) - {0}
+        kept = np.isin(parts, list(touching)) | seed
+        return (torch.from_numpy(kept.astype(np.float32))[None],)
+
+
 class StudioMaskStrip:
     """Up to four masks of one picture side by side as one image, for the phone to cut apart again: a job sends one image
     back, and People's areas are one per person."""
@@ -222,4 +249,4 @@ class StudioMaskStrip:
 
 
 NODE_CLASS_MAPPINGS = {"StudioFaceScore": StudioFaceScore, "StudioFaceMask": StudioFaceMask, "StudioFaceLabels": StudioFaceLabels,
-                       "StudioPersonBox": StudioPersonBox, "StudioMaskStrip": StudioMaskStrip}
+                       "StudioPersonBox": StudioPersonBox, "StudioMaskStrip": StudioMaskStrip, "StudioHeadMask": StudioHeadMask}

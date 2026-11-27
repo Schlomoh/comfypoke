@@ -1,23 +1,27 @@
 // People in the Edit tab: one card per face found on the image, each saying who it is (guessed, a tap to change),
-// whether they get an outfit from their Wearing row and over what, and whether their face is redrawn. The faces are
-// found by themselves on an image the stage stays on for a moment, but only while the GPU is up: passing images by, or
-// opening the Edit tab with the GPU off, never starts it. Then "find faces" does.
+// whether they get an outfit from their Wearing row and over what, and whether their face is redrawn. A dressed person
+// has two steps of their own, each run only when asked for and seen before it is used: their area (found by their part,
+// then edited on the stage; required) and their body (fitted, held to; without one they are dressed without a body).
+// The faces are found by themselves on an image the stage stays on for a moment, but only while the GPU is up: passing
+// images by, or opening the Edit tab with the GPU off, never starts it. Then "find faces" does.
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { useGpu } from "@/data/queries";
 import { outfitPieces } from "@/domain/outfits";
 import type { Pick } from "@/domain/people";
 import type { Render } from "@/domain/render";
+import { hasArea } from "@/features/edit/mask";
 import {
-  askedAtom,
+  bodiesAtom,
   colorOf,
   peopleAtom,
   selectedAtom,
   startPick,
   type PersonRow,
 } from "@/features/edit/people/state";
-import { areasLook, isArea, useAreas, wanted } from "@/features/edit/people/use-areas";
+import { areaLook, isArea, useArea } from "@/features/edit/people/use-areas";
+import { bodyLook, useBody } from "@/features/edit/people/use-body";
 import { useFaces, useFinding } from "@/features/edit/people/use-faces";
 import { Wearing } from "@/features/edit/people/wearing";
 import { maskKey, masksAtom } from "@/features/edit/state";
@@ -33,6 +37,79 @@ import { Pressable } from "@/ui/pressable";
 
 const tried = new Set<string>(); // images whose faces were looked for by themselves once: a failure is not retried in a loop
 const SETTLE_MS = 1000; // how long the stage stays on an image before its faces are looked for: a swipe past sends nothing
+
+/** One of a dressed person's steps: what it holds now, and the button that runs it. */
+function Step({
+  label,
+  said,
+  run,
+  busy,
+  more,
+}: {
+  label: string;
+  said: string;
+  run: [string, () => void];
+  busy: string | null;
+  more?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-8 items-center gap-2 text-[13px]">
+      <span className="w-10 shrink-0 text-faint">{label}</span>
+      <span className="min-w-0 flex-1 truncate" aria-live="polite">
+        {busy ? `${run[0].replace(/ again$/, "")}… ${busy}` : said}
+      </span>
+      {more}
+      <Button variant="link" size="inline" disabled={!!busy} onClick={run[1]}>
+        {run[0]}
+      </Button>
+    </div>
+  );
+}
+
+/** A dressed person's area and body: each found or fitted when asked for, shown on the stage, used as shown. */
+function Steps({ render, index }: { render: Render; index: number }) {
+  const key = maskKey(render.id, index);
+  const ops = useAtomValue(masksAtom)[key] ?? [];
+  const [bodies, setBodies] = useAtom(bodiesAtom);
+  const setSelected = useSetAtom(selectedAtom);
+  const findArea = useArea(render, index);
+  const fitBody = useBody(render, index);
+  const finding = useStage(areaLook(key));
+  const fitting = useStage(bodyLook(key));
+  const select = () => setSelected({ id: render.id, index }); // what is found is theirs to see and edit next
+  let area = "none yet: find it, or paint it on the stage";
+  if (hasArea(ops)) area = ops.some(isArea) ? "found, editable on the stage" : "painted";
+  const body = !!bodies[key];
+  return (
+    <div className="flex flex-col">
+      <Step
+        label="area"
+        said={area}
+        busy={finding}
+        run={[ops.some(isArea) ? "find again" : "find area", () => (select(), void findArea())]}
+      />
+      <Step
+        label="body"
+        said={body ? "fitted: dressing holds to it" : "none: dressed without a body"}
+        busy={fitting}
+        run={[body ? "fit again" : "fit body", () => (select(), void fitBody())]}
+        more={
+          body && (
+            <Button
+              variant="link"
+              size="inline"
+              onClick={() =>
+                setBodies((all) => Object.fromEntries(Object.entries(all).filter(([k]) => k !== key)))
+              }
+            >
+              remove
+            </Button>
+          )
+        }
+      />
+    </div>
+  );
+}
 
 function Card({ render, index, row }: { render: Render; index: number; row: PersonRow }) {
   const cast = useAtomValue(recipeAtom).cast;
@@ -51,7 +128,7 @@ function Card({ render, index, row }: { render: Render; index: number; row: Pers
     }));
   const outfits = person ? outfitPieces(person).length : 0;
   const key = maskKey(render.id, index);
-  /** Another part: their area is found again for it, their own strokes stay. */
+  /** Another part: their area as found goes, to be found again for it; their own strokes stay. */
   const setPart = (part: string) => {
     set({ part });
     setMasks((m) => ({ ...m, [key]: (m[key] ?? []).filter((o) => !isArea(o)) }));
@@ -75,7 +152,7 @@ function Card({ render, index, row }: { render: Render; index: number; row: Pers
           <Chip
             key={p.id}
             tone={p.id === pick.who ? "picked" : "quiet"}
-            onClick={() => set(startPick(p, row.found))}
+            onClick={() => set({ ...startPick(p), face: pick.face, part: pick.part })} // their area stays theirs
           >
             {p.name || "unnamed"}
           </Chip>
@@ -107,6 +184,7 @@ function Card({ render, index, row }: { render: Render; index: number; row: Pers
               </Select>
             )}
           </div>
+          {pick.outfit && <Steps render={render} index={index} />}
           {pick.outfit && <Wearing person={person} />}
           {row.found && (
             <Checkbox
@@ -139,23 +217,6 @@ export function PeopleList({ render }: { render: Render }) {
     }, SETTLE_MS);
     return () => clearTimeout(t);
   }, [rows, warm, render.id]);
-  // a dressed person selected without their area: everyone dressed gets theirs found, to see and edit
-  const areas = useAreas(render);
-  const areasNow = useRef(areas);
-  useEffect(() => {
-    areasNow.current = areas;
-  });
-  const selected = useAtomValue(selectedAtom);
-  const asked = useAtomValue(askedAtom);
-  const running = !!useStage(areasLook(render.id));
-  const pick = selected?.id === render.id ? rows?.[selected.index]?.pick : undefined;
-  const dressedOn = !!pick?.who && pick.outfit;
-  const pending = wanted(rows ?? [], render.id, asked)
-    .map(({ key, row }) => `${key}|${row.pick.part}`)
-    .join(",");
-  useEffect(() => {
-    if (dressedOn && pending && !running) void areasNow.current();
-  }, [dressedOn, pending, running]);
   const faces = rows?.filter((r) => r.found).length ?? 0;
   let said = "";
   if (finding) said = `finding faces · ${finding}`;

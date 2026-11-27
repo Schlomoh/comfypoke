@@ -18,7 +18,7 @@ export function Wearing({ person }: { person: Person }) {
     <>
       <Row
         phrases={person.wear}
-        label={`What ${person.name || "they"} wear`}
+        label={person.name ? `What ${person.name} wears` : "What they wear"}
         hint="clothes"
         onOpen={(shown) => {
           setOpen({ kind: "row", key: person.id, row: "wear", target: null });

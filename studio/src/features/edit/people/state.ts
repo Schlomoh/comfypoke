@@ -21,17 +21,17 @@ export const colorOf = (index: number) => COLORS[index % COLORS.length];
 export const DEFAULT_PART = "all clothes";
 /** A person's area as found for them (use-areas.ts): the first step of their mask, replaced when found again. */
 export const AREA_STEP = "area";
-/** The areas asked for, as "<mask key>|<part>": each person's is found once a part, so taking it out of their mask
- * leaves it out, and nothing found is not asked again in a loop. Finding the faces again forgets an image's. */
-export const askedAtom = atom<ReadonlySet<string>>(new Set<string>());
+/** Each person's fitted body (use-body.ts) as depth, a base64 PNG the image's size, by mask key: shown under the masks
+ * and sent with a dressing to hold to. Finding the faces again forgets an image's. */
+export const bodiesAtom = atom<Readonly<Record<string, string>>>({});
 
-/** What a found face starts with: the person it was taken for, dressed when their Wearing row has something, and their
- * face redrawn when there is a face to redraw. */
-export function startPick(person: Person | undefined, found: Found | null): Pick {
+/** What a found face starts with: the person it was taken for, dressed when their Wearing row has something. Redrawing
+ * the face is a choice made per person. */
+export function startPick(person: Person | undefined): Pick {
   return {
     who: person?.id ?? null,
     outfit: !!person && outfitPieces(person).length > 0,
     part: DEFAULT_PART,
-    face: !!person && !!found,
+    face: false,
   };
 }

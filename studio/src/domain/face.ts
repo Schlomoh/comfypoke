@@ -61,5 +61,14 @@ export function facePerson(
   };
 }
 
+/** Whose head the face photo goes on, in a picture of several: their place among everyone's sides, as the face pass
+ * tells people apart (comfy_nodes/studio_face/assign.py). Null for one person, or more than it tells apart. */
+export function referenceAt(r: Recipe) {
+  const people = inPicture(r);
+  const slot = people.findIndex((p) => p.face);
+  if (people.length < 2 || people.length > FACE_PEOPLE || slot < 0) return null;
+  return { slot, sides: people.map(sideOf) };
+}
+
 /** Where a person stands, as the face finder takes it: across is the middle. */
 export const sideOf = (p: Person) => (p.side.length > 1 ? "center" : (p.side[0] ?? ""));

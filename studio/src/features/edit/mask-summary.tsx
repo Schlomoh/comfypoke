@@ -1,13 +1,13 @@
 // The mask so far, as its steps: what was found or tapped, painted, erased, inverted or cleared, each one taken out
-// with its ×. Strokes in a row are one step here. An image without a mask can take its source's. Below them, what is still being found and the body's state.
+// with its ×. Strokes in a row are one step here. An image without a mask can take its source's. Below them, what is still
+// being found.
 import { useAtom, useAtomValue } from "jotai";
 
 import { status } from "@/domain/job";
 import type { Render } from "@/domain/render";
 import type { Op } from "@/features/edit/mask";
-import { masksAtom, showBodyAtom, tapsAtom } from "@/features/edit/state";
+import { masksAtom, tapsAtom } from "@/features/edit/state";
 import { useFinding } from "@/features/edit/use-find";
-import { usePreview } from "@/state/preview";
 import { rendersAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { ChipRow, Tag } from "@/ui/chip";
@@ -45,12 +45,9 @@ export function MaskSummary({
   title: string;
 }) {
   const [masks, setMasks] = useAtom(masksAtom);
-  const [bodyOf] = useAtom(showBodyAtom);
   const [taps, setTaps] = useAtom(tapsAtom);
-  const body = usePreview(`body:${render.id}`);
   const finding = useFinding(key);
   const groups = grouped(masks[key] ?? []);
-  const showBody = bodyOf === render.id;
   // steps are fractions of the image, so the source's mask fits any image of its shape: an upscale, an edit. Only the
   // image's own: people are numbered by the faces found on each image, which need not agree.
   const source = (useAtomValue(rendersAtom) ?? []).find((r) => r.id === render.source);
@@ -102,11 +99,6 @@ export function MaskSummary({
             </span>
           ))}
         </ChipRow>
-      )}
-      {showBody && (body.stage || body.error) && (
-        <Note tone={body.error ? "bad" : "muted"} mono>
-          {body.error ?? `body: ${stage(body.stage ?? "")}`}
-        </Note>
       )}
     </Section>
   );

@@ -1,6 +1,6 @@
 // The top of the Edit panel: the image on the stage in its lineage. The chain back to the original, where a tap edits
-// that one instead; then what is being made from this image and what was, newest first, where a tap opens the
-// viewer to compare while the stage stays here.
+// that one instead; then what is being made from this image and what was, newest first. A tap on an image edits it; a
+// job still on its way opens the viewer to watch it.
 import { useAtomValue, useSetAtom } from "jotai";
 
 import { progress, running, type Job } from "@/domain/job";
@@ -40,7 +40,7 @@ export function EditLineage({ render }: { render: Render }) {
   return (
     <Section
       title="Lineage"
-      tip="Where this image came from, and what was made from it. A tap on an earlier one edits that one instead. What is made from this one, or on its way, opens full screen to compare, and the stage stays here; Edit there moves the stage to it."
+      tip="Where this image came from, and what was made from it. A tap on any of them edits that one instead. One still on its way opens full screen to watch."
     >
       <div className="-mx-4 flex items-center gap-1.5 overflow-x-auto px-4">
         {cut && <span className="shrink-0 font-mono text-[10px] text-faint">…</span>}
@@ -68,7 +68,7 @@ export function EditLineage({ render }: { render: Render }) {
           <JobStep key={j.id} job={j} onOpen={() => setViewer(j.id)} />
         ))}
         {made.map((r) => (
-          <Step key={r.id} r={r} current={false} onOpen={() => setViewer(r.id)} />
+          <Step key={r.id} r={r} current={false} onOpen={() => setFocus(r.id)} />
         ))}
       </div>
     </Section>

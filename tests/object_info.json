@@ -910,165 +910,6 @@
    "MODEL"
   ]
  },
- "LanPaint_KSampler": {
-  "input": {
-   "hidden": {
-    "LanPaint_MinStepFrac": "DEFAULT"
-   },
-   "required": {
-    "Inpainting_mode": [
-     [
-      "\ud83d\uddbc\ufe0f Image Inpainting",
-      "\ud83c\udfac Video Inpainting"
-     ],
-     {
-      "default": "\ud83d\uddbc\ufe0f Image Inpainting",
-      "tooltip": "Choose Image mode for photos or Video mode for video frames with temporal consistency"
-     }
-    ],
-    "LanPaint_Info": [
-     "STRING",
-     {
-      "default": "LanPaint KSampler.",
-      "tooltip": "For more info, visit https://github.com/scraed/LanPaint. If you find it useful, please give a star \u2b50\ufe0f!"
-     }
-    ],
-    "LanPaint_NumSteps": [
-     "INT",
-     {
-      "default": 5,
-      "max": 100,
-      "min": 0,
-      "tooltip": "The number of steps for the Langevin dynamics, representing the turns of thinking per step."
-     }
-    ],
-    "LanPaint_PromptMode": [
-     [
-      "Image First",
-      "Prompt First"
-     ],
-     {
-      "tooltip": "Image First: emphasis image quality, Prompt First: emphasis prompt following"
-     }
-    ],
-    "cfg": [
-     "FLOAT",
-     {
-      "default": 5.0,
-      "max": 100.0,
-      "min": 0.0,
-      "round": 0.01,
-      "step": 0.1,
-      "tooltip": "The Classifier-Free Guidance scale balances creativity and adherence to the prompt. Higher values result in images more closely matching the prompt however too high values will negatively impact quality."
-     }
-    ],
-    "denoise": [
-     "FLOAT",
-     {
-      "default": 1.0,
-      "max": 1.0,
-      "min": 0.0,
-      "step": 0.01,
-      "tooltip": "The amount of denoising applied, lower values will maintain the structure of the initial image allowing for image to image sampling."
-     }
-    ],
-    "latent_image": [
-     "LATENT",
-     {
-      "tooltip": "The latent image to denoise."
-     }
-    ],
-    "model": [
-     "MODEL",
-     {
-      "tooltip": "The model used for denoising the input latent."
-     }
-    ],
-    "negative": [
-     "CONDITIONING",
-     {
-      "tooltip": "The conditioning describing the attributes you want to exclude from the image."
-     }
-    ],
-    "positive": [
-     "CONDITIONING",
-     {
-      "tooltip": "The conditioning describing the attributes you want to include in the image."
-     }
-    ],
-    "sampler_name": [
-     [
-      "euler",
-      "euler_ancestral",
-      "heun",
-      "heunpp2",
-      "dpm_2",
-      "dpm_2_ancestral",
-      "dpm_fast",
-      "dpmpp_sde",
-      "dpmpp_sde_gpu",
-      "dpmpp_2m",
-      "dpmpp_2m_sde",
-      "dpmpp_2m_sde_gpu",
-      "dpmpp_3m_sde",
-      "dpmpp_3m_sde_gpu",
-      "ddpm",
-      "deis",
-      "res_multistep",
-      "res_multistep_ancestral",
-      "gradient_estimation",
-      "er_sde",
-      "seeds_2",
-      "seeds_3"
-     ],
-     {
-      "tooltip": "Recommended: euler."
-     }
-    ],
-    "scheduler": [
-     [
-      "simple",
-      "sgm_uniform",
-      "karras",
-      "exponential",
-      "ddim_uniform",
-      "beta",
-      "normal",
-      "linear_quadratic",
-      "kl_optimal"
-     ],
-     {
-      "default": "karras",
-      "tooltip": "The scheduler controls how noise is gradually removed to form the image."
-     }
-    ],
-    "seed": [
-     "INT",
-     {
-      "default": 0,
-      "max": 18446744073709551615,
-      "min": 0,
-      "tooltip": "The random seed used for creating the noise."
-     }
-    ],
-    "steps": [
-     "INT",
-     {
-      "default": 30,
-      "max": 10000,
-      "min": 1,
-      "tooltip": "The number of steps used in the denoising process."
-     }
-    ]
-   }
-  },
-  "output": [
-   "LATENT"
-  ],
-  "output_name": [
-   "LATENT"
-  ]
- },
  "LoraLoaderModelOnly": {
   "input": {
    "required": {
@@ -1089,6 +930,7 @@
       "check_dummy_57f422d3.safetensors",
       "check_dummy_7ad8a66a.safetensors",
       "check_dummy_a5e567b3.safetensors",
+      "check_dummy_ae22b2d0.safetensors",
       "flaccid_erect_krea2_loraholic.safetensors",
       "klein_snofs_v1_4.safetensors",
       "krea2-bloomgirls-realism-step00004000.safetensors",
@@ -2135,10 +1977,12 @@
    }
   },
   "output": [
-   "MASK"
+   "MASK",
+   "BOUNDING_BOX"
   ],
   "output_name": [
-   "MASK"
+   "MASK",
+   "BOUNDING_BOX"
   ]
  },
  "StudioFaceScore": {
@@ -2154,6 +1998,24 @@
   },
   "output": [],
   "output_name": []
+ },
+ "StudioHeadMask": {
+  "input": {
+   "required": {
+    "face": [
+     "MASK"
+    ],
+    "found": [
+     "MASK"
+    ]
+   }
+  },
+  "output": [
+   "MASK"
+  ],
+  "output_name": [
+   "MASK"
+  ]
  },
  "StudioImageBase64": {
   "input": {

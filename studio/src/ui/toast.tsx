@@ -1,7 +1,7 @@
 // One line of feedback for actions that otherwise happen out of sight: a save into a folder, a copy, a
 // deletion that can be undone. Screen readers hear it too. With a layer open it is drawn in that layer,
-// under its title where it covers no control the person is reaching for; on the page it sits above the
-// bottom bar.
+// over its title, where it covers no control or row the person is reaching for; on a phone page it sits just under
+// the tab bar, over the top of the image rather than the panel being worked in; on a desktop at the top, clear of the stage's tools.
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -41,8 +41,10 @@ export function Toasts() {
       role="status"
       aria-live="polite"
       className={cn(
-        "pointer-events-none inset-x-0 z-50 flex justify-center px-4",
-        inSlot ? "absolute top-0" : "fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-6",
+        "pointer-events-none z-50 flex",
+        inSlot
+          ? "absolute inset-0 items-center"
+          : "fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.25rem)] justify-center px-4 lg:top-4",
       )}
     >
       {toast && (
@@ -51,9 +53,14 @@ export function Toasts() {
           onPointerLeave={() => setHeld(false)}
           onFocus={() => setHeld(true)}
           onBlur={() => setHeld(false)}
-          className="pointer-events-auto flex max-w-md items-center gap-3 border border-edge bg-raised py-1 pr-1 pl-3 font-mono text-xs shadow-lg shadow-black/50"
+          className={cn(
+            "pointer-events-auto flex items-center gap-3 border border-edge bg-raised py-1 pr-1 pl-3 font-mono text-xs shadow-lg shadow-black/50",
+            inSlot ? "max-w-full min-w-0" : "max-w-md",
+          )}
         >
-          <span className={cn("py-2", toast.bad ? "text-bad" : "text-ink")}>{toast.text}</span>
+          <span className={cn("py-2", inSlot && "truncate", toast.bad ? "text-bad" : "text-ink")}>
+            {toast.text}
+          </span>
           {toast.action && (
             <Button
               variant="link"
