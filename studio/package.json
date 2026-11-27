@@ -18,7 +18,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.104.5",
     "class-variance-authority": "^0.7.1",
-    "dexie": "^4.4.6",
+    "dexie": "^4.4.7",
     "dexie-react-hooks": "^4.4.0",
     "fflate": "^0.8.3",
     "jotai": "^3.0.1",
