@@ -4,12 +4,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  frameHeader,
   fromBase64,
   guard,
   keysOf,
+  kidOf,
   lock,
   rawOf,
+  sealWithPassword,
   newRaw,
+  openWithPassword,
   sealWire,
   toBase64,
   transportKey,
@@ -26,7 +30,10 @@ const vectors = JSON.parse(
   private: string;
   spki: string;
   python_sealed: string;
+  python_frame_png: string;
+  webcrypto_frame_preview: string;
 };
+const KID = "f0437f6ba51fad97"; // comfy_modal/seal.kid(vectors.spki)
 const fixedRaw = () => new Uint8Array(Array(32).keys()).buffer;
 const fixedKey = async () => (await keysOf(fixedRaw())).key;
 const exportKey = (k: CryptoKey) => crypto.subtle.exportKey("raw", k);
@@ -44,6 +51,27 @@ describe("transport crypto", () => {
     expect(text(await unsealWire(await fixedKey(), fromBase64(vectors.python_sealed)))).toBe(
       "sealed by python",
     );
+  });
+
+  it("opens a frame Python sealed only as what its header says it is", async () => {
+    const wire = fromBase64(vectors.python_frame_png);
+    expect(text(await unsealWire(await fixedKey(), wire, frameHeader("png")))).toBe("png framed by python");
+    await expect(unsealWire(await fixedKey(), wire, frameHeader("preview"))).rejects.toThrow();
+    await expect(unsealWire(await fixedKey(), wire)).rejects.toThrow();
+  });
+
+  it("opens a preview frame as a preview only", async () => {
+    const wire = fromBase64(vectors.webcrypto_frame_preview);
+    expect(text(await unsealWire(await fixedKey(), wire, frameHeader("preview")))).toBe(
+      "preview framed by webcrypto",
+    );
+    await expect(unsealWire(await fixedKey(), wire, frameHeader("png"))).rejects.toThrow();
+  });
+
+  it("computes a key's id as the studio does", async () => {
+    const id = await kidOf(vectors.spki);
+    expect(id).toMatch(/^[0-9a-f]{16}$/);
+    expect(id).toBe(KID);
   });
 
   it("seals with a new iv each time, and refuses a changed byte", async () => {
@@ -139,5 +167,33 @@ describe("workspace keys", () => {
     expect(
       (await readRow(await rawOf(await guard(await rawOf(removed, ""), "again"), "again"))).made,
     ).toBeTruthy();
+  });
+});
+
+describe("password-sealed files", () => {
+  it("round-trips a backup, reads as nothing without the password, and refuses the wrong one", async () => {
+    const library = { version: 3, saved: [{ name: "Mara, red coat" }] };
+    const sealed = await sealWithPassword(library, "long enough pw");
+    expect(JSON.stringify(sealed)).not.toContain("Mara");
+    expect(sealed.iterations).toBe(600_000);
+    expect(await openWithPassword(sealed, "long enough pw")).toEqual(library);
+    await expect(openWithPassword(sealed, "wrong")).rejects.toBeInstanceOf(WrongPassword);
+    expect((await sealWithPassword(library, "long enough pw")).salt).not.toBe(sealed.salt);
+  });
+});
+
+describe("backup files", () => {
+  it("take a version 4 file's sealed part only with sane iterations", async () => {
+    const { sealedIn } = await import("@/data/db/backup");
+    const ok = { salt: "AA==", iterations: 600_000, iv: "AA==", data: "AA==" };
+    expect(sealedIn(ok)).toEqual(ok);
+    for (const iterations of [99_999, 10_000_001, "600000", Number.NaN])
+      expect(sealedIn({ ...ok, iterations })).toBeNull();
+    expect(sealedIn({ ...ok, salt: 5 })).toBeNull();
+  });
+
+  it("call a damaged file damaged, not a wrong password", async () => {
+    const bad = { salt: "not base64!", iterations: 600_000, iv: "AA==", data: "AA==" };
+    await expect(openWithPassword(bad, "whatever pw")).rejects.toThrow("not a studio library file");
   });
 });

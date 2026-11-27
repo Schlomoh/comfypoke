@@ -1,12 +1,14 @@
 // This workspace's saved characters and scenes, with the shared prompt catalog, model setups and LoRA notes, as one JSON
-// file: the backup, and how a library moves between devices.
-import { unsealJson } from "@/data/crypto";
+// file: the backup, and how a library moves between devices. With a password the file is version 4: version 3's JSON
+// sealed with it (crypto.sealWithPassword), so a protected workspace's characters do not leave the seal.
+import { openWithPassword, sealWithPassword, unsealJson, type PasswordSealed } from "@/data/crypto";
 import { editPresets } from "@/data/db/prompt-catalog";
 import { putSaved } from "@/data/db/saved";
 import { db, STARTERS, type LoraNote } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
 import { fromLegacy, type LegacyPreset } from "@/domain/built-ins";
 import { isRecord, isText, LEGACY_ROW } from "@/domain/parse";
+import { MIN_PASSWORD } from "@/domain/password";
 import { GENDERS, type Gender } from "@/domain/presets/gender";
 import { NO_PRESETS, merge, type Presets, type Chunk, type Sub } from "@/domain/prompt-catalog";
 import { PRESET_ROWS, type PresetRow } from "@/domain/rows";
@@ -21,7 +23,12 @@ const savedOf = async (space: Space) => {
 
 const faceless = (s: Saved): Saved => ({ ...s, face: undefined });
 
-export async function exportLibrary(space: Space) {
+/** Throws for a protected workspace without a password of MIN_PASSWORD characters: its characters stay sealed. */
+export async function exportLibrary(space: Space, password = "") {
+  if ((await db.workspaces.get(space.id))?.lock && password.length < MIN_PASSWORD)
+    throw new Error(
+      `This workspace is protected: give the file a password of at least ${MIN_PASSWORD} characters.`,
+    );
   const data = {
     version: 3,
     saved: (await savedOf(space)).map(faceless), // face photos stay on the device they were added on
@@ -29,7 +36,25 @@ export async function exportLibrary(space: Space) {
     catalog: { subs: await db.subs.toArray(), chunks: await db.chunks.toArray() },
     setups: await db.setups.toArray(),
   };
-  return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const file = password ? { version: 4, ...(await sealWithPassword(data, password)) } : data;
+  return new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
+}
+
+/** A version 4 file's sealed part; its iterations are bounded, as a file from elsewhere could ask for any number. */
+export function sealedIn(v: Record<string, unknown>): PasswordSealed | null {
+  const { salt, iterations, iv, data } = v;
+  if (!isText(salt) || !isText(iv) || !isText(data) || typeof iterations !== "number") return null;
+  return iterations >= 100_000 && iterations <= 10_000_000 ? { salt, iterations, iv, data } : null;
+}
+
+/** Whether a library file is sealed with a password, so the import has to ask for it. */
+export async function needsPassword(file: File) {
+  try {
+    const v: unknown = JSON.parse(await file.text());
+    return isRecord(v) && v.version === 4;
+  } catch {
+    return false;
+  }
 }
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -93,8 +118,14 @@ const notesIn = (raw: unknown): LoraNote[] =>
     .map((n) => ({ name: n.name, trigger: n.trigger, ...(isText(n.family) ? { family: n.family } : {}) }));
 
 /** Merges a backup into this workspace: malformed entries are skipped, and an entry edited here since the backup keeps its newer version. */
-export async function importLibrary(space: Space, file: File) {
-  const data: unknown = JSON.parse(await file.text());
+export async function importLibrary(space: Space, file: File, password = "") {
+  const outer: unknown = JSON.parse(await file.text());
+  let data = outer;
+  if (isRecord(outer) && outer.version === 4) {
+    const sealed = sealedIn(outer);
+    if (!sealed) throw new Error("not a studio library file");
+    data = await openWithPassword(sealed, password);
+  }
   if (!isRecord(data) || ![1, 2, 3].includes(data.version as number))
     throw new Error("not a studio library file");
   const raw = list(data.version === 1 ? data.characters : data.saved); // version 1 had characters only, in blocks

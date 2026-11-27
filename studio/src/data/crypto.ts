@@ -24,13 +24,17 @@ export async function keysOf(raw: ArrayBuffer): Promise<Keys> {
   return { key, base };
 }
 
-export async function seal(key: CryptoKey, data: BufferSource): Promise<Sealed> {
+/** `aad`, when given, is authenticated with the data: it must be the same to unseal. */
+export async function seal(key: CryptoKey, data: BufferSource, aad?: BufferSource): Promise<Sealed> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  return { iv, data: await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data) };
+  return { iv, data: await crypto.subtle.encrypt(gcm(iv, aad), key, data) };
 }
 
-export const unseal = (key: CryptoKey, s: Sealed) =>
-  crypto.subtle.decrypt({ name: "AES-GCM", iv: s.iv }, key, s.data);
+const gcm = (iv: Uint8Array<ArrayBuffer>, aad?: BufferSource): AesGcmParams =>
+  aad ? { name: "AES-GCM", iv, additionalData: aad } : { name: "AES-GCM", iv };
+
+export const unseal = (key: CryptoKey, s: Sealed, aad?: BufferSource) =>
+  crypto.subtle.decrypt(gcm(s.iv, aad), key, s.data);
 export const sealJson = (key: CryptoKey, value: unknown) =>
   seal(key, new TextEncoder().encode(JSON.stringify(value)));
 export const unsealJson = async <T>(key: CryptoKey, s: Sealed) =>
@@ -66,6 +70,31 @@ export async function unlock(l: Lock, password: string) {
     return await unseal(await passwordKey(password, l.salt, l.iterations), l.key);
   } catch {
     throw new WrongPassword("Wrong password."); // AES-GCM refuses to decrypt with the wrong key
+  }
+}
+
+/** JSON sealed with a password, for a file that leaves the device (a backup): a fresh salt, base64 throughout. */
+export type PasswordSealed = { salt: string; iterations: number; iv: string; data: string };
+
+export async function sealWithPassword(value: unknown, password: string): Promise<PasswordSealed> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const s = await sealJson(await passwordKey(password, salt, ITERATIONS), value);
+  return { salt: toBase64(salt), iterations: ITERATIONS, iv: toBase64(s.iv), data: toBase64(s.data) };
+}
+
+/** Throws WrongPassword for the wrong password. */
+export async function openWithPassword(p: PasswordSealed, password: string): Promise<unknown> {
+  let salt, iv, data;
+  try {
+    [salt, iv, data] = [fromBase64(p.salt), fromBase64(p.iv), fromBase64(p.data)];
+  } catch {
+    throw new Error("not a studio library file");
+  }
+  const key = await passwordKey(password, salt, p.iterations);
+  try {
+    return await unsealJson(key, { iv, data: data.buffer });
+  } catch {
+    throw new WrongPassword("Wrong password for this file.");
   }
 }
 
@@ -112,16 +141,27 @@ export async function wrapFor(spki: string, key: CryptoKey) {
   return toBase64(await crypto.subtle.wrapKey("raw", key, pub, OAEP));
 }
 
-export async function sealWire(key: CryptoKey, data: BufferSource) {
-  const { iv, data: ct } = await seal(key, data);
+export async function sealWire(key: CryptoKey, data: BufferSource, aad?: BufferSource) {
+  const { iv, data: ct } = await seal(key, data, aad);
   const out = new Uint8Array(iv.byteLength + ct.byteLength);
   out.set(iv);
   out.set(new Uint8Array(ct), iv.byteLength);
   return out;
 }
 
-export const unsealWire = (key: CryptoKey, wire: Uint8Array<ArrayBuffer>) =>
-  unseal(key, { iv: wire.slice(0, 12), data: wire.slice(12).buffer });
+export const unsealWire = (key: CryptoKey, wire: Uint8Array<ArrayBuffer>, aad?: BufferSource) =>
+  unseal(key, { iv: wire.slice(0, 12), data: wire.slice(12).buffer }, aad);
+
+/** The id of a public key (base64 SubjectPublicKeyInfo DER), as comfy_modal/seal.kid computes it. */
+export async function kidOf(spki: string) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", fromBase64(spki)));
+  return [...digest.subarray(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The header of ComfyUI's binary frame for an image (event 1, then 1 for a JPEG preview or 2 for the PNG): the
+ *  worker seals each image with its frame's header as associated data (seal.seal_frame). */
+export const frameHeader = (format: "preview" | "png") =>
+  new Uint8Array([0, 0, 0, 1, 0, 0, 0, format === "png" ? 2 : 1]);
 
 export function toBase64(data: ArrayBuffer | Uint8Array<ArrayBuffer>) {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);

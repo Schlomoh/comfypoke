@@ -6,7 +6,16 @@
 // and from then on sent as {ref}. The studio keeps them in memory, so after it restarts a reference fails with
 // Gone; `withImages` then forgets what was sent and runs the request once more, uploading again.
 import { api, Gone, Stale, type ImageRef, type WrappedKey } from "@/data/api";
-import { fromBase64, sealWire, toBase64, transportKey, unsealWire, wrapFor } from "@/data/crypto";
+import {
+  frameHeader,
+  fromBase64,
+  kidOf,
+  sealWire,
+  toBase64,
+  transportKey,
+  unsealWire,
+  wrapFor,
+} from "@/data/crypto";
 import type { Space } from "@/data/db/space";
 
 /** What a request needs to send images: the key they are sealed with, the same wrapped for the worker, and the
@@ -21,6 +30,10 @@ function transportOf(space: Space) {
   if (!t) {
     t = (async () => {
       const pub = await (server ??= api.transport());
+      // The key id is the transport key's HKDF info: one the studio made up, an old deploy's say, would have this phone
+      // wrap that deploy's key for whoever holds the public key it sent.
+      if ((await kidOf(pub.spki)) !== pub.kid)
+        throw new Error("The studio sent a key id that is not its key's.");
       const key = await transportKey(space.base, pub.kid);
       return {
         key,
@@ -78,18 +91,20 @@ export async function withImages<T>(space: Space, send: (t: Transport) => Promis
 }
 
 /** An image or preview the worker sealed (base64, as the job's events carry it), opened. */
+const open = async (space: Space, sealed: string, format: "preview" | "png") =>
+  unsealWire((await transportOf(space)).key, fromBase64(sealed), frameHeader(format));
+
 export async function openImage(space: Space, sealed: string, type = "image/png") {
-  return new Blob([await unsealWire((await transportOf(space)).key, fromBase64(sealed))], { type });
+  return new Blob([await open(space, sealed, "png")], { type });
 }
 
 /** The same, as base64: what data URLs and the mask code take. */
-export const openBase64 = async (space: Space, sealed: string) =>
-  toBase64(await unsealWire((await transportOf(space)).key, fromBase64(sealed)));
+export const openBase64 = async (space: Space, sealed: string) => toBase64(await open(space, sealed, "png"));
 
 /** A sealed JPEG preview, opened and handed on as a data URL; one that does not open is skipped, being only a preview. */
 export function openPreview(space: Space, sealed: string, show: (url: string) => void) {
-  openBase64(space, sealed).then(
-    (b64) => show(`data:image/jpeg;base64,${b64}`),
+  open(space, sealed, "preview").then(
+    (b) => show(`data:image/jpeg;base64,${toBase64(b)}`),
     () => {},
   );
 }

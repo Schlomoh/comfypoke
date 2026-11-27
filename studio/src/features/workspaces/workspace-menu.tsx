@@ -13,6 +13,7 @@ import {
   useWorkspace,
 } from "@/data/db/workspaces";
 import { errorText } from "@/domain/format";
+import { passwordOk } from "@/domain/password";
 import { NewPassword, NO_RESET } from "@/features/workspaces/new-password";
 import { Purge } from "@/features/workspaces/purge";
 import { layerAtom, veilAtom } from "@/state/studio";
@@ -120,7 +121,7 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
           <div className="flex gap-2">
             <Button
               type="submit"
-              disabled={busy || !password || password !== repeat || (!!w.lock && !current)}
+              disabled={busy || !password || !passwordOk(password, repeat) || (!!w.lock && !current)}
               className="flex-1"
             >
               {w.lock ? "Change password" : "Set password"}
@@ -141,7 +142,9 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
         <Note>
           {note ||
             (w.lock
-              ? NO_RESET
+              ? "A new password seals the same key again; it does not re-encrypt the workspace, so an old copy of " +
+                "this browser's storage still opens with the old password. " +
+                NO_RESET
               : "Protects this workspace from now on; the browser may keep its old unprotected key on disk for a while. " +
                 NO_RESET)}
         </Note>
