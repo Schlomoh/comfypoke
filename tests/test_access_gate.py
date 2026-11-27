@@ -27,6 +27,7 @@ async def _ok(request):
 def run(check):
     async def main():
         app = web.Application(middlewares=[gate._gate])
+        app.on_response_prepare.append(gate._headers)
         app.router.add_route("*", "/api/prompt", _ok)
         app.router.add_get("/ws", _ws)
         app.router.add_get("/", _ok)
@@ -105,4 +106,21 @@ def test_this_origin_and_tools_get_through():
         assert r.status == 200  # a link from Modal's dashboard still opens the GUI
         r = await c.post(gate.LOGIN_PATH, data={"key": KEY}, headers={"Sec-Fetch-Site": "same-origin"}, allow_redirects=False)
         assert r.status == 303  # a form post that came without Origin
+    run(check)
+
+
+def test_every_response_refuses_framing():
+    async def check(c, origin):
+        for r in (await c.get("/api/prompt", cookies=cookie()), await c.get("/api/prompt"), await c.post("/api/prompt", headers=EVIL)):
+            assert r.headers["X-Frame-Options"] == "DENY" and r.headers["X-Content-Type-Options"] == "nosniff"
+            assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+    run(check)
+
+
+def test_a_policy_of_comfyuis_own_keeps_its_rules():
+    async def check(c, origin):
+        r = web.Response()
+        r.headers["Content-Security-Policy"] = "default-src 'none'"
+        await gate._headers(None, r)
+        assert r.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'none'"
     run(check)

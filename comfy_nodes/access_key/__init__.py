@@ -184,6 +184,22 @@ async def _check(request, handler):
     raise web.HTTPUnauthorized(text="missing or wrong key", headers={"WWW-Authenticate": 'Basic realm="comfy", charset="UTF-8"'})
 
 
+# ComfyUI's frontend needs inline script, so a full Content-Security-Policy is its own project. These stop the GUI
+# from being framed by another page (clickjacking) and the browser from guessing content types.
+# A policy ComfyUI sets itself (on /view, say) is kept, with frame-ancestors added to it.
+async def _headers(request, response):
+    h = response.headers
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    csp = h.get("Content-Security-Policy")
+    if csp is None:
+        h["Content-Security-Policy"] = "frame-ancestors 'none'"
+    elif "frame-ancestors" not in csp:
+        h["Content-Security-Policy"] = csp.rstrip("; ") + "; frame-ancestors 'none'"
+
+
+PromptServer.instance.app.on_response_prepare.append(_headers)  # every response, the websocket's and errors included
+
 if KEY:
     # First in the list, so it runs outside ComfyUI's origin_only_middleware: the relabel above
     # has to happen before that middleware reads the header, and checking the key first is right

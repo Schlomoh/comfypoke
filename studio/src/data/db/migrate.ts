@@ -1,7 +1,7 @@
 // Renders, characters, the draft and pending jobs from before workspaces move into one called Default, and the
 // catalog takes in built-in presets it has not seen. WebCrypto cannot run inside a Dexie upgrade, so this runs once
 // per page before the start screen.
-import { importKey } from "@/data/crypto";
+import { keysOf } from "@/data/crypto";
 import { saveDraft } from "@/data/db/drafts";
 import { addPending } from "@/data/db/pending";
 import { syncBuiltIns } from "@/data/db/prompt-catalog";
@@ -35,9 +35,7 @@ async function moveLegacy() {
   const jobs = localStorage.getItem("studio.jobs");
   if (!draft && !jobs && !(await db.renders.count()) && !(await db.characters.count())) return;
   const old = (await db.workspaces.toArray()).find((w) => w.name === "Default" && w.key); // an earlier run that stopped halfway
-  const space = old?.key
-    ? { id: old.id, key: await importKey(old.key) }
-    : await createWorkspace("Default", "");
+  const space = old?.key ? { id: old.id, ...(await keysOf(old.key)) } : await createWorkspace("Default", "");
   // One render at a time, each moved in its own transaction: a library can be larger than memory, and an interrupted run resumes.
   for (const id of await db.renders.toCollection().primaryKeys()) {
     const legacy = await db.renders.get(id);

@@ -38,6 +38,7 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
   const space = useSpace();
   const count = useImageCount(space.id);
   const [name, setName] = useState(w.name);
+  const [current, setCurrent] = useState(""); // a protected workspace's key is unsealed again with it to change it
   const [password, setPw] = useState("");
   const [repeat, setRepeat] = useState("");
   const [note, setNote] = useState("");
@@ -45,7 +46,8 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
   const [veil, setVeil] = useAtom(veilAtom);
 
   const guard = async (pw: string) => {
-    await setPassword(space, pw);
+    await setPassword(w, current, pw);
+    setCurrent("");
     setPw("");
     setRepeat("");
     setNote(pw ? "Password set." : "Password removed.");
@@ -96,13 +98,27 @@ function MenuBody({ w, onSwitch }: { w: Workspace; onSwitch: () => void }) {
             void protect(password);
           }}
         >
+          {w.lock && (
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              placeholder="current password"
+            />
+          )}
           <NewPassword name={w.name} value={password} set={setPw} repeat={repeat} setRepeat={setRepeat} />
           <div className="flex gap-2">
-            <Button type="submit" disabled={!password || password !== repeat} className="flex-1">
+            <Button
+              type="submit"
+              disabled={!password || password !== repeat || (!!w.lock && !current)}
+              className="flex-1"
+            >
               {w.lock ? "Change password" : "Set password"}
             </Button>
             {w.lock && (
               <Button
+                disabled={!current}
                 onClick={() => {
                   if (confirm("Remove the password? Anyone using this browser can then open this workspace."))
                     void protect("");

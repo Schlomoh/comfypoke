@@ -235,6 +235,18 @@ async def _json_body(request: Request):
         raise HTTPException(400, "the body is not JSON")
 
 
+# Script from this origin only, nothing sent anywhere else, never framed. fetch() of a data: URL turns a mask's base64
+# into a Blob (features/edit/mask.ts); style-src keeps 'unsafe-inline' for the style attributes React writes.
+HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                               "connect-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; "
+                               "form-action 'self'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Strict-Transport-Security": "max-age=31536000",
+}
+
+
 @api.middleware("http")
 async def gate(request: Request, call_next):
     if _cross_origin(request):
@@ -246,6 +258,13 @@ async def gate(request: Request, call_next):
         resp = await call_next(request)
     if OLD_COOKIE in request.cookies:  # it held the raw key: cleared on whatever answers a phone that still sends it
         resp.delete_cookie(OLD_COOKIE)
+    return resp
+
+
+@api.middleware("http")
+async def headers(request: Request, call_next):  # added after gate, so it wraps gate's own refusals too
+    resp = await call_next(request)
+    resp.headers.update(HEADERS)
     return resp
 
 

@@ -2,10 +2,10 @@
 // workspace leaves nothing readable in memory.
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { unsealJson } from "@/data/crypto";
+import { unsealJson, type Keys } from "@/data/crypto";
 import type { Row } from "@/data/db/schema";
 
-export type Space = { id: string; key: CryptoKey };
+export type Space = { id: string } & Keys;
 
 export const SpaceContext = createContext<Space | null>(null);
 export function useSpace() {

@@ -21,7 +21,7 @@ function transportOf(space: Space) {
   if (!t) {
     t = (async () => {
       const pub = await (server ??= api.transport());
-      const key = await transportKey(space.key, pub.kid);
+      const key = await transportKey(space.base, pub.kid);
       return {
         key,
         wire: { kid: pub.kid, key: await wrapFor(pub.spki, key) },

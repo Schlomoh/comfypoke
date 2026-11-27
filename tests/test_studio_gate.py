@@ -73,3 +73,10 @@ def test_the_old_raw_key_cookie_is_cleared():
     c.cookies.set("studio_key", KEY)
     r = c.get("/api/transport")
     assert r.status_code == 401 and 'studio_key=""' in r.headers["set-cookie"]
+
+
+def test_security_headers_on_every_response():
+    for r in (client(False).get("/api/transport"), client().get("/api/transport"), client().post("/api/gpu/wake", headers=EVIL)):
+        csp = r.headers["content-security-policy"]
+        assert "frame-ancestors 'none'" in csp and "script-src 'self'" in csp
+        assert r.headers["x-content-type-options"] == "nosniff" and "max-age" in r.headers["strict-transport-security"]
