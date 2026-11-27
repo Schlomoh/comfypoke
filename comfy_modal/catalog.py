@@ -116,5 +116,35 @@ MODELS = [
 # comfyui-gguf-reboot (molbal's fork of city96's ComfyUI-GGUF): UnetLoaderGGUF, the loader graphs.LOADERS uses for
 # quantized .gguf diffusion models put in extra/diffusion_models. The fork, because city96's refuses Krea 2 files
 # ("Unexpected architecture type in GGUF file: 'krea2'"). Never both: they register the same node names.
-NODE_PACKS = ["LanPaint", "comfyui-inpaint-cropandstitch", "comfyui-krea2-ostris-edit", "comfyui-krea2edit",
-              "comfyui-gguf-reboot"]
+# Each pinned to a version: a rebuild must not take whatever the registry serves that day, since a pack's code runs in
+# the Worker (opened images) and the UI (the access key). Bump one on purpose, and read its changes first.
+# comfyui-gguf-reboot: every release since 26.8.13 is "Flagged" on registry.comfy.org, without a stated reason; 26.11.16
+# is what the image ran when it was pinned (2026-11-27). Worth a look before the next bump.
+NODE_PACKS = {
+    "LanPaint": "2.1.0",
+    "comfyui-inpaint-cropandstitch": "3.0.20",
+    "comfyui-krea2-ostris-edit": "1.0.1",
+    "comfyui-krea2edit": "1.2.3",
+    "comfyui-gguf-reboot": "26.11.16",
+}
+
+# The commit each Hugging Face repo is downloaded at, so a rebuild cannot take a file swapped in on the repo since.
+# These were each repo's main on 2026-11-27, when the models layer was last built. A new repo needs its entry (the
+# image build stops without one); its commit is "sha" at https://huggingface.co/api/models/<repo>/revision/main.
+# Some repos have been renamed since (z_image_turbo, flux2-klein, ...): the old names redirect, and renaming them here
+# would download every file again into a new cache folder.
+REVISIONS = {
+    "Alissonerdx/BFS-Best-Face-Swap": "2209ae537ac5e883d6ec7db5b7bd6dccf1a0eba7",
+    "Comfy-Org/Krea-2": "588feaf955b08b9ac4723eeb751752ab045dba71",
+    "Comfy-Org/RT-DETR": "8d913979f84c84f155b70ee77d96571a4728430b",
+    "Comfy-Org/SeedVR2": "df48879708206a403d2a61acd55578c2e80fd233",
+    "Comfy-Org/flux2-klein": "5b3abca5c0dc1ecd4eaf3340868d09063fc1c965",
+    "Comfy-Org/sam-3d-body": "7c974aea58e062252a6cb5b6f9b7f639d545b729",
+    "Comfy-Org/sam3.1": "7bb8374780a725b4353ed31f3a9395c9742b5621",
+    "Comfy-Org/vae-text-encorder-for-flux-klein-9b": "1138ce884c8e977cdacacbe779784fec4426bb3f",
+    "Comfy-Org/z_image_turbo": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+    "alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1": "5155fc56d17821007d6f62ac192c09e0f0e72016",
+    "black-forest-labs/FLUX.2-klein-9B": "1498bcb8aaebb230bae82c34b02ecc4087beebac",
+    "public-data/insightface": "33c1063c49c785b7652d3fd529f86fa4f149392b",  # a third party's mirror of the official release
+    "thedeoxen/Krea-2-pose-controlnet": "1da9762ca46e6c9e4014b309bf0147889f10982a",
+}

@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: pip  # the containers' own pins, comfy_modal/requirements-image.txt
+    directory: /comfy_modal
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

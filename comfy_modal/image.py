@@ -6,7 +6,8 @@ from pathlib import Path
 import modal
 
 from . import config, volumes
-from .catalog import MODELS, NODE_PACKS
+from .pins import pinned
+from .catalog import MODELS, NODE_PACKS, REVISIONS
 
 COMFY_VERSION = "0.37.0"
 
@@ -21,9 +22,9 @@ def download_models(models: list, comfy_dir: str, cache_dir: str):
     from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 
     skipped = []
-    for repo, file, folder, name in models:
+    for repo, file, folder, name, revision in models:
         try:
-            src = hf_hub_download(repo, file, cache_dir=cache_dir, token=os.environ.get("HF_TOKEN"))
+            src = hf_hub_download(repo, file, revision=revision, cache_dir=cache_dir, token=os.environ.get("HF_TOKEN"))
         except (GatedRepoError, RepositoryNotFoundError):
             # One model you have not been granted must not cost everyone else their deploy: the
             # others still install and this one is simply missing from the dropdowns. Accept the
@@ -82,16 +83,20 @@ def hf_secrets() -> list:
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "libgl1", "libglib2.0-0")
-    .uv_pip_install("comfy-cli", "huggingface_hub[hf_transfer]")
+    # Every version is in requirements-image.txt, which Dependabot watches. hf_transfer is gone from huggingface_hub 1.x;
+    # hf-xet is what HF_XET_HIGH_PERFORMANCE below speeds up.
+    .uv_pip_install(*pinned("comfy-cli", "huggingface_hub"))
     # Pinned on purpose. Without a version comfy-cli installs the latest master commit, and this
     # layer is then cached forever: adding a model to catalog.py rebuilds the layer below it, so a
     # model needing newer ComfyUI code fails against a months-old checkout. Bump this number to
     # update ComfyUI, which is also what makes the rebuild happen. Krea 2 needs 0.26 or newer.
-    .run_commands(f"comfy --skip-prompt install --nvidia --version {COMFY_VERSION}")
+    # --skip-manager: ComfyUI-Manager installs any git URL or pip package from the GUI, which is code execution in the
+    # container for anyone with the key; and what it installs is gone at the next cold start. Packs come from catalog.py.
+    .run_commands(f"comfy --skip-prompt install --nvidia --version {COMFY_VERSION} --skip-manager")
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})
     .run_function(
         download_models,
-        kwargs={"models": [tuple(m) for m in MODELS], "comfy_dir": config.COMFY_DIR, "cache_dir": config.CACHE_DIR},
+        kwargs={"models": [(*m, REVISIONS[m.repo]) for m in MODELS], "comfy_dir": config.COMFY_DIR, "cache_dir": config.CACHE_DIR},
         volumes={config.CACHE_DIR: volumes.models},
         secrets=hf_secrets(),
     )
@@ -102,12 +107,12 @@ image = (
     # how comfyui-krea2-ostris-edit went missing from an image that built and deployed cleanly.
     # registry-install asks api.comfy.org directly and exits non-zero when it cannot, so the build
     # fails instead of the workflow.
-    .run_commands(*[f"comfy --skip-prompt node registry-install {pack}" for pack in NODE_PACKS])
-    .uv_pip_install("insightface==2.1", "onnxruntime==1.31.1")  # the face match (comfy_nodes/studio_face), on the CPU
-    .uv_pip_install("cryptography==50.0.2")  # the worker opens and seals the studio's images (seal.py); last, so it rebuilds nothing above
+    .run_commands(*[f"comfy --skip-prompt node registry-install {pack} --version {v}" for pack, v in NODE_PACKS.items()])
+    .uv_pip_install(*pinned("insightface", "onnxruntime"))  # the face match (comfy_nodes/studio_face), on the CPU
+    .uv_pip_install(*pinned("cryptography"))  # the worker opens and seals the studio's images (seal.py); last, so it rebuilds nothing above
     # Security fixes over what ComfyUI's requirements resolved to: aiohttp is its web server, which faces the internet.
-    # Dependabot reads only uv.lock, so these are raised by hand; last for the same reason.
-    .uv_pip_install("aiohttp==3.14.5", "multidict==6.9.1", "certifi==2026.10.19")
+    # Last for the same reason.
+    .uv_pip_install(*pinned("aiohttp", "multidict", "certifi"))
     # Mounted at container start (copy=False): editing these needs no image rebuild.
     .add_local_dir("comfy_nodes", f"{config.COMFY_DIR}/custom_nodes", copy=False)
     .add_local_python_source("comfy_modal", copy=False)
