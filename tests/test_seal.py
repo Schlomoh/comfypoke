@@ -1,6 +1,7 @@
 """comfy_modal/seal.py: what the worker opens and seals, and that it reads what WebCrypto writes (seal_vectors.json)."""
 import base64
 import json
+import struct
 from pathlib import Path
 
 import pytest
@@ -58,7 +59,7 @@ def test_seal_frame_keeps_the_header_readable():
     frame = (1).to_bytes(4, "big") + (2).to_bytes(4, "big") + b"png bytes"
     sealed = seal.seal_frame(KEY, frame)
     assert sealed[:8] == frame[:8]
-    assert seal.open_(KEY, sealed[8:]) == b"png bytes"
+    assert seal.open_(KEY, sealed[8:], aad=frame[:8]) == b"png bytes"
 
 
 def test_kid_is_stable_and_short():
@@ -98,3 +99,17 @@ def test_score_node_only_in_the_face_graphs_shape():
     for g in (two, cropped):
         assert seal.score_shape(g), g
 
+
+
+def test_frames_are_sealed_with_their_header_as_associated_data():
+    header = struct.pack(">II", 1, 2)
+    sealed = seal.seal_frame(KEY, header + b"png")
+    assert sealed[:8] == header and seal.open_(KEY, sealed[8:], aad=header) == b"png"
+    for wrong in (struct.pack(">II", 1, 1), None):  # a PNG passed off as a preview, or opened without its header
+        with pytest.raises(seal.SealError):
+            seal.open_(KEY, sealed[8:], aad=wrong)
+
+
+def test_opens_a_frame_webcrypto_sealed():
+    preview = struct.pack(">II", 1, 1)
+    assert seal.open_(KEY, base64.b64decode(VECTORS["webcrypto_frame_preview"]), aad=preview) == b"preview framed by webcrypto"

@@ -8,6 +8,7 @@ import type { Workspace } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
 import { createWorkspace, openWorkspace, useImageCounts, useWorkspaces } from "@/data/db/workspaces";
 import { errorText } from "@/domain/format";
+import { passwordOk } from "@/domain/password";
 import type { Recipe } from "@/domain/recipe";
 import { NewPassword, NO_RESET } from "@/features/workspaces/new-password";
 import { Button } from "@/ui/button";
@@ -159,7 +160,7 @@ export function WorkspaceList({ onOpen }: { onOpen: (space: Space, draft: Recipe
             <Button
               type="submit"
               variant="primary"
-              disabled={!name.trim() || (password !== repeat && !!password) || !!busy}
+              disabled={!name.trim() || !passwordOk(password, repeat) || !!busy}
               className="flex-1"
             >
               {busy || "Create"}

@@ -1,4 +1,5 @@
 // A new password typed twice, for a new workspace and for the workspace menu.
+import { MIN_PASSWORD } from "@/domain/password";
 import { Input } from "@/ui/field";
 import { Note } from "@/ui/text";
 
@@ -37,6 +38,11 @@ export function NewPassword({
           onChange={(e) => setRepeat(e.target.value)}
           placeholder="repeat password"
         />
+      )}
+      {value && value.length < MIN_PASSWORD && (
+        <Note tone="bad" mono>
+          At least {MIN_PASSWORD} characters. Several unrelated words are easier to type and harder to guess.
+        </Note>
       )}
       {value && repeat && value !== repeat && (
         <Note tone="bad" mono>
