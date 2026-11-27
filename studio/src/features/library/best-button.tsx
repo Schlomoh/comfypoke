@@ -12,7 +12,7 @@ export function BestButton({ render, className }: { render: Render; className?: 
       aria-pressed={!!render.best}
       aria-label="Best"
       title="Mark as best (B)"
-      className={cn("text-base", render.best ? "text-warn" : "text-muted hover:text-ink", className)}
+      className={cn("text-base", render.best ? "text-accent" : "text-muted hover:text-ink", className)}
     >
       {render.best ? "★" : "☆"}
     </Button>

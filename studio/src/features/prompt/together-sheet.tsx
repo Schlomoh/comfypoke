@@ -3,7 +3,7 @@
 import { useAtom } from "jotai";
 import { useState } from "react";
 
-import { usePresets } from "@/data/db/presets";
+import { usePresets } from "@/data/db/prompt-catalog";
 import { partnerOf, sayTogether, togetherLens } from "@/domain/cast";
 import { onto } from "@/domain/compose";
 import { phrase, type Interaction, type Recipe } from "@/domain/recipe";
@@ -15,7 +15,9 @@ import { useClearEmptied } from "@/features/prompt/use-clear-emptied";
 import { recipeAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
 import { Select } from "@/ui/field";
+import { useWide } from "@/ui/media";
 import { Sheet } from "@/ui/modal";
+import { Pane } from "@/ui/pane";
 import { Note } from "@/ui/text";
 
 type Pair = { from: string; to: string };
@@ -46,6 +48,7 @@ function PairPicker({ recipe, pair, onPair }: { recipe: Recipe; pair: Pair; onPa
 
 export function TogetherSheet() {
   const [open, setOpen] = useAtom(openAtom);
+  const Shell = useWide() ? Pane : Sheet; // on a desktop, in the editor's column beside the image
   const [recipe, setRecipe] = useAtom(recipeAtom);
   const presets = usePresets();
   const clearEmptied = useClearEmptied();
@@ -83,7 +86,7 @@ export function TogetherSheet() {
   const other = recipe.cast.find((c) => c.id === (target?.to ?? at.to))?.name ?? "";
 
   return (
-    <Sheet
+    <Shell
       open={!!shown}
       onClose={close}
       title="Together"
@@ -139,6 +142,6 @@ export function TogetherSheet() {
             </div>
           </PhraseCard>
         ))}
-    </Sheet>
+    </Shell>
   );
 }

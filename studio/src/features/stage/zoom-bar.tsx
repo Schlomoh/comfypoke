@@ -14,7 +14,13 @@ const PRESETS: [string, View][] = [
 export function ZoomBar() {
   const [view, setView] = useAtom(viewAtom);
   return (
-    <div className="flex items-center">
+    <div className="flex items-center whitespace-nowrap">
+      {/* first, so it never runs into the presets */}
+      {view.scale != null && ![1, 2].includes(view.scale) && (
+        <span className="px-1 font-mono text-[10.5px] text-muted tabular-nums">
+          {Math.round(view.scale * 100)}%
+        </span>
+      )}
       {PRESETS.map(([label, v]) => (
         <Button
           key={label}
@@ -25,11 +31,6 @@ export function ZoomBar() {
           {label}
         </Button>
       ))}
-      {view.scale != null && ![1, 2].includes(view.scale) && (
-        <span className="px-1 font-mono text-[10.5px] text-muted tabular-nums">
-          {Math.round(view.scale * 100)}%
-        </span>
-      )}
     </div>
   );
 }

@@ -262,7 +262,8 @@ export function ZoomView({ src, alt, view, setView, onSwipe, onTap, onDismiss, p
           {overlay}
         </div>
       )}
-      {onSwipe && <EdgeArrows shown={view.scale != null || !!paint} onStep={onSwipe} />}
+      {/* never over a mask being painted: the arrows sat on the very area under the brush */}
+      {onSwipe && !paint && <EdgeArrows shown={view.scale != null} onStep={onSwipe} />}
     </div>
   );
 }

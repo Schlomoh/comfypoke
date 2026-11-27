@@ -16,7 +16,7 @@ export type Open =
   | null;
 export const openAtom = atom<Open>(null);
 
-/** The subcategory last picked in each row. Nothing changes it but a tap on another one. */
+/** The subcategory last picked in each row, by id. Nothing changes it but a tap on another one, or a move there. */
 export const subcategoryAtom = atom<Partial<Record<PresetRow, string>>>({});
 /** The text a phrase had before it was emptied in its sheet, by id: Undo of its removal brings that back. */
 export const emptiedAtom = atom<ReadonlyMap<string, string>>(new Map());

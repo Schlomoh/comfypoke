@@ -29,8 +29,17 @@ export function Note({
   );
 }
 
-export function Heading({ children, className }: { children: ReactNode; className?: string }) {
-  return <h3 className={cn("label", className)}>{children}</h3>;
+/** A section's title in mono caps; `row`: the name of a row of content, in the sans. */
+export function Heading({
+  children,
+  className,
+  row,
+}: {
+  children: ReactNode;
+  className?: string;
+  row?: boolean;
+}) {
+  return <h3 className={cn(row ? "text-[13px] font-medium text-ink" : "label", className)}>{children}</h3>;
 }
 
 /** Name and value pairs in two columns, ruled. */

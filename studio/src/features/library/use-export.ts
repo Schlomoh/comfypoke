@@ -7,14 +7,15 @@ import { useSpace } from "@/data/db/space";
 import { useWorkspace } from "@/data/db/workspaces";
 import { chooseFolder, folderOf, saveToFolder } from "@/data/folder";
 import { errorText } from "@/domain/format";
+import type { LibraryFilter } from "@/domain/library-filter";
 import type { Render } from "@/domain/render";
 import { download, zipRenders } from "@/features/library/files";
 import { libraryFilterAtom } from "@/state/studio";
 
-function zipName(selected: boolean, { best, character }: { best: boolean; character: string }) {
+function zipName(selected: boolean, { best, character, tags }: LibraryFilter) {
   const day = new Date().toISOString().slice(0, 10);
   if (selected) return `studio-${day}-selected.zip`;
-  return `studio-${day}${best ? "-best" : ""}${character ? `-${character}` : ""}.zip`;
+  return `studio-${day}${best ? "-best" : ""}${character ? `-${character}` : ""}${tags.map((t) => `-${t}`).join("")}.zip`;
 }
 
 /** `target` is what Save and Download work on: the selection while there is one, else what is shown. */

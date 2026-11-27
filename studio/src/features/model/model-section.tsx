@@ -3,7 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 
 import { useCatalog } from "@/data/queries";
 import { resolve, type Model } from "@/domain/catalog";
-import { shortName } from "@/domain/format";
+import { modelName, shortName } from "@/domain/format";
 import { recipeAtom } from "@/state/studio";
 import { Select, Textarea } from "@/ui/field";
 import { Section } from "@/ui/section";
@@ -12,7 +12,7 @@ import { Note } from "@/ui/text";
 
 const option = (m: Model) => (
   <option key={m.file} value={m.file}>
-    {shortName(m.file)}
+    {modelName(m.file)} · {shortName(m.file)}
   </option>
 );
 

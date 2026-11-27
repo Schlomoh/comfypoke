@@ -11,13 +11,21 @@ const chip = cva(
   {
     variants: {
       tone: {
-        add: "border-dashed border-edge text-muted hover:text-ink",
-        quiet: "border-line text-muted hover:text-ink",
-        plain: "border-edge bg-panel text-ink",
-        off: "border-line bg-panel text-faint line-through",
+        // a true drop zone: a photo to add
+        drop: "border-dashed border-edge text-muted hover:text-ink",
+        // "+ add": a plain text action, not a box
+        add: "border-transparent px-1 text-muted hover:text-ink",
+        // something on offer (a preset, a filter that is off): quiet and filled
+        quiet: "border-transparent bg-line text-muted hover:text-ink",
+        // content: a phrase in the prompt
+        plain: "border-transparent bg-raised text-ink",
+        off: "border-transparent bg-panel text-faint line-through",
         picked: "border-ink bg-ink text-bg",
-        varied: "border-l-[3px] border-edge border-l-warn bg-panel text-ink",
-        warn: "border-warn text-warn",
+        // on for some of what it applies to, not all
+        mixed:
+          "border-ink bg-[repeating-linear-gradient(135deg,transparent_0_4px,var(--color-line)_4px_6px)] text-ink",
+        varied: "border-l-[3px] border-transparent border-l-accent bg-raised text-ink",
+        warn: "border-accent text-accent",
         removing: "border-dashed border-edge text-muted hover:border-bad hover:text-bad",
       },
       text: { body: "text-[13px]", small: "text-xs", mono: "font-mono text-[11px]" },
@@ -32,7 +40,10 @@ export function Chip({ tone, text, className, type = "button", ...props }: ChipP
   return <button type={type} {...props} className={cn(chip({ tone, text }), className)} />;
 }
 
-const TAG = { warn: "border-warn bg-warn/10 text-warn", mask: "border-mask bg-mask/10 text-mask" } as const;
+const TAG = {
+  warn: "border-accent bg-accent/10 text-accent",
+  mask: "border-mask bg-mask/10 text-mask",
+} as const;
 
 /** Focused once, when it appears, with the caret at the end. */
 const focusEnd = (el: HTMLTextAreaElement | null) => {
@@ -115,7 +126,21 @@ export function Tag({
   );
 }
 
-/** Chips in rows that wrap. */
-export function ChipRow({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("flex flex-wrap gap-1.5", className)}>{children}</div>;
+/** Chips in rows that wrap; `editing`: framed, while a tap on one changes it rather than uses it. */
+export function ChipRow({
+  children,
+  className,
+  editing,
+}: {
+  children: ReactNode;
+  className?: string;
+  editing?: boolean;
+}) {
+  return (
+    <div
+      className={cn("flex flex-wrap gap-1.5", editing && "border border-dashed border-accent p-2", className)}
+    >
+      {children}
+    </div>
+  );
 }

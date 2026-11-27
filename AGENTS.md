@@ -75,7 +75,8 @@ explains where things are and how to change them without breaking the deployment
   one job each, parsing of stored data), `src/data` (the API client, TanStack Query in `queries.ts`,
   IndexedDB in `db/`), `src/state` (Jotai atoms, one store per open workspace; the jobs runner;
   actions such as reuse, upscale, delete, step), then `src/features/*` (one folder per screen part)
-  and `src/app` (the shell and layout). Style comes from the primitives' variants; a new look is a new
+  and `src/app` (the shell and layout; on a desktop a row's sheet opens over the editor's column instead of a modal,
+  `ui/pane.tsx`, so the image stays in sight). Style comes from the primitives' variants; a new look is a new
   variant, not classes restated at the call site. `npm --prefix studio run check` is type-check,
   type-aware oxlint and oxfmt; `run fix` applies what can be fixed. The phone keeps everything in
   IndexedDB (`studio/src/data/db/schema.ts`); a schema change there is a new `db.version(n)`, never an edit of
@@ -127,8 +128,17 @@ explains where things are and how to change them without breaking the deployment
   through each stack's `trail`: depth first, or only its bests once any are marked. The dock's run line
   (`features/run/run-line.tsx`) opens one Run sheet with the look, size, draft, seeds and what runs after each
   render; a person's setup folds above their rows (`features/prompt/person-setup.tsx`, `ui/disclosure.tsx`), and on
-  a phone the stage is a strip in the Prompt and Look tabs (`stripTab`). Presets a person adds go into the subcategory open in the picker (`Preset.group`; none
-  is More), and removing a built-in one stores it with `hidden` (`presetGroups` in `domain/presets/index.ts`). Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
+  a phone the stage is a strip in the Prompt and Look tabs (`stripTab`). An empty workspace's stage offers an example
+  recipe (`domain/example.ts`); a batch can be seen all at once on the stage to mark the best
+  (`features/stage/compare.tsx`). Presets are a catalog the person owns (`domain/prompt-catalog.ts`, Dexie tables `subs`
+  and `chunks`, shared and in the clear): the built-ins in `domain/presets/` are seeded once and new ones arrive through
+  `syncBuiltIns` (a removed one is remembered in `meta` and stays gone; `domain/built-ins.ts`). A built-in changed in a
+  release is a line in `domain/presets/revisions.ts`, never a bare edit of its text: devices that seeded it follow the
+  change only where the person left it as it was; every edit is a pure function of the catalog,
+  written as its difference by `editPresets`, which returns the Undo. The picker's "edit" moves or removes a preset;
+  "arrange subcategories" reorders, renames (onto another's name merges), deletes, adds and resets a row. Image tags
+  live in the sealed `Render.tags` (per workspace) and are how images are grouped: the library's filter strip
+  (`domain/library-filter.ts`) combines ★, a character and tags, and a tag shows the whole stack. Keep outfit (a dressed image's ⋯) and Lookbook (the selection) are in
   `features/library`. A person's face photo (`data/db/faces.ts`, sealed) rides along as
   `reference` and a head swap pass runs after the render or repaint (`graphs._headswap`: the BFS LoRA
   through comfyui-krea2edit); one face per render, Krea 2 only. Try UI changes with

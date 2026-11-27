@@ -16,9 +16,13 @@ const button = cva(
           "border border-line bg-panel font-medium hover:border-edge aria-pressed:border-mask aria-pressed:text-mask",
         quiet: "font-medium text-muted hover:text-ink",
         danger: "border border-line bg-panel font-medium text-bad hover:border-bad",
-        // the small uppercase actions beside a heading: copy, reset, remove
-        text: "font-mono text-[10.5px] text-muted uppercase hover:text-ink aria-pressed:text-ink",
-        link: "font-mono text-[11px] text-muted underline underline-offset-4 hover:text-ink",
+        // the small actions beside a heading: copy, reset, remove; secondary, so no box
+        text: "text-xs font-medium text-muted hover:text-ink aria-pressed:text-ink",
+        link: "text-xs text-muted underline underline-offset-4 hover:text-ink",
+        // a small boxed tool beside a row's name (dice, pin): clearly a button, on when pressed
+        tool: "border border-line text-xs text-muted hover:border-edge hover:text-ink aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-bg",
+        // a chip that opens something: a preset being edited
+        chip: "border border-dashed border-edge text-left text-xs break-words whitespace-normal text-muted hover:border-ink hover:text-ink",
         // × and other single glyphs
         icon: "text-lg text-faint hover:text-ink",
       },
@@ -31,6 +35,7 @@ const button = cva(
     },
     compoundVariants: [
       { variant: ["text", "link"], size: "md", className: "px-2" },
+      { variant: "tool", size: "inline", className: "min-h-9 fine:min-h-7" },
       { variant: "icon", className: "hover:text-bad" },
     ],
     defaultVariants: { variant: "ghost", size: "md" },

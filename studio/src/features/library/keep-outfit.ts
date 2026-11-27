@@ -1,11 +1,9 @@
 // Keep outfit: what a dressed image wears becomes one of your Wearing presets, and goes into the closet of the saved
 // character dressed: their Wearing row, switched off, to switch on another time.
-import { addPreset } from "@/data/db/presets";
+import { editPresets } from "@/data/db/prompt-catalog";
 import { updateSaved } from "@/data/db/saved";
-import { db } from "@/data/db/schema";
 import type { Space } from "@/data/db/space";
-import { isOffered } from "@/domain/presets";
-import { GENDERS } from "@/domain/presets/gender";
+import { addChunk } from "@/domain/prompt-catalog";
 import { phrase, type Phrase } from "@/domain/recipe";
 import type { Render } from "@/domain/render";
 import { notify } from "@/ui/notify";
@@ -21,9 +19,7 @@ const owns = (row: Phrase[], pieces: string[]) =>
 export async function keepOutfit(space: Space, r: Render) {
   const outfit = outfitOf(r);
   if (!outfit) return;
-  const mine = await db.presets.where("block").equals("wear").toArray();
-  const offered = GENDERS.some((g) => isOffered("wear", g, outfit, mine));
-  if (!offered) await addPreset("wear", outfit, "Outfits");
+  await editPresets((c) => addChunk(c, "wear", outfit, { name: "Outfits" })); // nothing when Wearing has it already
   const who = r.edit?.dress?.who; // recorded when it was dressed: the recipe may hold others
   const pieces = r.edit?.dress?.pieces ?? [outfit];
   const closet = { of: "" }; // whose, once written

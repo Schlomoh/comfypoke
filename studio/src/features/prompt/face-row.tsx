@@ -91,7 +91,7 @@ export function FaceRow({ person }: { person: Person }) {
             </Button>
           </>
         ) : (
-          <Chip tone="add" text="body" onClick={() => file.current?.click()}>
+          <Chip tone="drop" text="body" onClick={() => file.current?.click()}>
             + face photo
           </Chip>
         )}

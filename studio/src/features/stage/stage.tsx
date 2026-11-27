@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { useImage, useObjectUrl } from "@/data/db/renders";
 import { useGpu } from "@/data/queries";
+import { blank } from "@/domain/example";
 import { describe } from "@/domain/format";
 import { progress, running, status, type Job } from "@/domain/job";
 import { size } from "@/domain/recipe";
@@ -16,14 +17,38 @@ import { masksAtom, peekAtom } from "@/features/edit/state";
 import { useMaskKey } from "@/features/edit/use-mask-key";
 import { download } from "@/features/library/files";
 import { ImageActions } from "@/features/library/image-actions";
+import { ExampleButton } from "@/features/prompt/example-button";
+import { CompareBar, CompareGrid, CompareToggle } from "@/features/stage/compare";
 import { ZoomBar } from "@/features/stage/zoom-bar";
 import { ZoomView } from "@/features/stage/zoom-view";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
-import { recipeAtom, rendersAtom, stageAtom, stripTab, tabAtom, viewAtom } from "@/state/studio";
+import {
+  batchAtom,
+  compareAtom,
+  recipeAtom,
+  rendersAtom,
+  stageAtom,
+  stripTab,
+  tabAtom,
+  viewAtom,
+} from "@/state/studio";
 import { Button } from "@/ui/button";
 import { cn } from "@/ui/cn";
+import { useWide } from "@/ui/media";
 import { Progress } from "@/ui/text";
+
+/** Whether the stage shows the shown render's batch at once: asked for, with a batch, and not while painting. */
+function useComparing() {
+  const { job, render } = useAtomValue(stageAtom);
+  const on = useAtomValue(compareAtom);
+  const batch = useAtomValue(batchAtom);
+  const tab = useAtomValue(tabAtom);
+  const wide = useWide();
+  // not while painting, nor in the phone's strip, which has no bar to leave it by
+  const away = tab === "edit" || (stripTab(tab) && !wide);
+  return !!on && on === render?.batch && !job && batch.length > 0 && !away;
+}
 
 /** Seconds since the job started, ticking while it runs. */
 function useElapsed(job?: Job) {
@@ -44,10 +69,13 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
   const url = useObjectUrl(useImage(render?.id));
   const tab = useAtomValue(tabAtom);
   const editing = tab === "edit";
+  const strip = stripTab(tab);
   // held "before": the image it was made from, with this one's mask over it
   const peekOn = useAtomValue(peekAtom);
   const peek = editing && !!render && peekOn === render.id;
   const before = useObjectUrl(useImage(peek ? render?.source : undefined));
+  const comparing = useComparing();
+  if (comparing && render) return <CompareGrid shown={render.id} />;
   if (!job && render && url && editing) return <EditCanvas render={render} url={(peek && before) || url} />;
   if (!job && render && url)
     return (
@@ -70,15 +98,29 @@ function Canvas({ job, render, loading }: { job?: Job; render?: Render; loading:
       {!job && !render && (
         <div
           className={cn(
-            "absolute inset-0 grid place-items-center p-6 text-center font-mono text-xs text-faint",
-            stripTab(tab) && "max-lg:hidden",
+            "absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-xs text-faint",
+            strip && "max-lg:p-2",
           )}
         >
-          {loading ? "Opening…" : "No renders in this workspace yet. Fill in a block and press Generate."}
+          {loading ? "Opening…" : <Empty strip={strip} />}
         </div>
       )}
       {job && running(job) && <Progress value={progress(job)} className="top-0 bottom-auto" />}
     </div>
+  );
+}
+
+/** A workspace with nothing yet: with an empty recipe too, one tap fills a first one. */
+/** In the phone's strip only the button: the rows under it say the rest. */
+function Empty({ strip }: { strip: boolean }) {
+  const empty = blank(useAtomValue(recipeAtom));
+  return (
+    <>
+      <p className={cn(strip && "max-lg:hidden")}>
+        No renders here yet. Pick a phrase or two in the rows, then Generate.
+      </p>
+      {empty && <ExampleButton />}
+    </>
   );
 }
 
@@ -108,7 +150,7 @@ function RunningBar({ job }: { job: Job }) {
       <span className="text-ink" aria-live="polite">
         {status(job, gpu?.booted)}
       </span>
-      <span className="text-faint tabular-nums" aria-hidden>
+      <span className="font-mono text-faint tabular-nums" aria-hidden>
         {elapsed}s
       </span>
       <span className="min-w-0 flex-1 truncate text-faint">
@@ -123,7 +165,7 @@ function RenderBar({ render }: { render: Render }) {
   return (
     <>
       {/* on a phone the settings are in More; the bar keeps room for the buttons */}
-      <span className="min-w-0 flex-1 truncate text-faint max-sm:hidden" title={describe(render)}>
+      <span className="min-w-0 flex-1 truncate font-mono text-faint max-sm:hidden" title={describe(render)}>
         {render.characterName && <span className="text-muted">{render.characterName} · </span>}
         {describe(render)} · {render.seconds}s
       </span>
@@ -138,6 +180,8 @@ function Bar({ job, render, loading }: { job?: Job; render?: Render; loading: bo
   const editing = useAtomValue(tabAtom) === "edit";
   const key = useMaskKey(render);
   const steps = useAtomValue(masksAtom)[key ?? ""]?.length ?? 0;
+  const comparing = useComparing();
+  if (comparing) return <CompareBar />;
   if (job?.error) return <FailedBar job={job} />;
   if (job) return <RunningBar job={job} />;
   if (render && editing) return <MaskTools render={render} maskKey={key} steps={steps} />;
@@ -156,6 +200,7 @@ export function Stage() {
     // the strip has no zoom bar: a zoom set in another tab would crop it with no way back
     if (strip && !matchMedia("(min-width: 1024px)").matches) setView(FIT);
   }, [strip, setView]);
+  const comparing = useComparing();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div
@@ -166,13 +211,14 @@ export function Stage() {
       >
         <Canvas job={job} render={render} loading={loading} />
         {/* the framing sits on the canvas, out of the bar's way */}
-        {render && !job && !editing && (
+        {render && !job && !editing && !comparing && (
           <div
             className={cn(
-              "absolute top-1 right-1 z-10 [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]",
+              "absolute top-1 right-1 z-10 flex [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]",
               strip && "max-lg:hidden",
             )}
           >
+            <CompareToggle />
             <ZoomBar />
           </div>
         )}

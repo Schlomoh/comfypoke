@@ -10,7 +10,7 @@ import { Input } from "@/ui/field";
 import { Section } from "@/ui/section";
 import { Note } from "@/ui/text";
 
-export function BackupSection() {
+export function BackupSection({ className }: { className?: string }) {
   const space = useSpace();
   const [note, setNote] = useState("");
   const file = useRef<HTMLInputElement>(null);
@@ -24,7 +24,7 @@ export function BackupSection() {
   };
 
   return (
-    <Section title="Backup" className="border-t border-b-0">
+    <Section title="Backup" className={className}>
       <div className="flex gap-2">
         <Button
           className="flex-1"
@@ -49,7 +49,7 @@ export function BackupSection() {
       </div>
       <Note>
         {note ||
-          "This workspace's characters, plus section presets and LoRA trigger words. The file is not encrypted; face photos are left out of it."}
+          "This workspace's characters, plus the presets, looks and LoRA trigger words every workspace shares. The file is not encrypted; face photos are left out of it."}
       </Note>
     </Section>
   );

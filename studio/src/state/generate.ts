@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { FACE_FAMILIES, Locked } from "@/data/api";
 import { loadFace } from "@/data/db/faces";
-import { useLoraNotes } from "@/data/db/presets";
+import { useLoraNotes } from "@/data/db/lora-notes";
 import { useSetups } from "@/data/db/setups";
 import { useSpace } from "@/data/db/space";
 import { lockApp, useCatalog, useGpu } from "@/data/queries";
@@ -21,6 +21,7 @@ import { toPass } from "@/domain/setup";
 import { useJobs, type FaceOf } from "@/state/jobs";
 import { useTriggers } from "@/state/recipe";
 import { focusAtom, recipeAtom, rendersAtom } from "@/state/studio";
+import { wide } from "@/ui/media";
 
 /** The Upscale section's settings as what a job carries. */
 export const upscaleOf = ({ upscale: { megapixels, prompt, denoise } }: Recipe): Upscale => ({
@@ -157,7 +158,7 @@ export function useGenerate() {
         );
         if (i === 0) setFocus(started.id);
       }
-      if (!matchMedia("(min-width: 1024px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
+      if (!wide()) window.scrollTo({ top: 0, behavior: "smooth" }); // on a phone, up to the stage to watch it
       return true;
     } catch (e) {
       if (e instanceof Locked) lockApp();

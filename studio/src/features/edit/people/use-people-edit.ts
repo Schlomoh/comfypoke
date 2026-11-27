@@ -5,7 +5,7 @@
 import { useAtomValue } from "jotai";
 
 import { api, type PeopleRequest } from "@/data/api";
-import { useLoraNotes } from "@/data/db/presets";
+import { useLoraNotes } from "@/data/db/lora-notes";
 import { imageRef } from "@/data/images";
 import { portrait } from "@/domain/compose";
 import { FACE_PEOPLE, facePerson } from "@/domain/face";

@@ -2,7 +2,7 @@
 // it was made for and moving fold open under it.
 import { useEffect, useRef, useState } from "react";
 
-import { setLoraFamily, setTrigger } from "@/data/db/presets";
+import { setLoraFamily, setTrigger } from "@/data/db/lora-notes";
 import { shortName } from "@/domain/format";
 import type { StackLora } from "@/domain/recipe";
 import { Button } from "@/ui/button";

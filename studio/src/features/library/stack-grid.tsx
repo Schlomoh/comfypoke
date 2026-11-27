@@ -112,11 +112,11 @@ export function StackGrid(p: Props) {
     const picked = live.length < g.stacks.length;
     return (
       <Band key={g.batch} tone="batch" label={`${g.stacks.length} renders sent together`}>
-        <div className="col-span-full flex min-w-0 items-center gap-2 px-3 py-1.5 font-mono text-[11px] text-muted">
+        <div className="col-span-full flex min-w-0 items-center gap-2 px-3 py-1.5 text-xs text-muted">
           <span className="min-w-0 flex-1 truncate" title={g.stacks[0].root.prompt}>
             {label(g.stacks[0].root)}
           </span>
-          <span className="shrink-0 text-warn tabular-nums">×{g.stacks.length}</span>
+          <span className="shrink-0 text-accent tabular-nums">×{g.stacks.length}</span>
           {live.length > 1 && !p.picked ? (
             <Button
               variant="text"
@@ -142,7 +142,7 @@ export function StackGrid(p: Props) {
                 return next;
               })
             }
-            className="col-span-full px-3 py-1.5 text-left font-mono text-[11px] text-faint hover:text-ink"
+            className="col-span-full px-3 py-1.5 text-left text-xs text-faint hover:text-ink"
           >
             {showAll ? "hide the ones picked over" : `show ${folded} picked over`}
           </Pressable>

@@ -3,7 +3,7 @@ import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
 import { saveDraft } from "@/data/db/drafts";
-import { useLoraNotes } from "@/data/db/presets";
+import { useLoraNotes } from "@/data/db/lora-notes";
 import { updateSaved, useSavedList } from "@/data/db/saved";
 import { useSpace } from "@/data/db/space";
 import { useCatalog } from "@/data/queries";

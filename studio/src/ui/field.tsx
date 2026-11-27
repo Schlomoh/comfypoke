@@ -1,12 +1,13 @@
 // Text, number and choice fields. 16px text on touch screens, or iOS zooms in on focus (the `field`
 // utility in index.css).
 import { cva, type VariantProps } from "class-variance-authority";
-import type {
-  InputHTMLAttributes,
-  ReactNode,
-  Ref,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
+import {
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type Ref,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
 } from "react";
 
 import { cn } from "@/ui/cn";
@@ -42,6 +43,34 @@ export function Select({
   ...props
 }: Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & Omit<FieldVariants, "bare">) {
   return <select {...props} className={cn(field({ size, mono }), className)} />;
+}
+
+/** A field whose text is saved when it is left or Enter is pressed, not on each key; it shows the stored value again
+ * when that changes under it. */
+export function CommitInput({
+  value,
+  onCommit,
+  ...props
+}: Omit<Parameters<typeof Input>[0], "value" | "onChange" | "onBlur"> & {
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [was, setWas] = useState(value);
+  if (value !== was) {
+    setWas(value);
+    setDraft(value);
+  }
+  return (
+    <Input
+      enterKeyHint="done"
+      {...props}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => draft !== value && onCommit(draft)}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+    />
+  );
 }
 
 /** Grows with its text. */

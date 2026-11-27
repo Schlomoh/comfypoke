@@ -48,7 +48,8 @@ export function Dock({ g: generate, edit }: { g: Generate; edit?: EditAction }) 
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1 font-mono text-xs leading-snug text-faint tabular-nums">
           {edit && <div className="truncate text-muted">{edit.label}</div>}
-          <div className={cn("truncate", g.blocked && "text-warn")}>
+          {/* why Generate is off wraps rather than truncates: it is the one line that says */}
+          <div className={cn(g.blocked ? "line-clamp-2 text-muted" : "truncate")}>
             <Estimate g={g} />
           </div>
         </div>

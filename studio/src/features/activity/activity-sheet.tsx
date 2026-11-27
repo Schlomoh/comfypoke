@@ -1,8 +1,7 @@
-// The sheet the activity button opens: every job in flight, the GPU's controls and the workspace.
+// The sheet the activity button opens: every job in flight and the GPU's controls. The workspace is the Library's
+// header.
 import { useAtom, useAtomValue } from "jotai";
 
-import { useSpace } from "@/data/db/space";
-import { useWorkspace } from "@/data/db/workspaces";
 import { useGpu } from "@/data/queries";
 import { describe } from "@/domain/format";
 import { isUpscale, progress, running, status, type Job } from "@/domain/job";
@@ -10,9 +9,8 @@ import { GpuPanel } from "@/features/activity/gpu-panel";
 import { useNow } from "@/features/activity/use-now";
 import { useImageActions } from "@/state/actions";
 import { useJobs } from "@/state/jobs";
-import { layerAtom, liveJobsAtom, veilAtom } from "@/state/studio";
+import { layerAtom, liveJobsAtom } from "@/state/studio";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
 import { Sheet } from "@/ui/modal";
 import { Pressable } from "@/ui/pressable";
 import { Heading, Note, Progress } from "@/ui/text";
@@ -61,8 +59,6 @@ function QueueItem({ job: j, now, onShow }: { job: Job; now: number; onShow: (id
 export function ActivitySheet() {
   const [layer, setLayer] = useAtom(layerAtom);
   const jobs = useAtomValue(liveJobsAtom);
-  const [veil, setVeil] = useAtom(veilAtom);
-  const workspace = useWorkspace(useSpace().id);
   const { open: show } = useImageActions();
   const open = layer === "activity";
   const now = useNow(open && jobs.some(running));
@@ -86,22 +82,6 @@ export function ActivitySheet() {
           <Heading>GPU worker</Heading>
           {/* the sheet renders its body only while open: an armed force stop never outlives it */}
           <GpuPanel />
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <Heading>Workspace</Heading>
-          <div className="flex items-center gap-3">
-            <span className="min-w-0 flex-1 truncate font-mono text-xs">
-              {workspace?.name}
-              {workspace?.lock ? <span className="text-faint"> · protected</span> : null}
-            </span>
-            <Button onClick={() => setLayer("workspace")}>Switch…</Button>
-          </div>
-          <Checkbox
-            on={veil}
-            onChange={setVeil}
-            label={<span className="text-xs text-muted">Hide all images (H)</span>}
-          />
         </section>
       </div>
     </Sheet>

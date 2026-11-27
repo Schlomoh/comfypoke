@@ -7,12 +7,22 @@ import { Button } from "@/ui/button";
 import { Section } from "@/ui/section";
 import { Note } from "@/ui/text";
 
-export function DownloadSection({ count, selected, out }: { count: number; selected: boolean; out: Export }) {
+export function DownloadSection({
+  count,
+  selected,
+  out,
+  className,
+}: {
+  count: number;
+  selected: boolean;
+  out: Export;
+  className?: string;
+}) {
   const space = useSpace();
   const { folder, note, zipping, saving } = out;
   const what = selected ? "selected" : "shown";
   return (
-    <Section title="Download" className="border-t border-b-0">
+    <Section title="Download" className={className}>
       {canPickFolder && (
         <div className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={folder}>
@@ -40,8 +50,8 @@ export function DownloadSection({ count, selected, out }: { count: number; selec
         </p>
       )}
       <Note>
-        {selected ? "The selected images" : "The images the filters above show"}, each PNG with its prompt and
-        settings written in, plus metadata.json. Neither the files nor the zip are encrypted.
+        {selected ? "The selected images" : "The images the library's filter shows"}, each PNG with its prompt
+        and settings written in, plus metadata.json. Neither the files nor the zip are encrypted.
         {canPickFolder
           ? " With a folder chosen, Save and S write there too, and images already in it are skipped."
           : " Saving straight into a folder needs Chrome or Edge."}

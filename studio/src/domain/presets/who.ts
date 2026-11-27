@@ -5,12 +5,12 @@ export const WHO: readonly Group[] = [
   {
     name: "Age",
     items: [
-      "{noun} in {their} early twenties",
-      "{noun} in {their} mid twenties",
-      "{noun} in {their} late twenties",
-      "{noun} in {their} thirties",
-      "{noun} in {their} forties",
-      "{noun} in {their} fifties",
+      "in {their} early twenties",
+      "in {their} mid twenties",
+      "in {their} late twenties",
+      "in {their} thirties",
+      "in {their} forties",
+      "in {their} fifties",
     ],
   },
   {

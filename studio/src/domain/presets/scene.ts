@@ -6,7 +6,6 @@ export const WHERE: readonly Group[] = [
     name: "Home",
     items: [
       "sunlit bedroom with white linen",
-      "minimalist bathroom with marble",
       "cozy living room sofa",
       "kitchen in morning light",
       "walk-in wardrobe",
@@ -16,6 +15,7 @@ export const WHERE: readonly Group[] = [
   {
     name: "Bathroom",
     items: [
+      "minimalist bathroom with marble",
       "steamy bathroom mirror",
       "freestanding bathtub",
       "rain shower with glass walls",

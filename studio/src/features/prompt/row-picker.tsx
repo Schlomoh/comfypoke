@@ -1,8 +1,8 @@
 // The picker under a row's sheet: it adds a phrase to the row, or a version to the phrase picked above.
 import { useAtom } from "jotai";
 
-import type { Preset } from "@/data/db/schema";
 import { editPhrase, editRow, isPerson, ownerOf, rowDef, type RowRef } from "@/domain/cast";
+import type { Presets } from "@/domain/prompt-catalog";
 import { phrase, type Phrase } from "@/domain/recipe";
 import { says, sameText } from "@/domain/versions";
 import { PresetPicker } from "@/features/prompt/preset-picker";
@@ -13,7 +13,7 @@ type Props = {
   at: RowRef;
   phrases: Phrase[];
   target: Phrase | undefined;
-  presets: Preset[];
+  presets: Presets;
   onTarget: (target: string | null) => void;
 };
 

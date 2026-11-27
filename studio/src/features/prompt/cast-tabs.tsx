@@ -56,7 +56,7 @@ function Tab({
           active ? "text-ink" : "text-muted",
         )}
       >
-        {varied && <span className="size-1.5 bg-warn" title="has versions" />}
+        {varied && <span className="size-1.5 bg-accent" title="has versions" />}
         {name}
         <Changed state={linkState(kindOf(id), owner, saved)} />
       </Pressable>
@@ -102,7 +102,7 @@ export function CastTabs({
     />
   );
   return (
-    <div className="sticky top-[calc(2.75rem+env(safe-area-inset-top))] z-[5] flex border-b border-line bg-bg lg:top-0">
+    <div className="sticky top-0 z-[5] flex border-b border-line bg-bg">
       <div className="flex min-w-0 flex-1 [scrollbar-width:none] overflow-x-auto">
         {recipe.cast.map((c) => tab(c.id, c.name, c))}
       </div>
